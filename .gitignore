@@ -1,0 +1,39 @@
+# Dépendances
+node_modules/
+
+# Secrets — ne jamais committer
+.env
+.env.*
+!.env.example
+google-services.json
+GoogleService-Info.plist
+*-service-account*.json
+serviceAccountKey.json
+.runtimeconfig.json
+
+# Build
+dist/
+build/
+functions/lib/
+.expo/
+app/android/
+app/ios/
+app/web-build/
+*.tsbuildinfo
+
+# Firebase
+.firebase/
+.emulator-data/
+firebase-debug*.log
+firestore-debug.log
+ui-debug.log
+
+# EAS
+app/eas.json.local
+
+# Outils
+.idea/
+.vscode/
+.DS_Store
+*.log
+npm-debug.log*
