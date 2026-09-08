@@ -18,8 +18,14 @@ export const GEMINI_API_KEY = defineSecret('GEMINI_API_KEY');
  * qualité des plans produits, donc c'est une décision qui mérite un commit et
  * une revue, pas un réglage qu'on pousse sans trace. La valeur est enregistrée
  * avec chaque plan, ce qui permet de comparer après coup.
+ *
+ * Attention avant de modifier cette valeur : un modèle listé par
+ * `GET /v1beta/models` n'est pas forcément accessible. Google continue de
+ * publier des modèles fermés aux comptes récents, qui répondent alors
+ * « no longer available to new users » avec un 404. La seule vérification
+ * fiable est un appel réel à `generateContent`.
  */
-export const GEMINI_MODEL = 'gemini-2.5-flash';
+export const GEMINI_MODEL = 'gemini-3.6-flash';
 
 /** Toutes les functions vivent dans la même région que Firestore. */
 export const REGION = 'europe-west1';

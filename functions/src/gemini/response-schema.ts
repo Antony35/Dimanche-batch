@@ -12,6 +12,16 @@ import { AISLES, MEAL_KINDS, RECIPE_TAGS, UNITS } from '@dimanche-batch/shared';
  * Les listes de valeurs (rayons, unités, étiquettes) sont importées du domaine
  * partagé plutôt que recopiées : ajouter un rayon dans `shared` le rend
  * disponible au modèle sans qu'on puisse l'oublier ici.
+ *
+ * AUCUN `minItems` / `maxItems` ici. L'API les refuse avec un
+ * « Request contains an invalid argument » qui ne nomme pas le champ fautif —
+ * vérifié empiriquement avec `npm run gemini:probe`. La cardinalité n'est pas
+ * perdue pour autant : elle est imposée par `GeneratedPlanSchema` côté Zod et
+ * par `validateGeneratedPlan`, qui font autorité de toute façon. Le schéma ne
+ * fait que guider la génération ; il ne garantit rien.
+ *
+ * Ce que le schéma ne peut plus exprimer est donc dit en toutes lettres dans
+ * les `description`, que le modèle lit.
  */
 
 const ingredientSchema: Schema = {
@@ -40,9 +50,21 @@ const recipeSchema: Schema = {
     name: { type: Type.STRING },
     servings: { type: Type.INTEGER, description: 'Nombre de portions produites par la recette.' },
     prepMinutes: { type: Type.INTEGER },
-    tags: { type: Type.ARRAY, items: { type: Type.STRING, enum: [...RECIPE_TAGS] }, minItems: '1' },
-    ingredients: { type: Type.ARRAY, items: ingredientSchema, minItems: '1' },
-    steps: { type: Type.ARRAY, items: { type: Type.STRING }, minItems: '1' },
+    tags: {
+      type: Type.ARRAY,
+      items: { type: Type.STRING, enum: [...RECIPE_TAGS] },
+      description: 'Au moins une étiquette.',
+    },
+    ingredients: {
+      type: Type.ARRAY,
+      items: ingredientSchema,
+      description: 'Au moins un ingrédient, quantifié pour le nombre de portions indiqué.',
+    },
+    steps: {
+      type: Type.ARRAY,
+      items: { type: Type.STRING },
+      description: 'Cinq à huit étapes courtes, à l’infinitif.',
+    },
   },
   required: ['slug', 'name', 'servings', 'prepMinutes', 'tags', 'ingredients', 'steps'],
   propertyOrdering: ['slug', 'name', 'servings', 'prepMinutes', 'tags', 'ingredients', 'steps'],
@@ -78,8 +100,16 @@ const daySchema: Schema = {
 export const WEEKLY_PLAN_RESPONSE_SCHEMA: Schema = {
   type: Type.OBJECT,
   properties: {
-    recipes: { type: Type.ARRAY, items: recipeSchema, minItems: '3', maxItems: '12' },
-    days: { type: Type.ARRAY, items: daySchema, minItems: '7', maxItems: '7' },
+    recipes: {
+      type: Type.ARRAY,
+      items: recipeSchema,
+      description: 'Entre 3 et 12 recettes, toutes utilisées au moins une fois dans days.',
+    },
+    days: {
+      type: Type.ARRAY,
+      items: daySchema,
+      description: 'Exactement 7 entrées, une par jour, avec les dayIndex 0 à 6 sans doublon.',
+    },
   },
   required: ['recipes', 'days'],
   propertyOrdering: ['recipes', 'days'],

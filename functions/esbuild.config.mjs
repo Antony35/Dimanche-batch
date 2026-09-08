@@ -20,6 +20,23 @@ import { build } from 'esbuild';
 const here = dirname(fileURLToPath(import.meta.url));
 const sharedEntry = resolve(here, '../packages/shared/src/index.ts');
 
+const common = {
+  bundle: true,
+  platform: 'node',
+  target: 'node24',
+  external: ['firebase-functions', 'firebase-admin', '@google/genai', 'zod'],
+  alias: { '@dimanche-batch/shared': sharedEntry },
+  logLevel: 'info',
+};
+
+// Sonde de diagnostic, jamais déployée : `.probe/` est exclu côté firebase.json.
+await build({
+  ...common,
+  entryPoints: [resolve(here, 'scripts/probe-gemini.ts')],
+  outfile: resolve(here, '.probe/probe.mjs'),
+  format: 'esm',
+});
+
 await build({
   entryPoints: [resolve(here, 'src/index.ts')],
   outfile: resolve(here, 'lib/index.js'),

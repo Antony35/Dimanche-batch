@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "serve": "npm run build && firebase emulators:start --only functions",
     "deploy": "npm run build && firebase deploy --only functions",
-    "logs": "firebase functions:log"
+    "logs": "firebase functions:log",
+    "gemini:probe": "node ./esbuild.config.mjs && node .probe/probe.mjs"
   },
   "dependencies": {
     "@google/genai": "^1.24.0",

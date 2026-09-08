@@ -20,7 +20,8 @@
     "lint": "npm run lint -w app",
     "deploy:functions": "npm run build -w functions && firebase deploy --only functions",
     "deploy:rules": "firebase deploy --only firestore:rules",
-    "build:android": "cd app && eas build --platform android --profile preview"
+    "build:android": "cd app && eas build --platform android --profile preview",
+    "gemini:probe": "npm run gemini:probe -w functions"
   },
   "devDependencies": {
     "firebase-tools": "^14.9.0",
