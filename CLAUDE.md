@@ -336,6 +336,12 @@ Ce qui reste à faire hors code, dans l'ordre :
    en dépend). Seul point encore ouvert.
 
 Le compte de service `<numéro>-compute@developer.gserviceaccount.com` doit porter
-le rôle **Cloud Build Service Account**. Google ne l'accorde plus par défaut sur
-les projets récents, et sans lui le déploiement échoue à la construction sans que
-le message ne dise quel rôle manque.
+**deux rôles** que Google n'accorde plus par défaut sur les projets récents :
+
+| Rôle | Sans lui |
+|---|---|
+| Cloud Build Service Account | Le déploiement échoue à la construction, sans nommer le rôle manquant |
+| Utilisateur Cloud Datastore | Les functions se déploient mais tout accès Firestore renvoie `7 PERMISSION_DENIED` |
+
+Ce refus-là ne vient jamais des Security Rules : l'admin SDK n'y est pas soumis.
+Chercher le problème dans `firestore.rules` est une impasse.

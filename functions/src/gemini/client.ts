@@ -29,16 +29,25 @@ export async function generateJson(options: GenerateJsonOptions): Promise<Genera
   const model = GEMINI_MODEL;
   const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY.value() });
 
-  const response = await ai.models.generateContent({
-    model,
-    contents: options.prompt,
-    config: {
-      systemInstruction: options.systemInstruction,
-      responseMimeType: 'application/json',
-      responseSchema: options.responseSchema,
-      temperature: options.temperature ?? 0.7,
-    },
-  });
+  let response;
+  try {
+    response = await ai.models.generateContent({
+      model,
+      contents: options.prompt,
+      config: {
+        systemInstruction: options.systemInstruction,
+        responseMimeType: 'application/json',
+        responseSchema: options.responseSchema,
+        temperature: options.temperature ?? 0.7,
+      },
+    });
+  } catch (error) {
+    logger.error('gemini: appel refusé', {
+      model,
+      erreur: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+    });
+    throw error;
+  }
 
   const text = response.text;
   if (!text) {

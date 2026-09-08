@@ -45,6 +45,10 @@ export const generateWeeklyPlan = onCall(
     secrets: [GEMINI_API_KEY],
   },
   async (request): Promise<GenerateWeeklyPlanResult> => {
+    // Trace d'entrée, avant tout garde-fou : sans elle, une requête rejetée
+    // très tôt est indiscernable d'une requête qui n'est jamais arrivée.
+    logger.info('generateWeeklyPlan appelée', { authentifie: Boolean(request.auth) });
+
     const uid = requireAuth(request);
     const input: GenerateWeeklyPlanInput = parseInput(
       GenerateWeeklyPlanInputSchema,

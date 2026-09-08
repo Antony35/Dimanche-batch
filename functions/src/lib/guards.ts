@@ -17,7 +17,20 @@ export function requireAuth(request: CallableRequest): string {
 }
 
 export async function requireHouseholdMember(uid: string, householdId: string): Promise<void> {
-  const snapshot = await db.doc(paths.household(householdId)).get();
+  let snapshot;
+  try {
+    snapshot = await db.doc(paths.household(householdId)).get();
+  } catch (error) {
+    // Un refus de Firestore ici ne vient pas des Security Rules — l'admin SDK
+    // n'y est pas soumis — mais des droits IAM du compte de service qui exécute
+    // la function. Le distinguer évite de chercher le problème dans les règles.
+    throw internal(
+      "Le service n'a pas accès à la base de données. Vérifie que le compte de " +
+        'service des functions porte le rôle « Utilisateur Cloud Datastore ».',
+      error,
+    );
+  }
+
   if (!snapshot.exists) throw permissionDenied('Ce foyer est introuvable.');
 
   const members = snapshot.get('members');
