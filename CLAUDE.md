@@ -48,7 +48,7 @@ une semaine, mais jamais au prix d'une dette qui bloquerait la v2.
 | Données | Firebase Firestore | Temps réel entre les deux téléphones |
 | Auth | Firebase Auth — email + mot de passe | Importé depuis `@firebase/auth`, pas `firebase/auth` : voir §7 |
 | Cache offline | AsyncStorage, explicite | Le SDK JS Firestore n'a pas de persistance offline sur React Native |
-| Backend | Cloud Functions for Firebase (Node 20, 2nd gen), région `europe-west1` | Plan Blaze, plafond de dépense à définir |
+| Backend | Cloud Functions for Firebase (Node 24, 2ᵉ gén.), région `europe-west1` | Plan Blaze, plafond de dépense à définir |
 | IA | Gemini API, appelée **uniquement** depuis les Cloud Functions | |
 | Validation | Zod, partagé client/serveur | |
 | Tests | Vitest sur le domaine pur + `@firebase/rules-unit-testing` sur l'émulateur | L'émulateur exige un JRE installé |
@@ -100,11 +100,17 @@ dimanche-batch/
 **Règle d'import :** `app` et `functions` importent depuis `shared`. `shared` n'importe
 depuis personne. `app` n'importe jamais depuis `functions` (et inversement).
 
-`shared` est publié en deux formes : `app` consomme la source TypeScript via la
-condition d'export `react-native` (Metro la transpile), `functions` consomme le
-build CommonJS de `dist/`. D'où `npm run build:shared` avant tout déploiement.
-Les imports internes du package sont sans extension, seule forme que Metro et
-tsc résolvent de la même manière.
+`shared` n'est jamais installé comme dépendance : il est **compilé dans** ses
+consommateurs. `app` en consomme la source TypeScript via la condition d'export
+`react-native`, que Metro transpile. `functions` la bundle avec esbuild
+(`functions/esbuild.config.mjs`), parce que Cloud Build ne reçoit que le dossier
+`functions/` et chercherait `@dimanche-batch/shared` sur le registre npm public.
+C'est pourquoi le package n'apparaît ni dans les dépendances ni dans les
+dépendances de développement de `functions`, et pourquoi `tsc` n'y sert plus qu'au
+typage (`noEmit`), l'artefact étant produit par esbuild.
+
+Les imports internes du package sont sans extension, seule forme que Metro, tsc
+et esbuild résolvent de la même manière.
 
 ---
 
@@ -310,7 +316,7 @@ Ce qui est **délibérément** simple en v1, et où brancher la suite :
 | Jour | État | Contenu |
 |---|---|---|
 | J1 | **fait** | Monorepo, domaine partagé (30 tests), Security Rules + leurs tests, `joinHousehold`, auth e-mail, écran de foyer partagé, navigation des 6 écrans, thème clair/sombre |
-| J2 | à faire | `generateWeeklyPlan` : prompt, `responseSchema`, validation Zod puis contraintes métier, unique retry, écriture Firestore en batch |
+| J2 | **fait** | `generateWeeklyPlan` déployée : prompt versionné, `responseSchema`, validation Zod puis contraintes métier, unique retry, écriture Firestore en batch, écran d'accueil avec repas du jour |
 | J3 | à faire | Écran planning des 7 jours, `regenerateMeal` |
 | J4 | à faire | Liste de courses : rendu par rayon, cases à cocher, partage Listonic |
 | J5 | à faire | Fiche recette, historique, favoris, anti-répétition dans le prompt |
@@ -319,18 +325,17 @@ Ce qui est **délibérément** simple en v1, et où brancher la suite :
 
 Ce qui reste à faire hors code, dans l'ordre :
 
-1. Créer le projet Firebase, activer Auth (e-mail/mot de passe) et Firestore en
-   `europe-west1`, puis remplir `app/.env` depuis `app/.env.example`.
-2. Passer le projet en plan Blaze et **poser un plafond de dépense** avant le
-   premier déploiement de functions.
-3. `firebase functions:secrets:set GEMINI_API_KEY` avec la clé créée sur
-   aistudio.google.com/apikey.
-4. Installer un JRE pour faire tourner la suite d'émulateurs (`npm run test:rules`
-   en dépend).
-5. **Juste après le premier `npm run deploy:functions`** — configurer les règles de
-   nettoyage d'Artifact Registry. Chaque déploiement de function 2ᵉ génération y
-   empile une image Docker que rien ne supprime automatiquement ; c'est le poste qui
-   déclenchera l'alerte de budget, pas Gemini. Console GCP → Artifact Registry →
-   dépôt `gcf-artifacts` (europe-west1) → Règles de nettoyage : conserver les 3
-   versions les plus récentes, supprimer celles de plus de 7 jours. Tester en
-   simulation avant de valider.
+1. ~~Projet Firebase, Auth e-mail, Firestore `europe-west1`, `app/.env`.~~ Fait.
+2. ~~Plan Blaze et alerte de budget.~~ Fait.
+3. ~~`GEMINI_API_KEY` dans Secret Manager.~~ Fait — la clé appartient à un projet
+   Google Cloud sans facturation, distinct de `dimanche-batch`.
+4. ~~Nettoyage d'Artifact Registry.~~ Fait via
+   `firebase functions:artifacts:setpolicy --location europe-west1 --days 7` :
+   les images de plus de 7 jours sont supprimées automatiquement.
+5. Installer un JRE pour faire tourner la suite d'émulateurs (`npm run test:rules`
+   en dépend). Seul point encore ouvert.
+
+Le compte de service `<numéro>-compute@developer.gserviceaccount.com` doit porter
+le rôle **Cloud Build Service Account**. Google ne l'accorde plus par défaut sur
+les projets récents, et sans lui le déploiement échoue à la construction sans que
+le message ne dise quel rôle manque.

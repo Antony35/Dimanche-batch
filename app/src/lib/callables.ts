@@ -1,7 +1,10 @@
 import { httpsCallable, type HttpsCallableResult } from 'firebase/functions';
 import { FirebaseError } from 'firebase/app';
 import {
+  GenerateWeeklyPlanResultSchema,
   JoinHouseholdResultSchema,
+  type GenerateWeeklyPlanInput,
+  type GenerateWeeklyPlanResult,
   type JoinHouseholdInput,
   type JoinHouseholdResult,
 } from '@dimanche-batch/shared';
@@ -45,4 +48,10 @@ function toReadableError(error: unknown): Error {
 
 export function joinHousehold(input: JoinHouseholdInput): Promise<JoinHouseholdResult> {
   return call('joinHousehold', JoinHouseholdResultSchema, input);
+}
+
+export function generateWeeklyPlan(
+  input: GenerateWeeklyPlanInput,
+): Promise<GenerateWeeklyPlanResult> {
+  return call('generateWeeklyPlan', GenerateWeeklyPlanResultSchema, input);
 }
