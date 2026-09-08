@@ -52,6 +52,12 @@ export const GenerateWeeklyPlanInputSchema = z.object({
   force: z.boolean().optional(),
 });
 
+export const GenerateWeeklyPlanResultSchema = z.object({
+  weekId: WeekIdSchema,
+  recipeCount: z.number().int().min(0),
+  itemCount: z.number().int().min(0),
+});
+
 /** Payload de la callable `regenerateMeal`. */
 export const RegenerateMealInputSchema = z.object({
   householdId: z.string().min(1),
@@ -67,4 +73,5 @@ export type MealSlot = 'lunch' | 'dinner';
 export type DayPlan = z.infer<typeof DayPlanSchema>;
 export type WeeklyPlan = z.infer<typeof WeeklyPlanSchema>;
 export type GenerateWeeklyPlanInput = z.infer<typeof GenerateWeeklyPlanInputSchema>;
+export type GenerateWeeklyPlanResult = z.infer<typeof GenerateWeeklyPlanResultSchema>;
 export type RegenerateMealInput = z.infer<typeof RegenerateMealInputSchema>;
