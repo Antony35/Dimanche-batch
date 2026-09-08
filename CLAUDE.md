@@ -267,12 +267,22 @@ npm run dev                      # Expo dev server
 npm run emulators                # Firestore + Auth + Functions en local
 npm run test                     # Vitest sur le domaine partagé
 npm run test:rules               # Security Rules sur émulateur (nécessite Java)
+GEMINI_API_KEY=… npm run gemini:probe   # chaîne de génération, sans déployer
 npm run typecheck                # tsc --noEmit sur tous les workspaces
 npm run lint
 npm run deploy:rules
 npm run deploy:functions
 npm run build:android            # eas build -p android --profile preview (APK)
 ```
+
+`gemini:probe` envoie à Gemini le payload réel de `generateWeeklyPlan`, puis fait
+traverser la réponse les deux mêmes filtres que la function. **À lancer avant tout
+changement de modèle ou de `responseSchema`** : l'API refuse certaines
+constructions de schéma avec un `INVALID_ARGUMENT` qui ne nomme aucun champ, et
+publie des modèles fermés aux comptes récents qui répondent 404 alors qu'ils
+figurent dans `GET /models`. Dans les deux cas, seul un appel réel tranche, et
+diagnostiquer depuis une function déployée coûte un cycle de déploiement plus
+l'attente d'ingestion des logs.
 
 **Développer contre l'émulateur par défaut** (`EXPO_PUBLIC_USE_EMULATORS=1` dans
 `app/.env`). Ne pointer vers le projet Firebase réel que pour un test de bout en
