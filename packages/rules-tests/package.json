@@ -1,0 +1,16 @@
+{
+  "name": "@dimanche-batch/rules-tests",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@dimanche-batch/shared": "*",
+    "@firebase/rules-unit-testing": "^5.0.0",
+    "firebase": "^12.3.0",
+    "typescript": "~5.9.2",
+    "vitest": "^3.2.4"
+  }
+}

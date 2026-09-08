@@ -1,0 +1,84 @@
+rules_version = '2';
+
+/**
+ * Règles de sécurité Dimanche Batch.
+ *
+ * Principe : le client lit, mais n'écrit presque rien. Les plans, recettes et
+ * listes de courses sont produits par les Cloud Functions via l'admin SDK, qui
+ * n'est pas soumis à ces règles. Ce que le client peut écrire se limite à des
+ * gestes d'usage : cocher un article, mettre une recette en favori.
+ *
+ * Toute modification ici doit s'accompagner d'un test dans
+ * `packages/shared/src/__tests__/rules.test.ts`.
+ */
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function householdData(householdId) {
+      return get(/databases/$(database)/documents/households/$(householdId)).data;
+    }
+
+    function isMember(householdId) {
+      return isSignedIn() && request.auth.uid in householdData(householdId).members;
+    }
+
+    /** Vrai si l'écriture ne touche qu'aux champs listés. */
+    function onlyChanges(fields) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(fields);
+    }
+
+    match /households/{householdId} {
+      allow get, list: if isSignedIn() && request.auth.uid in resource.data.members;
+
+      // Créer un foyer, avec soi-même pour unique membre. Ajouter un second
+      // membre passe obligatoirement par la callable `joinHousehold`, qui seule
+      // peut consulter un foyer dont on n'est pas encore membre.
+      allow create: if isSignedIn()
+        && request.resource.data.members == [request.auth.uid]
+        && request.resource.data.createdBy == request.auth.uid;
+
+      // `members` est immuable côté client : on ne s'ajoute pas soi-même à un
+      // foyer, et on n'en exclut pas l'autre personne.
+      allow update: if isMember(householdId) && onlyChanges(['name', 'inviteCode']);
+
+      allow delete: if false;
+
+      match /weeklyPlans/{weekId} {
+        allow read: if isMember(householdId);
+        allow write: if false; // écrit uniquement par generateWeeklyPlan
+      }
+
+      match /recipes/{recipeId} {
+        allow read: if isMember(householdId);
+        allow update: if isMember(householdId) && onlyChanges(['isFavorite']);
+        allow create, delete: if false;
+      }
+
+      match /groceryLists/{weekId} {
+        allow read: if isMember(householdId);
+        allow write: if false;
+
+        match /items/{itemId} {
+          allow read: if isMember(householdId);
+          // Cocher un article est le seul geste d'écriture du parcours courses.
+          allow update: if isMember(householdId) && onlyChanges(['checked']);
+          allow create, delete: if false;
+        }
+      }
+
+      match /usage/{day} {
+        allow read: if isMember(householdId);
+        allow write: if false; // compteur de quota, géré en transaction serveur
+      }
+    }
+
+    // Tout le reste est fermé.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
