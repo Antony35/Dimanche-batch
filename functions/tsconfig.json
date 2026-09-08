@@ -1,0 +1,13 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "CommonJS",
+    "moduleResolution": "node",
+    "rootDir": "./src",
+    "outDir": "./lib",
+    "sourceMap": true,
+    "declaration": false,
+    "noEmit": false
+  },
+  "include": ["src/**/*.ts"]
+}
