@@ -135,6 +135,15 @@ Règles non négociables :
   que ton APK. Non bloquant pour la v1 puisque l'auth couvre déjà l'essentiel, mais
   l'architecture ne doit rien faire qui empêche de l'activer.
 - Plafond de dépense Blaze configuré côté console avant le premier déploiement.
+  Attention : un budget Google Cloud est une **alerte**, il ne coupe rien. Ce qui
+  borne réellement la dépense est ce qui borne l'exécution — `maxInstances`, le
+  quota de générations, et les quotas d'API.
+- **La clé Gemini appartient à un projet Google Cloud sans facturation**, distinct
+  de `dimanche-batch`. Rien n'impose qu'elle vive dans le même projet que Firebase :
+  la function la lit depuis Secret Manager, et l'API se moque de l'appelant. Sur un
+  projet non facturé, l'usage reste sur le palier gratuit et le coût est nul par
+  construction plutôt que par surveillance. Un abonnement Google AI Pro ne couvre
+  que l'application Gemini, jamais l'API.
 
 ---
 
@@ -318,3 +327,10 @@ Ce qui reste à faire hors code, dans l'ordre :
    aistudio.google.com/apikey.
 4. Installer un JRE pour faire tourner la suite d'émulateurs (`npm run test:rules`
    en dépend).
+5. **Juste après le premier `npm run deploy:functions`** — configurer les règles de
+   nettoyage d'Artifact Registry. Chaque déploiement de function 2ᵉ génération y
+   empile une image Docker que rien ne supprime automatiquement ; c'est le poste qui
+   déclenchera l'alerte de budget, pas Gemini. Console GCP → Artifact Registry →
+   dépôt `gcf-artifacts` (europe-west1) → Règles de nettoyage : conserver les 3
+   versions les plus récentes, supprimer celles de plus de 7 jours. Tester en
+   simulation avant de valider.
