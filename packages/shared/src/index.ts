@@ -1,0 +1,23 @@
+/**
+ * Point d'entrée unique du domaine partagé.
+ *
+ * `app` et `functions` importent depuis ici et jamais depuis un chemin interne :
+ * la surface publique du package reste explicite, et un déplacement de fichier
+ * ne casse pas les deux autres workspaces.
+ */
+
+export * from './schemas/common';
+export * from './schemas/household';
+export * from './schemas/recipe';
+export * from './schemas/weekly-plan';
+export * from './schemas/grocery-list';
+export * from './schemas/gemini';
+
+export * from './domain/units';
+export * from './domain/week';
+export * from './domain/grocery';
+export * from './domain/grocery-export';
+export * from './domain/plan-constraints';
+export * from './domain/invite';
+
+export * from './firestore-paths';
