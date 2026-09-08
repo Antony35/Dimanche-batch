@@ -1,0 +1,22 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "paths": {
+      "@/*": ["./src/*"],
+      "@/assets/*": ["./assets/*"],
+      "@dimanche-batch/shared": ["../packages/shared/src/index.ts"],
+
+      // `@firebase/auth` déclare sa clé "types" avant sa condition
+      // "react-native" : TypeScript retient donc les typings navigateur, où
+      // `getReactNativePersistence` n'existe pas. Metro, lui, résout bien la
+      // variante React Native. Ce chemin réaligne le typage sur le runtime.
+      "@firebase/auth": ["../node_modules/@firebase/auth/dist/rn/index.rn.d.ts"]
+    }
+  },
+  "include": ["**/*.ts", "**/*.tsx", ".expo/types/**/*.ts", "expo-env.d.ts"],
+  "exclude": ["node_modules"]
+}
