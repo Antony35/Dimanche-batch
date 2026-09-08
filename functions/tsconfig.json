@@ -3,11 +3,15 @@
   "compilerOptions": {
     "module": "CommonJS",
     "moduleResolution": "node",
-    "rootDir": "./src",
-    "outDir": "./lib",
-    "sourceMap": true,
-    "declaration": false,
-    "noEmit": false
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@dimanche-batch/shared": [
+        "../packages/shared/src/index.ts"
+      ]
+    }
   },
-  "include": ["src/**/*.ts"]
+  "include": [
+    "src/**/*.ts"
+  ]
 }
