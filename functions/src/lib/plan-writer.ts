@@ -42,10 +42,19 @@ export interface ReplaceMealParams {
   recipe: GeneratedRecipe;
 }
 
+/** Une régénération produit toujours une recette : les champs sont fermes. */
 export interface ReplaceMealResult {
   weekId: string;
   recipeId: string;
   recipeName: string;
+  itemCount: number;
+}
+
+/** Un repas posé peut n'en désigner aucune — le repas pris à l'extérieur. */
+export interface SetMealOutcome {
+  weekId: string;
+  recipeId: string | null;
+  recipeName: string | null;
   itemCount: number;
 }
 
@@ -98,37 +107,110 @@ export async function writeWeeklyPlan(params: WritePlanParams): Promise<WritePla
 export async function replaceMeal(params: ReplaceMealParams): Promise<ReplaceMealResult> {
   const { householdId, weekId, date, slot, recipe } = params;
 
+  const current = await readPlanForEdit(householdId, weekId);
+  const existing = await readPlanRecipes(householdId, current, [recipe.slug]);
+  const nextRecipe = toRecipe(recipe, existing.get(recipe.slug), current.weekStart);
+
+  const outcome = await setPlanMeal({
+    householdId,
+    plan: current,
+    date,
+    slot,
+    meal: {
+      recipeId: nextRecipe.id,
+      kind: 'cooked',
+      withStarter: false,
+      withDessert: false,
+    },
+    recipeToWrite: nextRecipe,
+    knownRecipes: existing,
+  });
+
+  // La recette vient d'être générée : elle existe, quoi qu'en dise le type
+  // élargi de `setPlanMeal`, qui doit aussi couvrir le repas pris dehors.
+  return {
+    weekId: outcome.weekId,
+    recipeId: nextRecipe.id,
+    recipeName: nextRecipe.name,
+    itemCount: outcome.itemCount,
+  };
+}
+
+export interface SetPlanMealParams {
+  householdId: string;
+  plan: WeeklyPlan;
+  date: string;
+  slot: MealSlot;
+  meal: Meal;
+  /** Recette à persister — nulle quand le repas ne fait que pointer ailleurs. */
+  recipeToWrite: Recipe | null;
+  knownRecipes: Map<string, Recipe>;
+}
+
+/**
+ * Pose un repas dans un plan et réécrit ce qui en dépend.
+ *
+ * Chemin unique pour toutes les modifications d'un repas, qu'elles viennent
+ * d'une recette générée ou d'un simple choix de l'utilisateur : la liste de
+ * courses est recalculée au même endroit, et les cases déjà cochées survivent
+ * de la même façon.
+ */
+export async function setPlanMeal(params: SetPlanMealParams): Promise<SetMealOutcome> {
+  const { householdId, plan, date, slot, meal, recipeToWrite, knownRecipes } = params;
+  const nextPlan = replaceMealInPlan(plan, date, slot, meal);
+
+  // Les recettes déjà en base servent au calcul des courses mais ne sont pas
+  // réécrites : elles n'ont pas changé, et leur `lastUsedAt` non plus.
+  const allRecipes = recipeToWrite
+    ? [recipeToWrite, ...[...knownRecipes.values()].filter((r) => r.id !== recipeToWrite.id)]
+    : [...knownRecipes.values()];
+
+  const { itemCount } = await commitPlan({
+    householdId,
+    plan: nextPlan,
+    recipesToWrite: recipeToWrite ? [recipeToWrite] : [],
+    allRecipes,
+  });
+
+  const served = meal.recipeId ? (knownRecipes.get(meal.recipeId) ?? recipeToWrite) : null;
+  return {
+    weekId: plan.id,
+    recipeId: served?.id ?? null,
+    recipeName: served?.name ?? null,
+    itemCount,
+  };
+}
+
+/** Plan tel qu'il est en base, juste avant d'être modifié. */
+export async function readPlanForEdit(householdId: string, weekId: string): Promise<WeeklyPlan> {
   const snapshot = await db.doc(paths.weeklyPlan(householdId, weekId)).get();
   if (!snapshot.exists) throw new PlanNotFoundError(weekId);
 
   const parsed = WeeklyPlanSchema.safeParse({ id: snapshot.id, ...snapshot.data() });
   if (!parsed.success) throw new PlanNotFoundError(weekId);
-  const current = parsed.data;
-
-  const existing = await readExistingRecipes(householdId, [...current.recipeIds, recipe.slug]);
-  const nextRecipe = toRecipe(recipe, existing.get(recipe.slug), current.weekStart);
-
-  const nextMeal: Meal = {
-    recipeId: nextRecipe.id,
-    kind: 'cooked',
-    withStarter: false,
-    withDessert: false,
-  };
-  const nextPlan = replaceMealInPlan(current, date, slot, nextMeal);
-
-  // Les recettes déjà en base servent au calcul des courses mais ne sont pas
-  // réécrites : elles n'ont pas changé, et leur `lastUsedAt` non plus.
-  const allRecipes = [nextRecipe, ...[...existing.values()].filter((r) => r.id !== nextRecipe.id)];
-
-  const { itemCount } = await commitPlan({
-    householdId,
-    plan: nextPlan,
-    recipesToWrite: [nextRecipe],
-    allRecipes,
-  });
-
-  return { weekId, recipeId: nextRecipe.id, recipeName: nextRecipe.name, itemCount };
+  return parsed.data;
 }
+
+/**
+ * Recettes nécessaires au recalcul des courses.
+ *
+ * Les plats du batch y figurent systématiquement, même si plus aucun repas ne
+ * les sert : ils sont cuisinés le dimanche, donc achetés, et les oublier ferait
+ * disparaître leurs ingrédients de la liste.
+ */
+async function readPlanRecipes(
+  householdId: string,
+  plan: WeeklyPlan,
+  extraIds: string[] = [],
+): Promise<Map<string, Recipe>> {
+  return readExistingRecipes(householdId, [
+    ...plan.recipeIds,
+    ...plan.batchRecipeIds,
+    ...extraIds,
+  ]);
+}
+
+export { readPlanRecipes };
 
 interface CommitPlanParams {
   householdId: string;
