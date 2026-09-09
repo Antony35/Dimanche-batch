@@ -1,4 +1,4 @@
-import { Text as RNText, type TextProps as RNTextProps, type TextStyle } from 'react-native';
+import { Text as RNText, type TextProps as RNTextProps } from 'react-native';
 import { useTheme, type TypographyVariant } from '@/theme';
 
 type Tone = 'default' | 'soft' | 'faint' | 'accent' | 'danger';
@@ -25,7 +25,7 @@ export function Text({ variant = 'body', tone = 'default', style, ...props }: Te
 
   return (
     <RNText
-      style={[theme.typography[variant] as TextStyle, { color: toneColor[tone] }, style]}
+      style={[theme.typography[variant], { color: toneColor[tone] }, style]}
       {...props}
     />
   );

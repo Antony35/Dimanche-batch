@@ -9,7 +9,7 @@ rules_version = '2';
  * gestes d'usage : cocher un article, mettre une recette en favori.
  *
  * Toute modification ici doit s'accompagner d'un test dans
- * `packages/shared/src/__tests__/rules.test.ts`.
+ * `packages/rules-tests/src/firestore-rules.test.ts` (`npm run test:rules`).
  */
 service cloud.firestore {
   match /databases/{database}/documents {

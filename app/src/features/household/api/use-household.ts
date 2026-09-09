@@ -8,7 +8,6 @@ import {
   type Household,
 } from '@dimanche-batch/shared';
 import { db } from '@/lib/firebase';
-import { writeActiveHouseholdId } from '@/lib/storage';
 import { useAuth } from '@/features/auth/auth-provider';
 
 export interface HouseholdState {
@@ -53,7 +52,6 @@ export function useHousehold(): HouseholdState {
       (snapshot) => {
         const first = snapshot.docs[0];
         if (!first) {
-          void writeActiveHouseholdId(null);
           setSnapshotState({ uid: user.uid, household: null, isLoading: false, error: null });
           return;
         }
@@ -69,7 +67,6 @@ export function useHousehold(): HouseholdState {
           return;
         }
 
-        void writeActiveHouseholdId(parsed.data.id);
         setSnapshotState({
           uid: user.uid,
           household: parsed.data,

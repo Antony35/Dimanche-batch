@@ -14,7 +14,7 @@ import { connectFunctionsEmulator, getFunctions, type Functions } from 'firebase
 import { EMULATOR_HOST, env } from './env';
 
 /** Doit rester identique à `REGION` dans functions/src/config.ts. */
-export const FUNCTIONS_REGION = 'europe-west1';
+const FUNCTIONS_REGION = 'europe-west1';
 
 function createApp(): FirebaseApp {
   if (getApps().length > 0) return getApp();
@@ -28,7 +28,7 @@ function createApp(): FirebaseApp {
   });
 }
 
-export const firebaseApp = createApp();
+const firebaseApp = createApp();
 
 /**
  * `initializeAuth` avec la persistance AsyncStorage, et non `getAuth` : sans ça
