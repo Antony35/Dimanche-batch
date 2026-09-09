@@ -1,14 +1,21 @@
 # Dimanche Batch
 
-Application mobile de batch cooking pour un foyer de deux personnes. Chaque dimanche,
-un plan de repas de 7 jours (midi + soir) est généré par l'API Gemini, puis converti en
-liste de courses groupée par rayon, partageable vers Listonic. Les deux téléphones
+Application mobile de batch cooking pour un foyer de deux personnes. **On cuisine
+le dimanche, on ne cuisine pas de la semaine.** Un plan de 7 jours est généré par
+l'API Gemini : trois à six plats préparés le dimanche nourrissent les dix repas
+du lundi au vendredi, le samedi et le dimanche se cuisinent le jour même. Le plan
+devient une liste de courses groupée par rayon, partageable. Les deux téléphones
 partagent le même foyer et voient les mêmes données en temps réel.
 
-**Statut : v1 en cours — J1 à J6 livrés.** Le monorepo, le domaine partagé, les
+**La semaine va du samedi au vendredi**, et c'est structurant : les courses se
+font le samedi matin, le batch le dimanche, et tout ce qui se cuisine frais l'est
+juste après les courses. Avec une semaine lundi→dimanche, un plat cuisiné le
+dernier jour aurait attendu huit jours au frigo.
+
+**Statut : v1 en cours — J1 à J6 livrés, modèle du batch refondu.** Le monorepo, le domaine partagé, les
 Security Rules, l'authentification, le foyer partagé, la génération Gemini, le
 planning des 7 jours, la régénération d'un repas isolé, la liste de courses, la
-fiche recette, l'historique et le fonctionnement hors ligne ; 184 tests couvrent
+fiche recette, l'historique et le fonctionnement hors ligne ; 239 tests couvrent
 le domaine, les schémas, les callables et les règles. Reste le build (J7). Ce
 document fait autorité sur l'architecture ; il est mis à jour en même temps que
 le code, jamais après.
@@ -166,9 +173,12 @@ households/{householdId}
   inviteCode: string           # court, régénérable, à usage unique
   createdAt: Timestamp
 
-households/{hid}/weeklyPlans/{weekId}      # weekId = date ISO du lundi, ex. 2026-09-14
+households/{hid}/weeklyPlans/{weekId}      # weekId = date ISO du SAMEDI, ex. 2026-09-12
   weekStart: string
-  days: DayPlan[7]             # { date, lunch: RecipeRef, dinner: RecipeRef, starter: bool }
+  days: DayPlan[7]             # 0 = samedi … 6 = vendredi
+  recipeIds: string[]          # toutes les recettes citées, batch compris
+  batchRecipeIds: string[]     # plats préparés le dimanche, dans l'ordre de cuisson
+  promptVersion: number
   generatedAt: Timestamp
   generatedBy: string          # uid
 
@@ -222,6 +232,7 @@ Une responsabilité par function, nommage `verbeNom`.
 | Function | Rôle |
 |---|---|
 | `generateWeeklyPlan` | Génère le plan de la semaine. Vérifie l'appartenance au foyer et le rate limit, construit le prompt avec l'historique des 3 dernières semaines, appelle Gemini, valide via Zod, écrit `weeklyPlans` + `recipes` + `groceryLists` dans un batch, incrémente `usage`. |
+| `setMeal` | Pose un repas choisi par l'utilisateur : une portion d'un plat du batch, ou un repas à l'extérieur. **Aucun appel Gemini, donc aucun quota décompté** — mais le verrou de semaine est pris, car la liste de courses est intégralement recalculée. |
 | `regenerateMeal` | Remplace un seul repas d'un plan existant. Même chemin de validation, mais des contraintes **locales au jour visé** — voir §9. Passe par le même écrivain que la génération complète : la liste de courses est intégralement recalculée, jamais rapiécée. |
 | `joinHousehold` | Consomme un code d'invitation et ajoute l'uid aux `members`. Côté serveur pour que le code reste à usage unique. |
 
@@ -260,6 +271,19 @@ Contraintes métier que le prompt doit garantir (voir la semaine type) : au moin
 3 recettes distinctes, one-pot et healthy en semaine, weekend sans contrainte one-pot,
 au moins 2 recettes qui se congèlent bien, portions pour 2, ingrédients quantifiés avec
 un rayon de supermarché.
+
+**Le batch, et ce qu'il implique pour les courses.** `batchRecipeIds` liste les
+plats cuisinés le dimanche. `buildGroceryList` les compte **une fois chacun**,
+aux portions déclarées, puis ajoute les repas cuisinés le jour même — samedi et
+dimanche. Compter chaque repas qui sert un plat du batch achèterait la semaine
+dix fois. Un repas `cooked` citant un plat du batch est ignoré : la contrainte
+de génération l'interdit, mais un plan édité repas par repas peut produire ce
+cas, et il ne doit pas coûter le double.
+
+Corollaire non évident, protégé par un test : **un plat du batch ne quitte
+jamais `recipeIds`**, même si plus aucun repas ne le sert. Il est cuisiné donc
+acheté ; l'en retirer ferait disparaître ses ingrédients de la liste sans le
+moindre message, et le foyer sous-achèterait.
 
 **Une génération à la fois par semaine.** `acquireGenerationLock` est posé
 avant la consommation du quota, à dessein : sans lui, deux téléphones qui
@@ -408,6 +432,8 @@ Ce qui est **délibérément** simple en v1, et où brancher la suite :
 | Pas de saisie manuelle de recette | L'IA couvre le besoin initial | Les `recipes` sont déjà une collection à part entière ; il suffit d'un écran d'édition |
 | Pas de gestion des restes du frigo | Hors périmètre | Nouveau champ d'entrée du prompt, pas de changement de schéma |
 | App Check désactivé | L'auth suffit pour deux utilisateurs | Activer et exiger le token dans les callables |
+| Foyer de deux personnes en dur (`SERVINGS_PER_MEAL`) | La v1 sert un seul foyer connu | Un champ `size` sur `Household`, lu par les contraintes de portions et par le prompt |
+| Étapes du batch affichées à la suite, sans entrelacement | Mélanger les gestes de quatre plats produit une liste qu'on ne rattache plus à un plat quand on s'y perd | Demander au modèle un déroulé unique, dans une callable séparée pour ne pas alourdir le `responseSchema` |
 | `regenerateMeal` ne vérifie que les contraintes du jour visé | Réappliquer les contraintes d'ensemble ferait refuser un remplacement légitime : la recette écartée pouvait être l'une des deux congelables | Recomposer le plan après remplacement et signaler — sans bloquer — les contraintes globales devenues fausses |
 | Android uniquement | Les deux téléphones sont Android | Expo est cross-platform : ne jamais écrire de code Android-spécifique sans garde `Platform` |
 
@@ -435,6 +461,7 @@ Ce qui est **délibérément** simple en v1, et où brancher la suite :
 | J3 | **fait** | Écran planning des 7 jours, `regenerateMeal` : contraintes locales au jour, recalcul complet des courses, `MealCard` partagé entre accueil et planning |
 | J4 | **fait** | Liste de courses : rendu dans l'ordre de parcours du magasin, cases à cocher synchronisées entre les deux téléphones, partage par le share sheet — lisible par un humain comme par l'import de Listonic |
 | J5 | **fait** | Fiche recette, historique des 12 dernières semaines, favoris branchés sur le prompt, réglages sortis des onglets |
+| Batch | **fait** | Semaine du samedi au vendredi, `batchRecipeIds`, contraintes de portions et de congélation, callable `setMeal`, écran de préparation, sélecteurs de semaine, carte d'action sur l'accueil |
 | J6 | **fait** | Cache offline du plan, des recettes et des courses ; indicateur « hors ligne » ; verrou empêchant deux générations simultanées sur une même semaine |
 | J7 | à faire | Build EAS, installation, premier vrai dimanche |
 
