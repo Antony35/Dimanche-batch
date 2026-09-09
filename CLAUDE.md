@@ -8,7 +8,7 @@ partagent le même foyer et voient les mêmes données en temps réel.
 **Statut : v1 en cours — J1 à J4 livrés.** Le monorepo, le domaine partagé, les
 Security Rules, l'authentification, le foyer partagé, la génération Gemini, le
 planning des 7 jours, la régénération d'un repas isolé et la liste de courses ;
-115 tests couvrent le domaine, les callables et les règles. J5 ouvre la fiche
+160 tests couvrent le domaine, les callables et les règles. J5 ouvre la fiche
 recette et l'historique. Ce document fait autorité sur l'architecture ; il est
 mis à jour en même temps que le code, jamais après.
 
@@ -284,7 +284,15 @@ un rayon de supermarché.
 - Pas de `setState` synchrone dans un `useEffect` : dériver l'état au rendu
   (voir `useHousehold`). La règle est appliquée par le lint.
 - Erreurs : jamais de `catch` silencieux. Soit on remonte à l'utilisateur, soit on log
-  avec du contexte.
+  avec du contexte. **Écarter en silence un document qui ne passe pas son schéma
+  est un `catch` silencieux déguisé** : une liste illisible devient alors
+  indiscernable d'une liste vide, et le diagnostic impossible depuis le
+  téléphone. Compter les rejets et le dire.
+- Les documents écrits par les functions sont typés par le schéma qui les
+  décrit (`Omit<WeeklyPlan, 'id'>`). Ajouter un champ au schéma sans l'écrire
+  devient une erreur de compilation, plutôt qu'un document incomplet découvert
+  à la lecture.
+- Aucun `as` sur une donnée externe, et aucun dans le projet aujourd'hui.
 - Commits conventionnels (`feat:`, `fix:`, `chore:`).
 
 ### Où va quel test
@@ -294,9 +302,14 @@ dossier où vit le code.
 
 | Suite | Couvre | Coût |
 |---|---|---|
-| `npm run test` | `packages/shared` : unités, semaine, agrégation des courses, contraintes de plan | aucune dépendance, moins d'une seconde |
-| `npm run test:functions` | `functions/src` : guards, quota, écriture du plan, classification des erreurs Gemini | démarre l'émulateur Firestore |
+| `npm run test` | `packages/shared` : domaine pur, schémas Zod, chemins Firestore | aucune dépendance, moins d'une seconde |
+| `npm run test:functions` | `functions/src` : guards, quota, écriture du plan, politique de reprise, classification des erreurs Gemini | démarre l'émulateur Firestore |
 | `npm run test:rules` | `firestore.rules` face à un client non privilégié | démarre l'émulateur Firestore |
+
+`npm run test:coverage` mesure le domaine partagé. Le seuil implicite est
+simple : **les schémas restent à 100 %**. Ce sont eux qui gardent les
+frontières, et un schéma trop permissif ne se voit nulle part — il laisse
+passer, et la donnée fausse ressort trois écrans plus loin.
 
 Ce qui appartient au domaine pur se teste dans `shared`, jamais à travers une
 function : c'est plus rapide et le diagnostic est direct. Ce qui se teste dans
