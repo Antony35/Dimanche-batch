@@ -1,5 +1,5 @@
 import { View } from 'react-native';
-import { getDayNameForDate, getPlanningWeekId, toIsoDate } from '@dimanche-batch/shared';
+import { getDayNameForDate, getCurrentWeekId, toIsoDate } from '@dimanche-batch/shared';
 import {
   Button,
   Card,
@@ -22,7 +22,7 @@ export default function TodayScreen() {
   const theme = useTheme();
   const { household } = useHousehold();
   const today = toIsoDate(new Date());
-  const weekId = getPlanningWeekId();
+  const weekId = getCurrentWeekId();
 
   const householdId = household?.id ?? null;
   const { plan, isLoading, isStale, error } = useWeeklyPlan(householdId, weekId);

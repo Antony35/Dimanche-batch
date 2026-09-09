@@ -35,7 +35,7 @@ function planWithWeekdayViolation() {
   return plan;
 }
 
-const promptInput = { weekStart: '2026-09-14', recentRecipeNames: [] };
+const promptInput = { weekStart: '2026-09-12', recentRecipeNames: [] };
 
 beforeEach(() => {
   generateJson.mockReset();
@@ -96,7 +96,7 @@ describe('generateWeeklyPlanFromGemini', () => {
 
 describe('generateMealRecipeFromGemini', () => {
   const mealInput = {
-    dayIndex: 1,
+    dayIndex: 3, // mardi : la contrainte de semaine s'y applique
     slot: 'dinner' as const,
     date: '2026-09-15',
     currentRecipeName: 'Soupe de poireaux',
@@ -127,7 +127,8 @@ describe('generateMealRecipeFromGemini', () => {
   it('laisse passer la même recette le week-end', async () => {
     generateJson.mockResolvedValue({ data: { recipe: longue }, model: 'gemini-test' });
 
-    const result = await generateMealRecipeFromGemini({ ...mealInput, dayIndex: 5 });
+    // 0 = samedi : on cuisine le jour même, sans contrainte de rapidité.
+    const result = await generateMealRecipeFromGemini({ ...mealInput, dayIndex: 0 });
     expect(result.attempts).toBe(1);
   });
 });

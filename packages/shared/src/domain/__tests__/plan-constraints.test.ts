@@ -25,7 +25,7 @@ describe('validateGeneratedPlan', () => {
 
   it('tolère une recette longue le week-end mais pas en semaine', () => {
     const plan = makeValidGeneratedPlan();
-    expect(codes(plan)).not.toContain('weekday-too-long'); // le risotto de 60 min est samedi
+    expect(codes(plan)).not.toContain('weekday-too-long'); // le risotto de 60 min est samedi (0)
 
     plan.recipes = plan.recipes.map((recipe) =>
       recipe.slug === 'soupe-poireaux' ? { ...recipe, prepMinutes: 90 } : recipe,
@@ -119,24 +119,27 @@ describe('validateMealReplacement', () => {
   const longue = makeGeneratedRecipe({ slug: 'gratin', tags: ['weekend'], prepMinutes: 90 });
 
   it('accepte une recette one-pot et rapide un soir de semaine', () => {
+    // 2 = lundi, 6 = vendredi : les jours normalement nourris par le batch.
     expect(validateMealReplacement(rapide, 2)).toEqual([]);
+    expect(validateMealReplacement(rapide, 6)).toEqual([]);
   });
 
   it('refuse un plat long ou non one-pot en semaine', () => {
-    const codes = validateMealReplacement(longue, 2).map((violation) => violation.code);
+    const codes = validateMealReplacement(longue, 3).map((violation) => violation.code);
     expect(codes).toContain('weekday-not-one-pot');
     expect(codes).toContain('weekday-too-long');
   });
 
   it('laisse passer le même plat le week-end', () => {
-    expect(validateMealReplacement(longue, 5)).toEqual([]);
-    expect(validateMealReplacement(longue, 6)).toEqual([]);
+    // 0 = samedi, 1 = dimanche : on cuisine le jour même, sans contrainte.
+    expect(validateMealReplacement(longue, 0)).toEqual([]);
+    expect(validateMealReplacement(longue, 1)).toEqual([]);
   });
 
   it('ne vérifie pas les contraintes d’ensemble de la semaine', () => {
     // Un remplacement ne connaît pas le reste du plan : exiger ici deux
     // recettes congelables refuserait tout remplacement d’une seule recette.
-    expect(validateMealReplacement(rapide, 0)).toEqual([]);
+    expect(validateMealReplacement(rapide, 4)).toEqual([]);
   });
 
   it('refuse un jour hors de la semaine', () => {

@@ -64,7 +64,12 @@ export function makeGeneratedRecipe(
   };
 }
 
-/** Plan généré conforme à toutes les contraintes — base des tests de violation. */
+/**
+ * Plan généré conforme à toutes les contraintes — base des tests de violation.
+ *
+ * Rappel de l'indexation : 0 = samedi, 1 = dimanche, 2 à 6 = lundi à vendredi.
+ * Le week-end tolère un plat long et non one-pot ; la semaine non.
+ */
 export function makeValidGeneratedPlan(): GeneratedPlan {
   const recipes: GeneratedRecipe[] = [
     makeGeneratedRecipe({ slug: 'batch-curry', tags: ['one-pot', 'healthy', 'batch'] }),
@@ -72,6 +77,14 @@ export function makeValidGeneratedPlan(): GeneratedPlan {
     makeGeneratedRecipe({ slug: 'chili-sin-carne', tags: ['one-pot', 'congelable'] }),
     makeGeneratedRecipe({ slug: 'risotto-weekend', tags: ['weekend'], prepMinutes: 60 }),
   ];
+
+  /** Le risotto n'est servi que le samedi : ailleurs il violerait la semaine. */
+  const dinnerSlug = (dayIndex: number): string => {
+    if (dayIndex === 0) return 'risotto-weekend';
+    if (dayIndex === 1) return 'batch-curry';
+    if (dayIndex <= 4) return 'chili-sin-carne';
+    return 'soupe-poireaux';
+  };
 
   const days = [0, 1, 2, 3, 4, 5, 6].map((dayIndex) => ({
     dayIndex,
@@ -81,34 +94,12 @@ export function makeValidGeneratedPlan(): GeneratedPlan {
       withStarter: false,
       withDessert: false,
     },
-    dinner:
-      dayIndex <= 1
-        ? {
-            recipeSlug: 'soupe-poireaux',
-            kind: 'cooked' as const,
-            withStarter: false,
-            withDessert: true,
-          }
-        : dayIndex <= 4
-          ? {
-              recipeSlug: 'chili-sin-carne',
-              kind: 'cooked' as const,
-              withStarter: true,
-              withDessert: false,
-            }
-          : dayIndex === 5
-            ? {
-                recipeSlug: 'risotto-weekend',
-                kind: 'cooked' as const,
-                withStarter: false,
-                withDessert: true,
-              }
-            : {
-                recipeSlug: 'batch-curry',
-                kind: 'cooked' as const,
-                withStarter: false,
-                withDessert: false,
-              },
+    dinner: {
+      recipeSlug: dinnerSlug(dayIndex),
+      kind: 'cooked' as const,
+      withStarter: dayIndex >= 2,
+      withDessert: dayIndex <= 1,
+    },
   }));
 
   return { recipes, days };

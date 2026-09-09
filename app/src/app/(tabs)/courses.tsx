@@ -1,7 +1,7 @@
 import { Share, View } from 'react-native';
 import {
   formatGroceryListForSharing,
-  getPlanningWeekId,
+  getUpcomingWeekId,
   type GroceryItem,
 } from '@dimanche-batch/shared';
 import {
@@ -23,7 +23,7 @@ import { useTheme } from '@/theme';
 export default function GroceryScreen() {
   const theme = useTheme();
   const { household } = useHousehold();
-  const weekId = getPlanningWeekId();
+  const weekId = getUpcomingWeekId();
 
   const householdId = household?.id ?? null;
   const { items, groups, checkedCount, isLoading, isStale, error } = useGroceryList(

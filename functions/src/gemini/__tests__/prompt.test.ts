@@ -15,21 +15,22 @@ import {
  */
 
 describe('buildPlanPrompt', () => {
-  it('nomme la semaine visée', () => {
-    const prompt = buildPlanPrompt({ weekStart: '2026-09-14', recentRecipeNames: [] });
-    expect(prompt).toContain('2026-09-14');
-    expect(prompt).toContain('lundi');
+  it('nomme la semaine visée, du samedi au vendredi', () => {
+    const prompt = buildPlanPrompt({ weekStart: '2026-09-12', recentRecipeNames: [] });
+    expect(prompt).toContain('2026-09-12');
+    expect(prompt).toContain('2026-09-18');
+    expect(prompt).toContain('samedi');
   });
 
   it('n’encombre pas le prompt de sections vides', () => {
-    const prompt = buildPlanPrompt({ weekStart: '2026-09-14', recentRecipeNames: [] });
+    const prompt = buildPlanPrompt({ weekStart: '2026-09-12', recentRecipeNames: [] });
     expect(prompt).not.toContain('favori');
     expect(prompt).not.toContain('Contraintes particulières');
   });
 
   it('liste les plats récents comme interdits', () => {
     const prompt = buildPlanPrompt({
-      weekStart: '2026-09-14',
+      weekStart: '2026-09-12',
       recentRecipeNames: ['Curry de lentilles', 'Soupe de poireaux'],
     });
     expect(prompt).toContain('ne les repropose pas');
@@ -39,7 +40,7 @@ describe('buildPlanPrompt', () => {
 
   it('propose les favoris sans les imposer, et un seul au plus', () => {
     const prompt = buildPlanPrompt({
-      weekStart: '2026-09-14',
+      weekStart: '2026-09-12',
       recentRecipeNames: [],
       favoriteRecipeNames: ['Chili sin carne'],
     });
@@ -50,7 +51,7 @@ describe('buildPlanPrompt', () => {
 
   it('reprend les notes de l’utilisateur, débarrassées des espaces', () => {
     const prompt = buildPlanPrompt({
-      weekStart: '2026-09-14',
+      weekStart: '2026-09-12',
       recentRecipeNames: [],
       notes: '  pas de porc  ',
     });
@@ -61,7 +62,7 @@ describe('buildPlanPrompt', () => {
 
   it('ignore des notes vides', () => {
     const prompt = buildPlanPrompt({
-      weekStart: '2026-09-14',
+      weekStart: '2026-09-12',
       recentRecipeNames: [],
       notes: '   ',
     });
@@ -72,7 +73,7 @@ describe('buildPlanPrompt', () => {
 describe('buildMealReplacementPrompt', () => {
   it('situe le repas dans la semaine et nomme le créneau', () => {
     const prompt = buildMealReplacementPrompt({
-      dayIndex: 1,
+      dayIndex: 3,
       slot: 'dinner',
       date: '2026-09-15',
       currentRecipeName: 'Soupe de poireaux',
@@ -81,12 +82,12 @@ describe('buildMealReplacementPrompt', () => {
 
     expect(prompt).toContain('soir');
     expect(prompt).toContain('mardi');
-    expect(prompt).toContain('dayIndex 1');
+    expect(prompt).toContain('dayIndex 3');
   });
 
   it('exclut le plat en place et ceux du reste de la semaine', () => {
     const prompt = buildMealReplacementPrompt({
-      dayIndex: 1,
+      dayIndex: 3,
       slot: 'lunch',
       date: '2026-09-15',
       currentRecipeName: 'Soupe de poireaux',
@@ -101,9 +102,9 @@ describe('buildMealReplacementPrompt', () => {
 
   it('tient sans plat en place, quand le créneau était pris dehors', () => {
     const prompt = buildMealReplacementPrompt({
-      dayIndex: 5,
+      dayIndex: 0,
       slot: 'dinner',
-      date: '2026-09-19',
+      date: '2026-09-12',
       currentRecipeName: null,
       otherRecipeNames: [],
     });

@@ -23,7 +23,7 @@ import {
   GeneratedMealReplacementSchema,
   GeneratedPlanSchema,
   addDays,
-  getPlanningWeekId,
+  getUpcomingWeekId,
   validateGeneratedPlan,
   validateMealReplacement,
 } from '@dimanche-batch/shared';
@@ -42,7 +42,7 @@ import {
 const args = process.argv.slice(2);
 const targets = args.filter((arg) => arg === 'plan' || arg === 'meal');
 const model = args.find((arg) => arg !== 'plan' && arg !== 'meal') ?? GEMINI_MODEL;
-const weekStart = getPlanningWeekId();
+const weekStart = getUpcomingWeekId();
 
 // Affiché avant le contrôle de la clé : si un argument n'est pas passé comme
 // prévu, ça se voit tout de suite plutôt qu'après un appel API inutile.

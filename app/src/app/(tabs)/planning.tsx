@@ -1,7 +1,7 @@
 import { Alert, View } from 'react-native';
 import {
   getDayNameForDate,
-  getPlanningWeekId,
+  getCurrentWeekId,
   toIsoDate,
   type DayPlan,
   type MealSlot,
@@ -27,7 +27,7 @@ export default function PlanningScreen() {
   const theme = useTheme();
   const { household } = useHousehold();
   const today = toIsoDate(new Date());
-  const weekId = getPlanningWeekId();
+  const weekId = getCurrentWeekId();
 
   const householdId = household?.id ?? null;
   const { plan, isLoading, isStale, error } = useWeeklyPlan(householdId, weekId);

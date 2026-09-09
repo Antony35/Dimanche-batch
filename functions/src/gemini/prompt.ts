@@ -1,5 +1,6 @@
 import {
   MAX_WEEKDAY_PREP_MINUTES,
+  addDays,
   MIN_DISTINCT_RECIPES,
   MIN_FREEZABLE_RECIPES,
   getDayName,
@@ -89,7 +90,7 @@ export interface PlanPromptInput {
 
 export function buildPlanPrompt(input: PlanPromptInput): string {
   const parts: string[] = [
-    `Établis le plan de la semaine du ${input.weekStart} (le jour 0 est le ${getDayName(0)} ${input.weekStart}).`,
+    `Établis le plan de la semaine du ${input.weekStart} au ${addDays(input.weekStart, 6)} (le jour 0 est le ${getDayName(0)} ${input.weekStart}).`,
   ];
 
   if (input.recentRecipeNames.length > 0) {

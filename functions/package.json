@@ -13,7 +13,7 @@
     "serve": "npm run build && firebase emulators:start --only functions",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.scripts.json",
     "watch": "tsc --watch"
   },
   "dependencies": {
