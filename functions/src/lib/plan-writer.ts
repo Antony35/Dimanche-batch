@@ -10,11 +10,14 @@ import {
   type GeneratedMeal,
   type GeneratedPlan,
   type GeneratedRecipe,
+  type GenerateWeeklyPlanResult,
   type GroceryItem,
   type GroceryList,
   type Meal,
   type MealSlot,
   type Recipe,
+  type RegenerateMealResult,
+  type SetMealResult,
   type WeeklyPlan,
 } from '@dimanche-batch/shared';
 import { PROMPT_VERSION } from '../gemini/prompt';
@@ -28,11 +31,8 @@ export interface WritePlanParams {
   model: string;
 }
 
-export interface WritePlanResult {
-  weekId: string;
-  recipeCount: number;
-  itemCount: number;
-}
+/** Ce que rend l'écriture d'un plan complet. Contrat de la callable. */
+export type WritePlanResult = GenerateWeeklyPlanResult;
 
 export interface ReplaceMealParams {
   householdId: string;
@@ -43,20 +43,10 @@ export interface ReplaceMealParams {
 }
 
 /** Une régénération produit toujours une recette : les champs sont fermes. */
-export interface ReplaceMealResult {
-  weekId: string;
-  recipeId: string;
-  recipeName: string;
-  itemCount: number;
-}
+export type ReplaceMealResult = RegenerateMealResult;
 
 /** Un repas posé peut n'en désigner aucune — le repas pris à l'extérieur. */
-export interface SetMealOutcome {
-  weekId: string;
-  recipeId: string | null;
-  recipeName: string | null;
-  itemCount: number;
-}
+export type SetMealOutcome = SetMealResult;
 
 export class PlanNotFoundError extends Error {
   constructor(weekId: string) {

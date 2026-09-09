@@ -5,6 +5,7 @@ import {
   addDays,
   paths,
   type GenerateWeeklyPlanInput,
+  type GenerateWeeklyPlanResult,
 } from '@dimanche-batch/shared';
 import {
   DEFAULT_MEMORY,
@@ -30,12 +31,6 @@ import { PlanGenerationError, generateWeeklyPlanFromGemini } from '../gemini/gen
 
 /** Nombre de semaines passées consultées pour éviter les répétitions. */
 const HISTORY_WEEKS = 3;
-
-export interface GenerateWeeklyPlanResult {
-  weekId: string;
-  recipeCount: number;
-  itemCount: number;
-}
 
 /**
  * Génère le plan de la semaine.
