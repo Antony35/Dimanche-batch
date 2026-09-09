@@ -98,8 +98,16 @@ async function callGemini(body: unknown): Promise<unknown> {
 async function probePlan(): Promise<void> {
   console.log('\n── generateWeeklyPlan ──');
 
+  // La sonde exerce les deux listes de la mémoire du foyer : sans elles, la
+  // section des favoris ne serait jamais envoyée au modèle avant la production.
+  const prompt = buildPlanPrompt({
+    weekStart,
+    recentRecipeNames: ['Gratin de courgettes', 'Blanquette de veau'],
+    favoriteRecipeNames: ['Chili sin carne'],
+  });
+
   const data = await callGemini({
-    contents: [{ parts: [{ text: buildPlanPrompt({ weekStart, recentRecipeNames: [] }) }] }],
+    contents: [{ parts: [{ text: prompt }] }],
     systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION }] },
     generationConfig: {
       responseMimeType: 'application/json',
