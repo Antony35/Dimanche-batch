@@ -11,9 +11,13 @@
  * invalid argument » qui ne nomme pas le champ fautif, et publie des modèles
  * fermés aux comptes récents : dans les deux cas, seul un appel réel tranche.
  *
- *   GEMINI_API_KEY=… npm run gemini:probe                     # les deux chaînes
- *   GEMINI_API_KEY=… npm run gemini:probe -- meal             # une seule
- *   GEMINI_API_KEY=… npm run gemini:probe -- plan gemini-3.8-flash
+ * La clé n'est jamais lue depuis un fichier du dépôt : elle est passée par
+ * l'environnement, et la substitution de commande évite de l'afficher.
+ *
+ *   set -x K (npx firebase functions:secrets:access GEMINI_API_KEY)  # fish
+ *   GEMINI_API_KEY=$K npm run gemini:probe          # les deux chaînes
+ *   GEMINI_API_KEY=$K npm run gemini:probe -- meal  # une seule
+ *   GEMINI_API_KEY=$K npm run gemini:probe -- plan gemini-3.8-flash
  */
 import {
   GeneratedMealReplacementSchema,
@@ -35,20 +39,25 @@ import {
   WEEKLY_PLAN_RESPONSE_SCHEMA,
 } from '../src/gemini/response-schema';
 
-const apiKey = process.env.GEMINI_API_KEY;
-if (!apiKey) {
-  console.error('GEMINI_API_KEY manquante. Elle n’est jamais lue depuis un fichier du dépôt :');
-  console.error('  GEMINI_API_KEY=… npm run gemini:probe');
-  process.exit(1);
-}
-
 const args = process.argv.slice(2);
 const targets = args.filter((arg) => arg === 'plan' || arg === 'meal');
 const model = args.find((arg) => arg !== 'plan' && arg !== 'meal') ?? GEMINI_MODEL;
 const weekStart = getPlanningWeekId();
 
+// Affiché avant le contrôle de la clé : si un argument n'est pas passé comme
+// prévu, ça se voit tout de suite plutôt qu'après un appel API inutile.
+console.log(`cibles   : ${targets.length > 0 ? targets.join(' + ') : 'plan + meal'}`);
 console.log(`modèle   : ${model}`);
 console.log(`semaine  : ${weekStart}`);
+
+const apiKey = process.env.GEMINI_API_KEY;
+if (!apiKey) {
+  console.error('\nGEMINI_API_KEY manquante. Elle n’est jamais lue depuis un fichier du dépôt :');
+  console.error(
+    '  GEMINI_API_KEY=(npx firebase functions:secrets:access GEMINI_API_KEY) npm run gemini:probe',
+  );
+  process.exit(1);
+}
 
 interface GeminiPayload {
   error?: { message?: string };
