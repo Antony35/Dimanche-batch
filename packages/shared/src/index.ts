@@ -12,6 +12,7 @@ export * from './schemas/recipe';
 export * from './schemas/weekly-plan';
 export * from './schemas/grocery-list';
 export * from './schemas/gemini';
+export * from './schemas/generation';
 
 export * from './domain/units';
 export * from './domain/week';

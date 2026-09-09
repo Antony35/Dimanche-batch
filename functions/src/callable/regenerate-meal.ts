@@ -23,6 +23,7 @@ import {
   consumeGenerationQuota,
   refundGenerationQuota,
   releaseGenerationLock,
+  reportGenerationStep,
   requireAuth,
   requireHouseholdMember,
 } from '../lib/guards';
@@ -88,16 +89,27 @@ async function replaceOneMeal(
 
   let generated;
   try {
-    generated = await generateMealRecipeFromGemini({
-      dayIndex,
-      slot: input.slot,
-      date: input.date,
-      currentRecipeName: current?.recipeId ? (names.get(current.recipeId) ?? null) : null,
-      otherRecipeNames: [...names.entries()]
-        .filter(([id]) => id !== current?.recipeId)
-        .map(([, name]) => name),
-      notes: input.notes,
-    });
+    generated = await generateMealRecipeFromGemini(
+      {
+        dayIndex,
+        slot: input.slot,
+        style: input.style,
+        date: input.date,
+        currentRecipeName: current?.recipeId ? (names.get(current.recipeId) ?? null) : null,
+        otherRecipeNames: [...names.entries()]
+          .filter(([id]) => id !== current?.recipeId)
+          .map(([, name]) => name),
+        notes: input.notes,
+      },
+      (attempt) => {
+        void reportGenerationStep(
+          input.householdId,
+          input.weekId,
+          attempt === 1 ? 'generating' : 'retrying',
+          attempt,
+        );
+      },
+    );
   } catch (error) {
     // Aucun appel n'a abouti : la génération décomptée est rendue au foyer.
     if (error instanceof GeminiUnavailableError) {
@@ -125,6 +137,8 @@ async function replaceOneMeal(
       error,
     );
   }
+
+  await reportGenerationStep(input.householdId, input.weekId, 'writing', generated.attempts);
 
   try {
     const result = await replaceMeal({

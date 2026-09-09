@@ -98,7 +98,7 @@ export function MealChoiceSheet({
           <View style={{ gap: theme.spacing.sm }}>
             <Text variant="overline" tone="faint">
               CUISINER CE JOUR-LÀ
-            </Text>
+            </Text>c
             <Button
               label="Un one-pot, rapide"
               variant="ghost"

@@ -20,8 +20,10 @@ import {
 } from '@/components/ui';
 import { useHousehold } from '@/features/household/api/use-household';
 import { BatchCountPicker } from '@/features/meal-plan/components/batch-count-picker';
+import { GenerationProgress } from '@/features/meal-plan/components/generation-progress';
 import { MealCard } from '@/features/meal-plan/components/meal-card';
 import { useGeneratePlan } from '@/features/meal-plan/api/use-generate-plan';
+import { useGenerationProgress } from '@/features/meal-plan/api/use-generation-progress';
 import { useRecipes } from '@/features/meal-plan/api/use-recipes';
 import { useWeeklyPlan } from '@/features/meal-plan/api/use-weekly-plan';
 import { useTheme } from '@/theme';
@@ -107,10 +109,11 @@ function NextStep({
   const generate = useGeneratePlan();
   const [batchRecipeCount, setBatchRecipeCount] = useState(4);
 
-  if (isLoading || !householdId) return null;
-
   const missingWeekId =
     currentPlan === null ? currentWeekId : upcomingPlan === null ? upcomingWeekId : null;
+  const progress = useGenerationProgress(householdId, missingWeekId ?? currentWeekId);
+
+  if (isLoading || !householdId) return null;
 
   if (missingWeekId !== null) {
     const isCatchUp = missingWeekId === currentWeekId;
@@ -132,13 +135,17 @@ function NextStep({
         <BatchCountPicker value={batchRecipeCount} onChange={setBatchRecipeCount} />
 
         {generate.error ? <Text tone="danger">{generate.error.message}</Text> : null}
-        <Button
-          label={generate.isPending ? 'Composition en cours…' : 'Composer la semaine'}
-          loading={generate.isPending}
-          onPress={() => {
-            generate.mutate({ householdId, weekStart: missingWeekId, batchRecipeCount });
-          }}
-        />
+
+        {generate.isPending ? (
+          <GenerationProgress lock={progress} />
+        ) : (
+          <Button
+            label="Composer la semaine"
+            onPress={() => {
+              generate.mutate({ householdId, weekStart: missingWeekId, batchRecipeCount });
+            }}
+          />
+        )}
       </Card>
     );
   }

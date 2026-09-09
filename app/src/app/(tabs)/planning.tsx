@@ -25,8 +25,10 @@ import {
   MealChoiceSheet,
   type MealChoiceTarget,
 } from '@/features/meal-plan/components/meal-choice-sheet';
+import { GenerationProgress } from '@/features/meal-plan/components/generation-progress';
 import { WeekSwitch } from '@/features/meal-plan/components/week-switch';
 import { useRecipes } from '@/features/meal-plan/api/use-recipes';
+import { useGenerationProgress } from '@/features/meal-plan/api/use-generation-progress';
 import { useRegenerateMeal } from '@/features/meal-plan/api/use-regenerate-meal';
 import { useSetMeal } from '@/features/meal-plan/api/use-set-meal';
 import { useWeeklyPlan } from '@/features/meal-plan/api/use-weekly-plan';
@@ -50,6 +52,7 @@ export default function PlanningScreen() {
   const choose = useSetMeal();
 
   const [target, setTarget] = useState<MealChoiceTarget | null>(null);
+  const progress = useGenerationProgress(householdId, weekId);
   const batchRecipes = plan ? getBatchSession(plan, recipesById).recipes : [];
   const dates = getWeekDates(weekId);
 
@@ -72,6 +75,9 @@ export default function PlanningScreen() {
         <WeekSwitch showingCurrent={showingCurrent} onChange={setShowingCurrent} />
       </View>
 
+      {regenerate.isPending ? (
+        <GenerationProgress lock={progress} fallbackLabel="Recherche d’une recette" />
+      ) : null}
       {isStale && plan !== null ? <StaleNotice /> : null}
       {error ? <ErrorState message={error.message} /> : null}
       {regenerate.error ? <ErrorState message={regenerate.error.message} /> : null}

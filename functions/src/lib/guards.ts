@@ -3,6 +3,8 @@ import {
   GENERATION_LOCK_TTL_MS,
   paths,
   toIsoDate,
+  type GenerationLock,
+  type GenerationStep,
 } from '@dimanche-batch/shared';
 import { FieldValue } from 'firebase-admin/firestore';
 import { logger } from 'firebase-functions';
@@ -159,7 +161,13 @@ export async function acquireGenerationLock(
         );
       }
 
-      transaction.set(lockRef, { startedAt: Date.now(), by: uid });
+      const lock: GenerationLock = {
+        startedAt: Date.now(),
+        by: uid,
+        step: 'preparing',
+        attempt: 1,
+      };
+      transaction.set(lockRef, lock);
     });
   } catch (error) {
     if (error instanceof Error && 'code' in error) throw error;
@@ -178,6 +186,35 @@ export async function releaseGenerationLock(householdId: string, weekId: string)
     logger.error('verrou non libéré', {
       householdId,
       weekId,
+      erreur: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+/**
+ * Publie l'étape en cours, que l'app écoute pour dire où en est la génération.
+ *
+ * **Un code d'étape et rien d'autre.** Ce document est lisible par les membres
+ * du foyer ; y déposer un message d'erreur ou un extrait de réponse du modèle
+ * ferait fuir de l'information technique par un canal qui n'est pas fait pour
+ * ça. Le type `GenerationStep` est une énumération fermée, et c'est délibéré.
+ *
+ * L'échec n'est jamais remonté : perdre l'affichage d'une étape ne doit pas
+ * faire échouer la génération qu'elle décrit.
+ */
+export async function reportGenerationStep(
+  householdId: string,
+  weekId: string,
+  step: GenerationStep,
+  attempt = 1,
+): Promise<void> {
+  try {
+    await db.doc(paths.generationLock(householdId, weekId)).update({ step, attempt });
+  } catch (error) {
+    logger.warn('étape non publiée', {
+      householdId,
+      weekId,
+      step,
       erreur: error instanceof Error ? error.message : String(error),
     });
   }

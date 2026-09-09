@@ -36,12 +36,16 @@ export class PlanGenerationError extends Error {
  */
 export async function generateWeeklyPlanFromGemini(
   input: PlanPromptInput,
+  /** Appelé avant chaque tentative, pour que l'app dise où en est la génération. */
+  onAttempt?: (attempt: number) => void,
 ): Promise<GeneratedPlanResult> {
   const basePrompt = buildPlanPrompt(input);
   let prompt = basePrompt;
   let lastViolations: ConstraintViolation[] = [];
 
   for (let attempt = 1; attempt <= 2; attempt += 1) {
+    onAttempt?.(attempt);
+
     const { data, model } = await generateJson({
       systemInstruction: SYSTEM_INSTRUCTION,
       prompt,

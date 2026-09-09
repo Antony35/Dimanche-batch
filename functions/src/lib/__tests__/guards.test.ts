@@ -2,6 +2,7 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   DAILY_GENERATION_LIMIT,
   GENERATION_LOCK_TTL_MS,
+  GenerationLockSchema,
   paths,
   toIsoDate,
 } from '@dimanche-batch/shared';
@@ -14,6 +15,7 @@ import {
   consumeGenerationQuota,
   refundGenerationQuota,
   releaseGenerationLock,
+  reportGenerationStep,
   requireAuth,
   requireHouseholdMember,
 } from '../guards';
@@ -239,5 +241,53 @@ describe('releaseGenerationLock', () => {
 
   it('ne lève jamais, même sans verrou à libérer', async () => {
     await expect(releaseGenerationLock(HOUSEHOLD_ID, WEEK)).resolves.toBeUndefined();
+  });
+});
+
+describe('reportGenerationStep', () => {
+  const WEEK = '2026-09-12';
+
+  it('publie l’étape sur le verrou de la semaine', async () => {
+    await acquireGenerationLock(HOUSEHOLD_ID, WEEK, ALICE);
+
+    await reportGenerationStep(HOUSEHOLD_ID, WEEK, 'generating');
+
+    const lock = await db.doc(paths.generationLock(HOUSEHOLD_ID, WEEK)).get();
+    expect(lock.get('step')).toBe('generating');
+    expect(lock.get('attempt')).toBe(1);
+  });
+
+  it('pose l’étape « preparing » dès la prise du verrou', async () => {
+    await acquireGenerationLock(HOUSEHOLD_ID, WEEK, ALICE);
+
+    const lock = await db.doc(paths.generationLock(HOUSEHOLD_ID, WEEK)).get();
+    expect(lock.get('step')).toBe('preparing');
+  });
+
+  it('distingue la reprise, qui explique une attente double', async () => {
+    await acquireGenerationLock(HOUSEHOLD_ID, WEEK, ALICE);
+    await reportGenerationStep(HOUSEHOLD_ID, WEEK, 'retrying', 2);
+
+    const lock = await db.doc(paths.generationLock(HOUSEHOLD_ID, WEEK)).get();
+    expect(lock.get('step')).toBe('retrying');
+    expect(lock.get('attempt')).toBe(2);
+  });
+
+  it('ne lève jamais si le verrou a disparu', async () => {
+    // Perdre l'affichage d'une étape ne doit pas faire échouer la génération.
+    await expect(
+      reportGenerationStep(HOUSEHOLD_ID, WEEK, 'writing'),
+    ).resolves.toBeUndefined();
+  });
+
+  it('n’écrit que ce que le schéma partagé décrit', async () => {
+    // Le document est lisible par les membres du foyer : y déposer autre chose
+    // qu'un code d'étape ferait fuir de l'information technique.
+    await acquireGenerationLock(HOUSEHOLD_ID, WEEK, ALICE);
+    await reportGenerationStep(HOUSEHOLD_ID, WEEK, 'writing', 2);
+
+    const lock = await db.doc(paths.generationLock(HOUSEHOLD_ID, WEEK)).get();
+    expect(GenerationLockSchema.safeParse(lock.data()).success).toBe(true);
+    expect(Object.keys(lock.data() ?? {}).sort()).toEqual(['attempt', 'by', 'startedAt', 'step']);
   });
 });

@@ -15,7 +15,7 @@ dernier jour aurait attendu huit jours au frigo.
 **Statut : v1 en cours — J1 à J6 livrés, modèle du batch refondu.** Le monorepo, le domaine partagé, les
 Security Rules, l'authentification, le foyer partagé, la génération Gemini, le
 planning des 7 jours, la régénération d'un repas isolé, la liste de courses, la
-fiche recette, l'historique et le fonctionnement hors ligne ; 239 tests couvrent
+fiche recette, l'historique et le fonctionnement hors ligne ; 247 tests couvrent
 le domaine, les schémas, les callables et les règles. Reste le build (J7). Ce
 document fait autorité sur l'architecture ; il est mis à jour en même temps que
 le code, jamais après.
@@ -284,6 +284,19 @@ Corollaire non évident, protégé par un test : **un plat du batch ne quitte
 jamais `recipeIds`**, même si plus aucun repas ne le sert. Il est cuisiné donc
 acheté ; l'en retirer ferait disparaître ses ingrédients de la liste sans le
 moindre message, et le foyer sous-achèterait.
+
+**Progression d'une génération.** Une callable est un aller-retour HTTP : elle
+n'émet rien avant sa réponse, et l'attente dure environ une minute — dont 96 %
+passés à attendre le modèle. La function publie donc son étape dans le document
+de verrou (`locks/{weekId}`), que l'app écoute. Le verrou et la progression sont
+le même document parce qu'ils décrivent le même fait : une génération en cours.
+
+**Ce document ne doit jamais contenir autre chose qu'un code d'étape énuméré.**
+Il est lisible par les membres du foyer ; y déposer un message d'erreur brut ou
+un extrait de la réponse du modèle ferait fuir de l'information technique par un
+canal qui n'est pas fait pour ça. `GenerationStep` est une énumération fermée, et
+les libellés en français vivent dans l'app. Un test vérifie que les seules clés
+écrites sont celles du schéma.
 
 **Une génération à la fois par semaine.** `acquireGenerationLock` est posé
 avant la consommation du quota, à dessein : sans lui, deux téléphones qui
