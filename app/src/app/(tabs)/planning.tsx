@@ -7,7 +7,14 @@ import {
   type MealSlot,
   type Recipe,
 } from '@dimanche-batch/shared';
-import { EmptyState, ErrorState, LoadingState, Screen, Text } from '@/components/ui';
+import {
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  Screen,
+  StaleNotice,
+  Text,
+} from '@/components/ui';
 import { useHousehold } from '@/features/household/api/use-household';
 import { MealCard } from '@/features/meal-plan/components/meal-card';
 import { useRecipes } from '@/features/meal-plan/api/use-recipes';
@@ -23,7 +30,7 @@ export default function PlanningScreen() {
   const weekId = getPlanningWeekId();
 
   const householdId = household?.id ?? null;
-  const { plan, isLoading, error } = useWeeklyPlan(householdId, weekId);
+  const { plan, isLoading, isStale, error } = useWeeklyPlan(householdId, weekId);
   const { recipesById } = useRecipes(householdId);
   const regenerate = useRegenerateMeal();
 
@@ -54,6 +61,7 @@ export default function PlanningScreen() {
         <Text variant="title">Planning</Text>
       </View>
 
+      {isStale && plan !== null ? <StaleNotice /> : null}
       {error ? <ErrorState message={error.message} /> : null}
       {regenerate.error ? <ErrorState message={regenerate.error.message} /> : null}
 

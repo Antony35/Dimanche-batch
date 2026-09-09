@@ -56,3 +56,32 @@ export function EmptyState({
     </View>
   );
 }
+
+/**
+ * Signale que ce qui est affiché n'a pas été confirmé par le serveur.
+ *
+ * Ni une erreur ni un chargement : les données sont là et utilisables — c'est
+ * tout l'intérêt du cache — mais quelqu'un a pu cocher un article à l'autre
+ * bout du magasin sans qu'on le sache encore. Le dire évite de faire douter
+ * l'utilisateur de l'application quand c'est le réseau qui manque.
+ */
+export function StaleNotice({ label = 'Hors ligne — dernière version connue' }: { label?: string }) {
+  const theme = useTheme();
+  return (
+    <View
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: theme.spacing.sm,
+        paddingVertical: theme.spacing.sm,
+        paddingHorizontal: theme.spacing.md,
+        backgroundColor: theme.colors.spiceSoft,
+        borderRadius: theme.radius.md,
+      }}
+    >
+      <Text variant="caption" style={{ color: theme.colors.spiceInk }}>
+        {label}
+      </Text>
+    </View>
+  );
+}

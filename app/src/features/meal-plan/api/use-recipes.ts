@@ -1,7 +1,11 @@
 import { useEffect, useState } from 'react';
 import { collection, onSnapshot } from 'firebase/firestore';
+import { z } from 'zod';
 import { RecipeSchema, paths, type Recipe } from '@dimanche-batch/shared';
 import { db } from '@/lib/firebase';
+import { cacheKeys, readCache, writeCache } from '@/lib/offline-cache';
+
+const CachedRecipesSchema = z.array(RecipeSchema);
 
 /**
  * Toutes les recettes du foyer, indexées par identifiant.
@@ -22,13 +26,27 @@ export function useRecipes(householdId: string | null): {
   useEffect(() => {
     if (!householdId) return;
 
+    const cacheKey = cacheKeys.recipes(householdId);
+    let hasServerData = false;
+
+    // Sans les recettes en cache, le planning hors ligne n'afficherait que des
+    // identifiants : le plan sait quoi servir, pas comment ça s'appelle.
+    void readCache(cacheKey, CachedRecipesSchema).then((cached) => {
+      if (!cached || hasServerData) return;
+      setState({ key: householdId, recipes: new Map(cached.map((r) => [r.id, r])) });
+    });
+
     return onSnapshot(collection(db, paths.recipes(householdId)), (snapshot) => {
+      hasServerData = true;
+
       const recipes = new Map<string, Recipe>();
       for (const document of snapshot.docs) {
         const parsed = RecipeSchema.safeParse({ id: document.id, ...document.data() });
         if (parsed.success) recipes.set(parsed.data.id, parsed.data);
       }
       setState({ key: householdId, recipes });
+
+      if (!snapshot.metadata.fromCache) void writeCache(cacheKey, [...recipes.values()]);
     });
   }, [householdId]);
 

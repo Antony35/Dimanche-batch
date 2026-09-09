@@ -4,4 +4,4 @@ export { Screen } from './screen';
 export { Tag } from './tag';
 export { Text } from './text';
 export { TextField } from './text-field';
-export { EmptyState, ErrorState, LoadingState } from './states';
+export { EmptyState, ErrorState, LoadingState, StaleNotice } from './states';

@@ -1,6 +1,15 @@
 import { View } from 'react-native';
 import { getDayNameForDate, getPlanningWeekId, toIsoDate } from '@dimanche-batch/shared';
-import { Button, Card, EmptyState, ErrorState, LoadingState, Screen, Text } from '@/components/ui';
+import {
+  Button,
+  Card,
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  Screen,
+  StaleNotice,
+  Text,
+} from '@/components/ui';
 import { useHousehold } from '@/features/household/api/use-household';
 import { MealCard } from '@/features/meal-plan/components/meal-card';
 import { useGeneratePlan } from '@/features/meal-plan/api/use-generate-plan';
@@ -16,7 +25,7 @@ export default function TodayScreen() {
   const weekId = getPlanningWeekId();
 
   const householdId = household?.id ?? null;
-  const { plan, isLoading, error } = useWeeklyPlan(householdId, weekId);
+  const { plan, isLoading, isStale, error } = useWeeklyPlan(householdId, weekId);
   const { recipesById } = useRecipes(householdId);
   const generate = useGeneratePlan();
 
@@ -31,6 +40,7 @@ export default function TodayScreen() {
         <Text variant="title">{household?.name ?? 'Foyer'}</Text>
       </View>
 
+      {isStale && plan !== null ? <StaleNotice /> : null}
       {error ? <ErrorState message={error.message} /> : null}
 
       {isLoading ? (

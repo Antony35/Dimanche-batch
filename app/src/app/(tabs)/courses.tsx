@@ -4,7 +4,15 @@ import {
   getPlanningWeekId,
   type GroceryItem,
 } from '@dimanche-batch/shared';
-import { Button, EmptyState, ErrorState, LoadingState, Screen, Text } from '@/components/ui';
+import {
+  Button,
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  Screen,
+  StaleNotice,
+  Text,
+} from '@/components/ui';
 import { AisleSection } from '@/features/grocery-list/components/aisle-section';
 import { useGroceryList } from '@/features/grocery-list/api/use-grocery-list';
 import { useToggleGroceryItem } from '@/features/grocery-list/api/use-toggle-grocery-item';
@@ -18,7 +26,10 @@ export default function GroceryScreen() {
   const weekId = getPlanningWeekId();
 
   const householdId = household?.id ?? null;
-  const { items, groups, checkedCount, isLoading, error } = useGroceryList(householdId, weekId);
+  const { items, groups, checkedCount, isLoading, isStale, error } = useGroceryList(
+    householdId,
+    weekId,
+  );
   const toggle = useToggleGroceryItem();
 
   function handleToggle(item: GroceryItem) {
@@ -56,6 +67,7 @@ export default function GroceryScreen() {
         ) : null}
       </View>
 
+      {isStale && items.length > 0 ? <StaleNotice /> : null}
       {error ? <ErrorState message={error.message} /> : null}
       {toggle.error ? (
         <ErrorState message="La case n’a pas pu être enregistrée. Vérifie ta connexion." />

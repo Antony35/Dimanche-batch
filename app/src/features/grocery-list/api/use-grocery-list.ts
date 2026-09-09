@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { collection, onSnapshot } from 'firebase/firestore';
+import { z } from 'zod';
 import {
   GroceryItemSchema,
   groupByAisle,
@@ -8,6 +9,9 @@ import {
   type GroceryItem,
 } from '@dimanche-batch/shared';
 import { db } from '@/lib/firebase';
+import { cacheKeys, readCache, writeCache } from '@/lib/offline-cache';
+
+const CachedItemsSchema = z.array(GroceryItemSchema);
 
 export interface GroceryListState {
   items: GroceryItem[];
@@ -15,27 +19,32 @@ export interface GroceryListState {
   groups: { aisle: Aisle; items: GroceryItem[] }[];
   checkedCount: number;
   isLoading: boolean;
+  /** Vrai tant que le serveur n'a pas confirmé ce qui est affiché. */
+  isStale: boolean;
   error: Error | null;
 }
 
 interface SnapshotState {
   key: string | null;
   items: GroceryItem[];
+  /** Vient du cache local, pas encore confirmé par le serveur. */
+  isStale: boolean;
   error: Error | null;
 }
 
-const INITIAL: SnapshotState = { key: null, items: [], error: null };
+const INITIAL: SnapshotState = { key: null, items: [], isStale: false, error: null };
 
 /**
- * Liste de courses d'une semaine, en temps réel.
+ * Liste de courses d'une semaine, en temps réel et disponible hors ligne.
  *
  * L'écoute porte sur la sous-collection plutôt que sur un tableau : c'est ce
  * qui permet aux Security Rules de n'autoriser que `checked`, et c'est aussi ce
  * qui laisse deux personnes cocher en même temps dans le magasin sans que l'une
  * écrase l'autre.
  *
- * Le regroupement par rayon est calculé ici et pas dans l'écran : c'est de la
- * logique de domaine, elle est testée dans `shared`.
+ * Le cache AsyncStorage sert le cas qui compte : rouvrir l'app dans un magasin
+ * sans réseau. Il n'est appliqué que si aucun snapshot n'est encore arrivé —
+ * sinon il écraserait des données fraîches par des anciennes.
  */
 export function useGroceryList(householdId: string | null, weekId: string): GroceryListState {
   const [state, setState] = useState<SnapshotState>(INITIAL);
@@ -44,9 +53,23 @@ export function useGroceryList(householdId: string | null, weekId: string): Groc
   useEffect(() => {
     if (!householdId) return;
 
-    return onSnapshot(
+    const stateKey = `${householdId}/${weekId}`;
+    const cacheKey = cacheKeys.groceryItems(householdId, weekId);
+    let hasServerData = false;
+
+    // Hydratation depuis le disque : asynchrone par nature, donc écrite dans
+    // l'état plutôt que dérivée au rendu. La course avec le premier snapshot
+    // est tranchée par `hasServerData`.
+    void readCache(cacheKey, CachedItemsSchema).then((cached) => {
+      if (!cached || hasServerData) return;
+      setState({ key: stateKey, items: cached, isStale: true, error: null });
+    });
+
+    const unsubscribe = onSnapshot(
       collection(db, paths.groceryItems(householdId, weekId)),
       (snapshot) => {
+        hasServerData = true;
+
         const items: GroceryItem[] = [];
         let unreadable = 0;
 
@@ -63,8 +86,9 @@ export function useGroceryList(householdId: string | null, weekId: string): Groc
         }
 
         setState({
-          key: `${householdId}/${weekId}`,
+          key: stateKey,
           items,
+          isStale: snapshot.metadata.fromCache,
           error:
             unreadable > 0
               ? new Error(
@@ -73,16 +97,22 @@ export function useGroceryList(householdId: string | null, weekId: string): Groc
                 )
               : null,
         });
+
+        // Ne persister que ce que le serveur a confirmé : un snapshot local
+        // reflète nos propres écritures en attente, pas l'état du foyer.
+        if (!snapshot.metadata.fromCache) void writeCache(cacheKey, items);
       },
-      (error) => setState({ key: `${householdId}/${weekId}`, items: [], error }),
+      (error) => setState({ key: stateKey, items: [], isStale: false, error }),
     );
+
+    return unsubscribe;
   }, [householdId, weekId]);
 
   if (!householdId) {
-    return { items: [], groups: [], checkedCount: 0, isLoading: false, error: null };
+    return { items: [], groups: [], checkedCount: 0, isLoading: false, isStale: false, error: null };
   }
   if (state.key !== key) {
-    return { items: [], groups: [], checkedCount: 0, isLoading: true, error: null };
+    return { items: [], groups: [], checkedCount: 0, isLoading: true, isStale: false, error: null };
   }
 
   return {
@@ -90,6 +120,7 @@ export function useGroceryList(householdId: string | null, weekId: string): Groc
     groups: groupByAisle(state.items),
     checkedCount: state.items.filter((item) => item.checked).length,
     isLoading: false,
+    isStale: state.isStale,
     error: state.error,
   };
 }
