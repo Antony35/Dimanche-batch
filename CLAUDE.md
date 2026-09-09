@@ -5,10 +5,10 @@ un plan de repas de 7 jours (midi + soir) est généré par l'API Gemini, puis c
 liste de courses groupée par rayon, partageable vers Listonic. Les deux téléphones
 partagent le même foyer et voient les mêmes données en temps réel.
 
-**Statut : v1 en cours — J1 et J2 livrés.** Le monorepo, le domaine partagé, les
-Security Rules, l'authentification, le foyer partagé et la génération Gemini
-tournent en production ; 78 tests couvrent le domaine, les callables et les
-règles. J3 ouvre l'écran de planning et la régénération d'un repas. Ce document
+**Statut : v1 en cours — J1 à J3 livrés.** Le monorepo, le domaine partagé, les
+Security Rules, l'authentification, le foyer partagé, la génération Gemini, le
+planning des 7 jours et la régénération d'un repas isolé ; 101 tests couvrent le
+domaine, les callables et les règles. J4 ouvre la liste de courses. Ce document
 fait autorité sur l'architecture ; il est mis à jour en même temps que le code,
 jamais après.
 
@@ -215,7 +215,7 @@ Une responsabilité par function, nommage `verbeNom`.
 | Function | Rôle |
 |---|---|
 | `generateWeeklyPlan` | Génère le plan de la semaine. Vérifie l'appartenance au foyer et le rate limit, construit le prompt avec l'historique des 3 dernières semaines, appelle Gemini, valide via Zod, écrit `weeklyPlans` + `recipes` + `groceryLists` dans un batch, incrémente `usage`. |
-| `regenerateMeal` | Remplace un seul repas d'un plan existant, même chemin de validation. |
+| `regenerateMeal` | Remplace un seul repas d'un plan existant. Même chemin de validation, mais des contraintes **locales au jour visé** — voir §9. Passe par le même écrivain que la génération complète : la liste de courses est intégralement recalculée, jamais rapiécée. |
 | `joinHousehold` | Consomme un code d'invitation et ajoute l'uid aux `members`. Côté serveur pour que le code reste à usage unique. |
 
 Contrat Gemini :
@@ -303,8 +303,9 @@ npm run deploy:functions
 npm run build:android            # eas build -p android --profile preview (APK)
 ```
 
-`gemini:probe` envoie à Gemini le payload réel de `generateWeeklyPlan`, puis fait
-traverser la réponse les deux mêmes filtres que la function. **À lancer avant tout
+`gemini:probe` envoie à Gemini les payloads réels de `generateWeeklyPlan` et de
+`regenerateMeal`, puis fait traverser chaque réponse les deux mêmes filtres que
+la function correspondante (`-- plan` ou `-- meal` pour n'en tester qu'une). **À lancer avant tout
 changement de modèle ou de `responseSchema`** : l'API refuse certaines
 constructions de schéma avec un `INVALID_ARGUMENT` qui ne nomme aucun champ, et
 publie des modèles fermés aux comptes récents qui répondent 404 alors qu'ils
@@ -332,6 +333,7 @@ Ce qui est **délibérément** simple en v1, et où brancher la suite :
 | Pas de saisie manuelle de recette | L'IA couvre le besoin initial | Les `recipes` sont déjà une collection à part entière ; il suffit d'un écran d'édition |
 | Pas de gestion des restes du frigo | Hors périmètre | Nouveau champ d'entrée du prompt, pas de changement de schéma |
 | App Check désactivé | L'auth suffit pour deux utilisateurs | Activer et exiger le token dans les callables |
+| `regenerateMeal` ne vérifie que les contraintes du jour visé | Réappliquer les contraintes d'ensemble ferait refuser un remplacement légitime : la recette écartée pouvait être l'une des deux congelables | Recomposer le plan après remplacement et signaler — sans bloquer — les contraintes globales devenues fausses |
 | Android uniquement | Les deux téléphones sont Android | Expo est cross-platform : ne jamais écrire de code Android-spécifique sans garde `Platform` |
 
 ---
@@ -355,7 +357,7 @@ Ce qui est **délibérément** simple en v1, et où brancher la suite :
 |---|---|---|
 | J1 | **fait** | Monorepo, domaine partagé (30 tests), Security Rules + leurs tests, `joinHousehold`, auth e-mail, écran de foyer partagé, navigation des 6 écrans, thème clair/sombre |
 | J2 | **fait** | `generateWeeklyPlan` déployée : prompt versionné, `responseSchema`, validation Zod puis contraintes métier, unique retry, écriture Firestore en batch, écran d'accueil avec repas du jour |
-| J3 | à faire | Écran planning des 7 jours, `regenerateMeal` |
+| J3 | **fait** | Écran planning des 7 jours, `regenerateMeal` : contraintes locales au jour, recalcul complet des courses, `MealCard` partagé entre accueil et planning |
 | J4 | à faire | Liste de courses : rendu par rayon, cases à cocher, partage Listonic |
 | J5 | à faire | Fiche recette, historique, favoris, anti-répétition dans le prompt |
 | J6 | à faire | Synchro à deux téléphones, cache offline, cas limites |
