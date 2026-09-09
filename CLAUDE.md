@@ -50,7 +50,7 @@ une semaine, mais jamais au prix d'une dette qui bloquerait la v2.
 | Données | Firebase Firestore | Temps réel entre les deux téléphones |
 | Auth | Firebase Auth — email + mot de passe | Importé depuis `@firebase/auth`, pas `firebase/auth` : voir §7 |
 | Cache offline | AsyncStorage, explicite | Le SDK JS Firestore n'a pas de persistance offline sur React Native |
-| Backend | Cloud Functions for Firebase (Node 24, 2ᵉ gén.), région `europe-west1` | Plan Blaze, plafond de dépense à définir |
+| Backend | Cloud Functions for Firebase (Node 24, 2ᵉ gén., `firebase-functions` 7), région `europe-west1` | Plan Blaze, plafond de dépense à définir |
 | IA | Gemini API, appelée **uniquement** depuis les Cloud Functions | |
 | Validation | Zod, partagé client/serveur | |
 | Tests | Vitest : domaine pur, callables contre l'émulateur Firestore, Security Rules via `@firebase/rules-unit-testing` | L'émulateur exige un JRE installé — voir §7 |
