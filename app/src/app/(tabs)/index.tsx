@@ -1,14 +1,8 @@
-import { useRouter } from 'expo-router';
 import { View } from 'react-native';
-import {
-  getDayNameForDate,
-  getPlanningWeekId,
-  toIsoDate,
-  type Meal,
-  type Recipe,
-} from '@dimanche-batch/shared';
-import { Button, Card, EmptyState, ErrorState, LoadingState, Screen, Tag, Text } from '@/components/ui';
+import { getDayNameForDate, getPlanningWeekId, toIsoDate } from '@dimanche-batch/shared';
+import { Button, Card, EmptyState, ErrorState, LoadingState, Screen, Text } from '@/components/ui';
 import { useHousehold } from '@/features/household/api/use-household';
+import { MealCard } from '@/features/meal-plan/components/meal-card';
 import { useGeneratePlan } from '@/features/meal-plan/api/use-generate-plan';
 import { useRecipes } from '@/features/meal-plan/api/use-recipes';
 import { useWeeklyPlan } from '@/features/meal-plan/api/use-weekly-plan';
@@ -94,63 +88,6 @@ function NoPlanYet({
         onPress={onGenerate}
         loading={isGenerating}
       />
-    </Card>
-  );
-}
-
-const KIND_LABELS: Record<Meal['kind'], string | null> = {
-  cooked: null,
-  'batch-leftover': 'Reste du batch',
-  'freezer-backup': 'Sorti du congélateur',
-  'eat-out': 'Repas à l’extérieur',
-};
-
-function MealCard({
-  label,
-  meal,
-  recipesById,
-}: {
-  label: string;
-  meal: Meal;
-  recipesById: Map<string, Recipe>;
-}) {
-  const theme = useTheme();
-  const router = useRouter();
-  const recipe = meal.recipeId ? recipesById.get(meal.recipeId) : undefined;
-  const kindLabel = KIND_LABELS[meal.kind];
-
-  return (
-    <Card onPress={recipe ? () => router.push(`/recette/${recipe.id}`) : undefined}>
-      <Text variant="overline" tone="faint">
-        {label.toUpperCase()}
-      </Text>
-      <Text variant="heading">{recipe?.name ?? KIND_LABELS['eat-out']}</Text>
-
-      {kindLabel ? (
-        <Text variant="caption" tone="soft">
-          {kindLabel}
-        </Text>
-      ) : recipe ? (
-        <Text variant="caption" tone="soft">
-          {recipe.prepMinutes} min · {recipe.servings} portions
-        </Text>
-      ) : null}
-
-      {meal.withStarter || meal.withDessert ? (
-        <Text variant="caption" tone="faint">
-          {[meal.withStarter ? 'avec entrée' : null, meal.withDessert ? 'avec dessert' : null]
-            .filter(Boolean)
-            .join(' · ')}
-        </Text>
-      ) : null}
-
-      {recipe && recipe.tags.length > 0 ? (
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.xs }}>
-          {recipe.tags.map((tag) => (
-            <Tag key={tag} tag={tag} />
-          ))}
-        </View>
-      ) : null}
     </Card>
   );
 }

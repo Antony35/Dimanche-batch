@@ -3,10 +3,13 @@ import { FirebaseError } from 'firebase/app';
 import {
   GenerateWeeklyPlanResultSchema,
   JoinHouseholdResultSchema,
+  RegenerateMealResultSchema,
   type GenerateWeeklyPlanInput,
   type GenerateWeeklyPlanResult,
   type JoinHouseholdInput,
   type JoinHouseholdResult,
+  type RegenerateMealInput,
+  type RegenerateMealResult,
 } from '@dimanche-batch/shared';
 import type { z } from 'zod';
 import { functions } from './firebase';
@@ -54,4 +57,8 @@ export function generateWeeklyPlan(
   input: GenerateWeeklyPlanInput,
 ): Promise<GenerateWeeklyPlanResult> {
   return call('generateWeeklyPlan', GenerateWeeklyPlanResultSchema, input);
+}
+
+export function regenerateMeal(input: RegenerateMealInput): Promise<RegenerateMealResult> {
+  return call('regenerateMeal', RegenerateMealResultSchema, input);
 }
