@@ -5,12 +5,12 @@ un plan de repas de 7 jours (midi + soir) est généré par l'API Gemini, puis c
 liste de courses groupée par rayon, partageable vers Listonic. Les deux téléphones
 partagent le même foyer et voient les mêmes données en temps réel.
 
-**Statut : v1 en cours — J1 à J3 livrés.** Le monorepo, le domaine partagé, les
+**Statut : v1 en cours — J1 à J4 livrés.** Le monorepo, le domaine partagé, les
 Security Rules, l'authentification, le foyer partagé, la génération Gemini, le
-planning des 7 jours et la régénération d'un repas isolé ; 112 tests couvrent le
-domaine, les callables et les règles. J4 ouvre la liste de courses. Ce document
-fait autorité sur l'architecture ; il est mis à jour en même temps que le code,
-jamais après.
+planning des 7 jours, la régénération d'un repas isolé et la liste de courses ;
+115 tests couvrent le domaine, les callables et les règles. J5 ouvre la fiche
+recette et l'historique. Ce document fait autorité sur l'architecture ; il est
+mis à jour en même temps que le code, jamais après.
 
 ---
 
@@ -264,6 +264,14 @@ un rayon de supermarché.
 - Composants fonctionnels, un composant par fichier, nommage `PascalCase.tsx`.
 - Les hooks de données vivent dans `features/<x>/api/`, préfixés `use` — un composant
   ne consomme jamais le SDK Firestore en direct.
+- **Une seule écriture Firestore part du client : cocher un article**
+  (`useToggleGroceryItem`). C'est une exception assumée, et sûre parce que les
+  Security Rules la bornent à `checked` — passer par une callable n'ajouterait
+  qu'une latence au milieu d'un magasin. Toute autre écriture passe par une
+  Cloud Function. Si tu en ajoutes une ici, c'est une erreur d'architecture.
+- Pas d'état optimiste écrit à la main sur une donnée Firestore : le SDK
+  applique l'écriture localement avant de la confirmer, et le listener la
+  reflète aussitôt. Une case bascule immédiatement, même hors réseau.
 - Pas de valeurs magiques dans le style : tout passe par `theme/`. L'app supporte le
   mode sombre dès la v1 — définir chaque couleur dans les deux thèmes, jamais en dur.
 - Textes d'interface en français, code et identifiants en anglais. Apostrophe
@@ -381,7 +389,7 @@ Ce qui est **délibérément** simple en v1, et où brancher la suite :
 | J1 | **fait** | Monorepo, domaine partagé (30 tests), Security Rules + leurs tests, `joinHousehold`, auth e-mail, écran de foyer partagé, navigation des 6 écrans, thème clair/sombre |
 | J2 | **fait** | `generateWeeklyPlan` déployée : prompt versionné, `responseSchema`, validation Zod puis contraintes métier, unique retry, écriture Firestore en batch, écran d'accueil avec repas du jour |
 | J3 | **fait** | Écran planning des 7 jours, `regenerateMeal` : contraintes locales au jour, recalcul complet des courses, `MealCard` partagé entre accueil et planning |
-| J4 | à faire | Liste de courses : rendu par rayon, cases à cocher, partage Listonic |
+| J4 | **fait** | Liste de courses : rendu dans l'ordre de parcours du magasin, cases à cocher synchronisées entre les deux téléphones, partage par le share sheet |
 | J5 | à faire | Fiche recette, historique, favoris, anti-répétition dans le prompt |
 | J6 | à faire | Synchro à deux téléphones, cache offline, cas limites |
 | J7 | à faire | Build EAS, installation, premier vrai dimanche |

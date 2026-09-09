@@ -176,3 +176,45 @@ describe('groupByAisle', () => {
     ]);
   });
 });
+
+describe('formatGroceryListForSharing, cas limites', () => {
+  const item = (name: string, checked: boolean): GroceryItem => ({
+    id: name,
+    name,
+    qty: 2,
+    unit: 'piece',
+    aisle: 'fruits-legumes',
+    checked,
+    fromRecipeIds: ['r1'],
+  });
+
+  it('ne rend que le titre quand tout est coché', () => {
+    // L’écran désactive le partage dans ce cas ; le test fixe malgré tout ce
+    // que le domaine renvoie, pour qu’un appelant futur ne le découvre pas.
+    expect(formatGroceryListForSharing([item('tomate', true)], { title: 'Courses' })).toBe(
+      'Courses',
+    );
+  });
+
+  it('met une majuscule au nom et garde la quantité sur la même ligne', () => {
+    // `piece` n’a volontairement pas de libellé : on écrit « Tomate 2 », pas
+    // « Tomate 2 pièces ». Une unité nommée, elle, apparaît.
+    expect(
+      formatGroceryListForSharing([item('tomate', false)], { includeAisleHeaders: false }),
+    ).toBe('Tomate 2');
+
+    expect(
+      formatGroceryListForSharing([{ ...item('ail', false), unit: 'gousse' }], {
+        includeAisleHeaders: false,
+      }),
+    ).toBe('Ail 2 gousses');
+  });
+
+  it('peut inclure les articles déjà cochés à la demande', () => {
+    const text = formatGroceryListForSharing([item('tomate', true)], {
+      includeChecked: true,
+      includeAisleHeaders: false,
+    });
+    expect(text).toBe('Tomate 2');
+  });
+});
