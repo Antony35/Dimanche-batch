@@ -1,6 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Pressable } from 'react-native';
-import { formatQuantity, type GroceryItem } from '@dimanche-batch/shared';
+import { capitalize, formatQuantity, type GroceryItem } from '@dimanche-batch/shared';
 import { Text } from '@/components/ui';
 import { useTheme } from '@/theme';
 
@@ -56,6 +56,3 @@ export function GroceryItemRow({ item, onToggle }: GroceryItemRowProps) {
   );
 }
 
-function capitalize(value: string): string {
-  return value.charAt(0).toUpperCase() + value.slice(1);
-}

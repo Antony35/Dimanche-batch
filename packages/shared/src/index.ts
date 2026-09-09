@@ -14,6 +14,7 @@ export * from './schemas/grocery-list';
 export * from './schemas/gemini';
 export * from './schemas/generation';
 
+export * from './domain/text';
 export * from './domain/units';
 export * from './domain/week';
 export * from './domain/grocery';

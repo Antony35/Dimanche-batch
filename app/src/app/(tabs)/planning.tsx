@@ -6,6 +6,7 @@ import {
   getDayNameForDate,
   getUpcomingWeekId,
   getWeekDates,
+  capitalize,
   toIsoDate,
   type DayPlan,
   type GenerationLock,
@@ -209,6 +210,3 @@ function dayOfMonth(iso: string): number {
   return Number(iso.slice(8, 10));
 }
 
-function capitalize(value: string): string {
-  return value.charAt(0).toUpperCase() + value.slice(1);
-}

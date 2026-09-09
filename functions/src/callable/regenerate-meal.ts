@@ -27,7 +27,7 @@ import {
   requireAuth,
   requireHouseholdMember,
 } from '../lib/guards';
-import { PlanNotFoundError, replaceMeal } from '../lib/plan-writer';
+import { PlanNotFoundError, readPlanForEdit, replaceMeal } from '../lib/plan-writer';
 import { GeminiUnavailableError } from '../gemini/client';
 import { MealGenerationError, generateMealRecipeFromGemini } from '../gemini/regenerate-meal';
 
@@ -58,7 +58,7 @@ export const regenerateMeal = onCall(
 
     await requireHouseholdMember(uid, input.householdId);
 
-    const plan = await readPlan(input.householdId, input.weekId);
+    const plan = await readPlanOrFail(input.householdId, input.weekId);
     const dayIndex = plan.days.findIndex((day) => day.date === input.date);
     if (dayIndex === -1) {
       throw invalidArgument('Ce jour ne fait pas partie de la semaine planifiée.');
@@ -173,20 +173,6 @@ async function replaceOneMeal(
   }
 }
 
-async function readPlan(householdId: string, weekId: string): Promise<WeeklyPlan> {
-  const snapshot = await db.doc(paths.weeklyPlan(householdId, weekId)).get();
-  if (!snapshot.exists) {
-    throw notFound(
-      'Aucun plan pour cette semaine. Génère la semaine depuis l’accueil avant de changer un repas.',
-    );
-  }
-
-  const parsed = WeeklyPlanSchema.safeParse({ id: snapshot.id, ...snapshot.data() });
-  if (!parsed.success) {
-    throw internal('Le plan enregistré est illisible.', parsed.error.issues);
-  }
-  return parsed.data;
-}
 
 /** Noms des recettes du plan, pour que le modèle ne repropose pas un doublon. */
 async function readRecipeNames(
@@ -205,4 +191,23 @@ async function readRecipeNames(
     if (typeof name === 'string') names.set(snapshot.id, name);
   }
   return names;
+}
+
+/**
+ * Plan de la semaine, ou une erreur lisible par l'app.
+ *
+ * `readPlanForEdit` lève une erreur technique ; les callables la traduisent,
+ * chacune avec le message qui convient à son geste.
+ */
+async function readPlanOrFail(householdId: string, weekId: string): Promise<WeeklyPlan> {
+  try {
+    return await readPlanForEdit(householdId, weekId);
+  } catch (error) {
+    if (error instanceof PlanNotFoundError) {
+      throw notFound(
+        'Aucun plan pour cette semaine. Compose la semaine depuis l’accueil avant de changer un repas.',
+      );
+    }
+    throw error;
+  }
 }

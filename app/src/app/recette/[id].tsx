@@ -3,6 +3,7 @@ import { useLocalSearchParams } from 'expo-router';
 import { Pressable, View } from 'react-native';
 import {
   AISLE_LABELS,
+  capitalize,
   formatQuantity,
   type Ingredient,
 } from '@dimanche-batch/shared';
@@ -137,6 +138,3 @@ function IngredientLine({ ingredient }: { ingredient: Ingredient }) {
   );
 }
 
-function capitalize(value: string): string {
-  return value.charAt(0).toUpperCase() + value.slice(1);
-}

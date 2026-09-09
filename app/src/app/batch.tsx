@@ -6,6 +6,7 @@ import {
   getBatchSession,
   getDayName,
   getUpcomingWeekId,
+  capitalize,
   type BatchRecipe,
 } from '@dimanche-batch/shared';
 import { Card, EmptyState, ErrorState, LoadingState, Screen, Tag, Text } from '@/components/ui';
@@ -173,6 +174,3 @@ function formatDuration(minutes: number): string {
   return rest === 0 ? `${hours} h` : `${hours} h ${rest}`;
 }
 
-function capitalize(value: string): string {
-  return value.charAt(0).toUpperCase() + value.slice(1);
-}

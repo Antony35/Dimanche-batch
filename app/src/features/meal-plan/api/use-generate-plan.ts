@@ -1,4 +1,4 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
 import type { GenerateWeeklyPlanInput } from '@dimanche-batch/shared';
 import { generateWeeklyPlan } from '@/lib/callables';
 
@@ -13,13 +13,8 @@ import { generateWeeklyPlan } from '@/lib/callables';
  * réinjecter dans le cache après succès.
  */
 export function useGeneratePlan() {
-  const queryClient = useQueryClient();
-
   return useMutation({
     mutationFn: (input: GenerateWeeklyPlanInput) => generateWeeklyPlan(input),
     retry: 0,
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['weekly-plan'] });
-    },
   });
 }

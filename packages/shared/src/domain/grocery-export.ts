@@ -1,6 +1,7 @@
 import { AISLE_LABELS } from '../schemas/common';
 import type { GroceryItem } from '../schemas/grocery-list';
 import { groupByAisle } from './grocery';
+import { capitalize } from './text';
 import { formatQuantity } from './units';
 
 export interface GroceryExportOptions {
@@ -38,8 +39,4 @@ export function formatGroceryListForSharing(
   }
 
   return lines.join('\n').trim();
-}
-
-function capitalize(value: string): string {
-  return value.charAt(0).toUpperCase() + value.slice(1);
 }

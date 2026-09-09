@@ -54,12 +54,15 @@ export const setMeal = onCall(
 
     await requireHouseholdMember(uid, input.householdId);
 
-    const plan = await readPlanForEdit(input.householdId, input.weekId).catch((error: unknown) => {
+    let plan;
+    try {
+      plan = await readPlanForEdit(input.householdId, input.weekId);
+    } catch (error) {
       if (error instanceof PlanNotFoundError) {
         throw notFound('Aucun plan pour cette semaine. Compose-la d’abord depuis l’accueil.');
       }
       throw error;
-    });
+    }
 
     if (!plan.days.some((day) => day.date === input.date)) {
       throw invalidArgument('Ce jour ne fait pas partie de la semaine planifiée.');

@@ -198,7 +198,7 @@ export async function readPlanForEdit(householdId: string, weekId: string): Prom
  * les sert : ils sont cuisinés le dimanche, donc achetés, et les oublier ferait
  * disparaître leurs ingrédients de la liste.
  */
-async function readPlanRecipes(
+export async function readPlanRecipes(
   householdId: string,
   plan: WeeklyPlan,
   extraIds: string[] = [],
@@ -209,8 +209,6 @@ async function readPlanRecipes(
     ...extraIds,
   ]);
 }
-
-export { readPlanRecipes };
 
 interface CommitPlanParams {
   householdId: string;

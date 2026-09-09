@@ -323,13 +323,16 @@ servirait qu'à faire une liste.
 - Composants fonctionnels, un composant par fichier, nommage `PascalCase.tsx`.
 - Les hooks de données vivent dans `features/<x>/api/`, préfixés `use` — un composant
   ne consomme jamais le SDK Firestore en direct.
-- **Deux écritures Firestore partent du client, et deux seulement** : cocher un
-  article (`useToggleGroceryItem`) et mettre une recette en favori
-  (`useToggleFavorite`). Ce sont des exceptions assumées, sûres parce que les
-  Security Rules les bornent à `checked` et `isFavorite` — passer par une
-  callable n'ajouterait qu'une latence à un geste qui doit répondre à l'instant.
-  Toute autre écriture passe par une Cloud Function. En ajouter une troisième
-  demande d'abord d'ajouter sa règle et son test.
+- **Quatre écritures Firestore partent du client, et quatre seulement.** Toute
+  autre passe par une Cloud Function ; en ajouter une cinquième demande d'abord
+  sa règle et son test.
+
+  | Écriture | Pourquoi elle est sûre |
+  |---|---|
+  | `useToggleGroceryItem` → `checked` | La règle borne l'écriture à ce seul champ. Passer par une callable n'ajouterait qu'une latence au milieu d'un magasin |
+  | `useToggleFavorite` → `isFavorite` | Même mécanisme, même raison : le geste doit répondre à l'instant |
+  | `createHousehold` | La règle exige `members == [uid]` et `createdBy == uid` : on ne peut créer qu'un foyer dont on est le seul membre |
+  | `refreshInviteCode` | `onlyChanges(['name', 'inviteCode'])` : `members` reste inaccessible au client |
 - Pas d'état optimiste écrit à la main sur une donnée Firestore : le SDK
   applique l'écriture localement avant de la confirmer, et le listener la
   reflète aussitôt. Une case bascule immédiatement, même hors réseau.
