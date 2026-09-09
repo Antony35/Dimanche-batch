@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { validateGeneratedPlan } from '../plan-constraints';
+import { describeViolations, validateGeneratedPlan } from '../plan-constraints';
 import { makeGeneratedRecipe, makeValidGeneratedPlan } from './fixtures';
 
 function codes(plan: ReturnType<typeof makeValidGeneratedPlan>): string[] {
@@ -72,5 +72,29 @@ describe('validateGeneratedPlan', () => {
     const plan = makeValidGeneratedPlan();
     plan.days[6]!.dayIndex = 5;
     expect(codes(plan)).toContain('day-index');
+  });
+});
+
+describe('describeViolations', () => {
+  it('rend une puce par violation, prête à réinjecter dans le prompt', () => {
+    // Ce texte part tel quel au modèle lors de l’unique retry : s’il perd une
+    // violation en route, la reprise corrige à l’aveugle.
+    const plan = makeValidGeneratedPlan();
+    // `chili-sin-carne` est servi les mardi, mercredi et jeudi soir : deux
+    // heures de préparation y sont hors contrainte.
+    const enSemaine = plan.recipes.find((recipe) => recipe.slug === 'chili-sin-carne');
+    enSemaine!.prepMinutes = 120;
+    const violations = validateGeneratedPlan(plan);
+
+    const text = describeViolations(violations);
+    expect(violations.length).toBeGreaterThan(0);
+    expect(text.split('\n')).toHaveLength(violations.length);
+    for (const violation of violations) {
+      expect(text).toContain(`- ${violation.message}`);
+    }
+  });
+
+  it('rend une chaîne vide pour un plan conforme', () => {
+    expect(describeViolations(validateGeneratedPlan(makeValidGeneratedPlan()))).toBe('');
   });
 });

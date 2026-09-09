@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { addDays, getDayNameForDate, getPlanningWeekId, getWeekDates, getWeekId, isWeekday } from '../week';
+import {
+  addDays,
+  getDayName,
+  getDayNameForDate,
+  getPlanningWeekId,
+  getWeekDates,
+  getWeekId,
+  isWeekday,
+  parseIsoDate,
+  toIsoDate,
+} from '../week';
 
 describe('week', () => {
   it('ramène toute date au lundi de sa semaine', () => {
@@ -38,5 +48,32 @@ describe('week', () => {
     expect(isWeekday(4)).toBe(true);
     expect(isWeekday(5)).toBe(false);
     expect(isWeekday(6)).toBe(false);
+  });
+});
+
+describe('conversion date <-> ISO', () => {
+  it('formate en heure locale, jamais en UTC', () => {
+    // 23 h un 14 septembre reste le 14 : passer par UTC ferait basculer au 15
+    // pour tout fuseau à l’est de Greenwich, et décalerait la semaine entière.
+    expect(toIsoDate(new Date(2026, 8, 14, 23, 30))).toBe('2026-09-14');
+    expect(toIsoDate(new Date(2026, 0, 5, 0, 15))).toBe('2026-01-05');
+  });
+
+  it('complète les mois et les jours à deux chiffres', () => {
+    expect(toIsoDate(new Date(2026, 0, 1))).toBe('2026-01-01');
+  });
+
+  it('fait l’aller-retour sans dérive', () => {
+    for (const iso of getWeekDates('2026-10-26')) {
+      expect(toIsoDate(parseIsoDate(iso))).toBe(iso);
+    }
+  });
+
+  it('nomme les jours à partir de l’index, 0 = lundi', () => {
+    expect(getDayName(0)).toBe('lundi');
+    expect(getDayName(6)).toBe('dimanche');
+    // Un index hors bornes ne doit pas rendre `undefined` à l’écran.
+    expect(getDayName(7)).toBe('');
+    expect(getDayName(-1)).toBe('');
   });
 });

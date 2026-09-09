@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { buildGroceryList, mergePreservingChecked, normalizeIngredientName } from '../grocery';
+import {
+  buildGroceryList,
+  groupByAisle,
+  mergePreservingChecked,
+  normalizeIngredientName,
+} from '../grocery';
 import { formatGroceryListForSharing } from '../grocery-export';
 import { makePlan, makeRecipe } from './fixtures';
+import type { GroceryItem } from '../../schemas/grocery-list';
 
 describe('normalizeIngredientName', () => {
   it('efface la casse, les accents et les espaces superflus', () => {
@@ -123,5 +129,50 @@ describe('formatGroceryListForSharing', () => {
   it('rend une chaîne vide quand tout est coché', () => {
     const allChecked = items.map((item) => ({ ...item, checked: true }));
     expect(formatGroceryListForSharing(allChecked)).toBe('');
+  });
+});
+
+describe('groupByAisle', () => {
+  const item = (id: string, aisle: GroceryItem['aisle'], name = id): GroceryItem => ({
+    id,
+    name,
+    qty: 1,
+    unit: 'piece',
+    aisle,
+    checked: false,
+    fromRecipeIds: ['r1'],
+  });
+
+  it('rend les rayons dans l’ordre de parcours du magasin', () => {
+    const groups = groupByAisle([
+      item('riz', 'epicerie'),
+      item('poireaux', 'fruits-legumes'),
+      item('lait', 'cremerie'),
+    ]);
+
+    // Ni l’ordre d’entrée ni l’ordre alphabétique : celui d’AISLES.
+    expect(groups.map((group) => group.aisle)).toEqual([
+      'fruits-legumes',
+      'cremerie',
+      'epicerie',
+    ]);
+  });
+
+  it('réunit dans un seul groupe les articles d’un même rayon, triés par nom', () => {
+    const groups = groupByAisle([
+      item('tomates', 'fruits-legumes'),
+      item('carottes', 'fruits-legumes'),
+      item('lait', 'cremerie'),
+    ]);
+
+    expect(groups).toHaveLength(2);
+    expect(groups[0]?.items.map((entry) => entry.name)).toEqual(['carottes', 'tomates']);
+  });
+
+  it('n’invente pas de rayon vide', () => {
+    expect(groupByAisle([])).toEqual([]);
+    expect(groupByAisle([item('riz', 'epicerie')]).map((group) => group.aisle)).toEqual([
+      'epicerie',
+    ]);
   });
 });
