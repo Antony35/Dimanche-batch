@@ -223,6 +223,8 @@ Contrat Gemini :
   pas de parsing de markdown.
 - Validation Zod après réception. En cas d'échec : **un seul** retry, puis erreur
   `HttpsError('internal')` avec un message lisible côté app. Jamais de boucle.
+- Le prompt vit dans `functions/src/gemini/prompt.ts`, en une seule constante versionnée,
+  jamais construit par concaténation dispersée dans le code.
 
 **Deux reprises de nature différente, à ne pas confondre :**
 
@@ -246,8 +248,6 @@ eu lieu.
 Les messages d'erreur remontés à l'app disent ce qui s'est passé **et** ce que
 l'utilisateur peut faire. Un message qui dit seulement « erreur interne » oblige
 à ouvrir les logs pour répondre à quelqu'un qui est devant son téléphone.
-- Le prompt vit dans `functions/src/gemini/prompt.ts`, en une seule constante versionnée,
-  jamais construit par concaténation dispersée dans le code.
 
 Contraintes métier que le prompt doit garantir (voir la semaine type) : au moins
 3 recettes distinctes, one-pot et healthy en semaine, weekend sans contrainte one-pot,
