@@ -3,10 +3,13 @@ import { isWeekday } from './week';
 
 /**
  * Règles de la semaine type. Un JSON syntaxiquement valide peut décrire un plan
- * inutilisable — trois fois la même recette, aucune recette congelable, un
- * gratin de deux heures un mardi soir. Ces contraintes sont vérifiées côté
- * Cloud Function avant toute écriture Firestore, et un échec déclenche l'unique
- * retry autorisé, en réinjectant les violations dans le prompt.
+ * inutilisable — un batch qui ne couvre pas la semaine, un plat cuisiné un mardi
+ * soir alors que le principe est de ne pas cuisiner en semaine. Ces contraintes
+ * sont vérifiées côté Cloud Function avant toute écriture Firestore, et un échec
+ * déclenche l'unique retry autorisé, en réinjectant les violations dans le prompt.
+ *
+ * Les messages sont chiffrés à dessein : c'est ce qui rend une seule reprise
+ * suffisante, le modèle sachant alors de combien il s'est trompé.
  */
 
 export interface ConstraintViolation {
@@ -14,16 +17,23 @@ export interface ConstraintViolation {
   message: string;
 }
 
-/** Nombre minimum de recettes distinctes réellement cuisinées dans la semaine. */
-export const MIN_DISTINCT_RECIPES = 3;
-/** Filet de sécurité pour les repas sautés (resto, soir sans faim). */
-export const MIN_FREEZABLE_RECIPES = 2;
-/** Au-delà, une recette de semaine n'est plus compatible avec une soirée ordinaire. */
+/** Plats distincts préparés le dimanche. Le foyer choisit dans cet intervalle. */
+export const MIN_BATCH_RECIPES = 3;
+export const MAX_BATCH_RECIPES = 6;
+/** Taille du foyer, en dur en v1. Voir CLAUDE.md §9. */
+export const SERVINGS_PER_MEAL = 2;
+/** La session du dimanche doit tenir dans un après-midi. */
+export const MAX_BATCH_TOTAL_MINUTES = 240;
+/** Au-delà, une recette cuisinée un soir de semaine n'est plus tenable. */
 export const MAX_WEEKDAY_PREP_MINUTES = 45;
 
-export function validateGeneratedPlan(plan: GeneratedPlan): ConstraintViolation[] {
+export function validateGeneratedPlan(
+  plan: GeneratedPlan,
+  expectedBatchCount?: number,
+): ConstraintViolation[] {
   const violations: ConstraintViolation[] = [];
   const recipesBySlug = new Map(plan.recipes.map((recipe) => [recipe.slug, recipe]));
+  const batchSlugs = new Set(plan.batchRecipeSlugs);
 
   if (recipesBySlug.size !== plan.recipes.length) {
     violations.push({
@@ -40,8 +50,22 @@ export function validateGeneratedPlan(plan: GeneratedPlan): ConstraintViolation[
     });
   }
 
-  const referencedSlugs = new Set<string>();
-  const cookedSlugs = new Set<string>();
+  violations.push(...batchSizeViolations(plan, batchSlugs, expectedBatchCount));
+
+  for (const slug of batchSlugs) {
+    if (!recipesBySlug.has(slug)) {
+      violations.push({
+        code: 'batch-unknown-slug',
+        message: `Le plat « ${slug} » du batch n'est pas déclaré dans les recettes.`,
+      });
+    }
+  }
+
+  const referencedSlugs = new Set<string>(batchSlugs);
+  /** Nombre de repas servis par chaque plat du batch, pour vérifier les portions. */
+  const servedCount = new Map<string, number>();
+  /** Jours où chaque plat du batch est servi, pour la contrainte de congélation. */
+  const servedDays = new Map<string, number[]>();
 
   for (const day of plan.days) {
     for (const [slot, meal] of [
@@ -70,29 +94,39 @@ export function validateGeneratedPlan(plan: GeneratedPlan): ConstraintViolation[
       }
 
       referencedSlugs.add(recipe.slug);
+
       if (meal.kind === 'cooked') {
-        cookedSlugs.add(recipe.slug);
-        violations.push(...weekdayViolations(recipe, day.dayIndex, label));
+        if (isWeekday(day.dayIndex)) {
+          violations.push({
+            code: 'weekday-cooked',
+            message: `${label} : on ne cuisine pas en semaine. Ce repas doit être une portion du batch.`,
+          });
+        }
+        if (batchSlugs.has(recipe.slug)) {
+          violations.push({
+            code: 'cooked-is-batch-recipe',
+            message: `${label} : « ${recipe.name} » est un plat du batch, donc une portion et non un plat cuisiné.`,
+          });
+        }
+      }
+
+      if (meal.kind === 'batch-leftover') {
+        if (!batchSlugs.has(recipe.slug)) {
+          violations.push({
+            code: 'leftover-not-from-batch',
+            message: `${label} : « ${recipe.name} » est servi en portion mais ne fait pas partie du batch.`,
+          });
+          continue;
+        }
+        servedCount.set(recipe.slug, (servedCount.get(recipe.slug) ?? 0) + 1);
+        servedDays.set(recipe.slug, [...(servedDays.get(recipe.slug) ?? []), day.dayIndex]);
       }
     }
   }
 
-  if (cookedSlugs.size < MIN_DISTINCT_RECIPES) {
-    violations.push({
-      code: 'not-enough-variety',
-      message: `Seulement ${cookedSlugs.size} recettes cuisinées distinctes, il en faut ${MIN_DISTINCT_RECIPES}.`,
-    });
-  }
-
-  const freezableCount = plan.recipes.filter(
-    (recipe) => referencedSlugs.has(recipe.slug) && recipe.tags.includes('congelable'),
-  ).length;
-  if (freezableCount < MIN_FREEZABLE_RECIPES) {
-    violations.push({
-      code: 'not-enough-freezable',
-      message: `Seulement ${freezableCount} recette(s) congelable(s), il en faut ${MIN_FREEZABLE_RECIPES}.`,
-    });
-  }
+  violations.push(...servingsViolations(recipesBySlug, servedCount));
+  violations.push(...freezableViolations(recipesBySlug, servedDays));
+  violations.push(...batchDurationViolations(recipesBySlug, batchSlugs));
 
   for (const recipe of plan.recipes) {
     if (!referencedSlugs.has(recipe.slug)) {
@@ -104,6 +138,108 @@ export function validateGeneratedPlan(plan: GeneratedPlan): ConstraintViolation[
   }
 
   return violations;
+}
+
+function batchSizeViolations(
+  plan: GeneratedPlan,
+  batchSlugs: Set<string>,
+  expectedBatchCount: number | undefined,
+): ConstraintViolation[] {
+  if (batchSlugs.size !== plan.batchRecipeSlugs.length) {
+    return [{ code: 'batch-size', message: 'Un plat est déclaré deux fois dans le batch.' }];
+  }
+
+  if (expectedBatchCount !== undefined && batchSlugs.size !== expectedBatchCount) {
+    return [
+      {
+        code: 'batch-size',
+        message: `Le batch compte ${batchSlugs.size} plats, il en faut exactement ${expectedBatchCount}.`,
+      },
+    ];
+  }
+
+  if (batchSlugs.size < MIN_BATCH_RECIPES || batchSlugs.size > MAX_BATCH_RECIPES) {
+    return [
+      {
+        code: 'batch-size',
+        message: `Le batch compte ${batchSlugs.size} plats, il en faut entre ${MIN_BATCH_RECIPES} et ${MAX_BATCH_RECIPES}.`,
+      },
+    ];
+  }
+
+  return [];
+}
+
+/**
+ * Un plat du batch doit produire assez de portions pour tous les repas qui le
+ * servent. Sans cette règle, le modèle déclare un curry de 4 portions mangé six
+ * fois, et le foyer achète le tiers de ce qu'il faut.
+ */
+function servingsViolations(
+  recipesBySlug: Map<string, GeneratedRecipe>,
+  servedCount: Map<string, number>,
+): ConstraintViolation[] {
+  const violations: ConstraintViolation[] = [];
+
+  for (const [slug, meals] of servedCount) {
+    const recipe = recipesBySlug.get(slug);
+    if (!recipe) continue;
+
+    const needed = SERVINGS_PER_MEAL * meals;
+    if (recipe.servings < needed) {
+      violations.push({
+        code: 'batch-servings-short',
+        message: `« ${recipe.name} » sert ${meals} repas, soit ${needed} portions, mais n'en produit que ${recipe.servings}.`,
+      });
+    }
+  }
+
+  return violations;
+}
+
+/**
+ * Cuisiné le dimanche, mangé le vendredi : cinq jours au frigo. L'étiquette
+ * `congelable` est le seul signal dont on dispose sur la conservation, et
+ * l'app s'en sert pour dire quand sortir le plat du congélateur.
+ */
+function freezableViolations(
+  recipesBySlug: Map<string, GeneratedRecipe>,
+  servedDays: Map<string, number[]>,
+): ConstraintViolation[] {
+  const violations: ConstraintViolation[] = [];
+  const LATE_DAYS = [5, 6]; // jeudi et vendredi
+
+  for (const [slug, days] of servedDays) {
+    const recipe = recipesBySlug.get(slug);
+    if (!recipe || recipe.tags.includes('congelable')) continue;
+
+    if (days.some((day) => LATE_DAYS.includes(day))) {
+      violations.push({
+        code: 'batch-not-freezable',
+        message: `« ${recipe.name} » est servi en fin de semaine : il doit porter l'étiquette « congelable ».`,
+      });
+    }
+  }
+
+  return violations;
+}
+
+function batchDurationViolations(
+  recipesBySlug: Map<string, GeneratedRecipe>,
+  batchSlugs: Set<string>,
+): ConstraintViolation[] {
+  let total = 0;
+  for (const slug of batchSlugs) {
+    total += recipesBySlug.get(slug)?.prepMinutes ?? 0;
+  }
+
+  if (total <= MAX_BATCH_TOTAL_MINUTES) return [];
+  return [
+    {
+      code: 'batch-too-long',
+      message: `Le batch demande ${total} minutes de préparation, le dimanche n'en offre que ${MAX_BATCH_TOTAL_MINUTES}.`,
+    },
+  ];
 }
 
 /**
@@ -138,11 +274,13 @@ function weekdayViolations(
  * Contraintes applicables au remplacement d'un seul repas.
  *
  * Volontairement limitée à ce qui est local au jour visé. Les contraintes
- * d'ensemble — trois recettes distinctes, deux congelables — portent sur la
+ * d'ensemble — taille du batch, portions, congélation — portent sur la
  * composition de la semaine, décidée à la génération : les réappliquer ici
- * ferait refuser un remplacement parfaitement raisonnable parce que la recette
- * écartée était l'une des deux congelables. Voir CLAUDE.md §9 pour le point
- * d'extension.
+ * ferait refuser un remplacement parfaitement raisonnable. Voir CLAUDE.md §9
+ * pour le point d'extension.
+ *
+ * C'est ici, et seulement ici, que la contrainte one-pot survit : remplacer un
+ * repas de semaine oblige à cuisiner le soir même.
  */
 export function validateMealReplacement(
   recipe: GeneratedRecipe,

@@ -48,7 +48,11 @@ const recipeSchema: Schema = {
         'Identifiant local au plan, en minuscules avec des tirets, ex. "curry-lentilles-corail".',
     },
     name: { type: Type.STRING },
-    servings: { type: Type.INTEGER, description: 'Nombre de portions produites par la recette.' },
+    servings: {
+      type: Type.INTEGER,
+      description:
+        'Portions produites. Un plat du batch doit en produire deux par repas qu’il sert.',
+    },
     prepMinutes: { type: Type.INTEGER },
     tags: {
       type: Type.ARRAY,
@@ -89,7 +93,10 @@ const mealSchema: Schema = {
 const daySchema: Schema = {
   type: Type.OBJECT,
   properties: {
-    dayIndex: { type: Type.INTEGER, description: '0 = lundi, 6 = dimanche.' },
+    dayIndex: {
+      type: Type.INTEGER,
+      description: 'La semaine va du samedi au vendredi : 0 = samedi, 1 = dimanche, 2 = lundi, 6 = vendredi.',
+    },
     lunch: mealSchema,
     dinner: mealSchema,
   },
@@ -103,16 +110,22 @@ export const WEEKLY_PLAN_RESPONSE_SCHEMA: Schema = {
     recipes: {
       type: Type.ARRAY,
       items: recipeSchema,
-      description: 'Entre 3 et 12 recettes, toutes utilisées au moins une fois dans days.',
+      description: 'Entre 3 et 12 recettes, toutes utilisées dans le batch ou par un repas.',
+    },
+    batchRecipeSlugs: {
+      type: Type.ARRAY,
+      items: { type: Type.STRING },
+      description:
+        'Slugs des plats préparés le dimanche, dans l’ordre où il faut les cuisiner. Ils nourrissent les dix repas du lundi au vendredi.',
     },
     days: {
       type: Type.ARRAY,
       items: daySchema,
-      description: 'Exactement 7 entrées, une par jour, avec les dayIndex 0 à 6 sans doublon.',
+      description: 'Exactement 7 entrées, du samedi au vendredi, dayIndex 0 à 6 sans doublon.',
     },
   },
-  required: ['recipes', 'days'],
-  propertyOrdering: ['recipes', 'days'],
+  required: ['recipes', 'batchRecipeSlugs', 'days'],
+  propertyOrdering: ['recipes', 'batchRecipeSlugs', 'days'],
 };
 
 /** Régénération d'un seul repas : une recette, sans le plan autour. */

@@ -61,7 +61,7 @@ export async function generateWeeklyPlanFromGemini(
       continue;
     }
 
-    const violations = validateGeneratedPlan(parsed.data);
+    const violations = validateGeneratedPlan(parsed.data, input.batchRecipeCount);
     if (violations.length === 0) {
       logger.info('plan accepté', { attempt, model, recettes: parsed.data.recipes.length });
       return { plan: parsed.data, model, attempts: attempt };

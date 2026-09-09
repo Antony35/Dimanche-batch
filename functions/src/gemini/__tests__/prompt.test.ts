@@ -15,15 +15,24 @@ import {
  */
 
 describe('buildPlanPrompt', () => {
+  it('dit combien de plats le foyer veut préparer', () => {
+    const prompt = buildPlanPrompt({
+      weekStart: '2026-09-12',
+      batchRecipeCount: 5,
+      recentRecipeNames: [],
+    });
+    expect(prompt).toContain('exactement 5 plats');
+  });
+
   it('nomme la semaine visée, du samedi au vendredi', () => {
-    const prompt = buildPlanPrompt({ weekStart: '2026-09-12', recentRecipeNames: [] });
+    const prompt = buildPlanPrompt({ weekStart: '2026-09-12', batchRecipeCount: 3, recentRecipeNames: [] });
     expect(prompt).toContain('2026-09-12');
     expect(prompt).toContain('2026-09-18');
     expect(prompt).toContain('samedi');
   });
 
   it('n’encombre pas le prompt de sections vides', () => {
-    const prompt = buildPlanPrompt({ weekStart: '2026-09-12', recentRecipeNames: [] });
+    const prompt = buildPlanPrompt({ weekStart: '2026-09-12', batchRecipeCount: 3, recentRecipeNames: [] });
     expect(prompt).not.toContain('favori');
     expect(prompt).not.toContain('Contraintes particulières');
   });
@@ -31,6 +40,7 @@ describe('buildPlanPrompt', () => {
   it('liste les plats récents comme interdits', () => {
     const prompt = buildPlanPrompt({
       weekStart: '2026-09-12',
+      batchRecipeCount: 3,
       recentRecipeNames: ['Curry de lentilles', 'Soupe de poireaux'],
     });
     expect(prompt).toContain('ne les repropose pas');
@@ -41,6 +51,7 @@ describe('buildPlanPrompt', () => {
   it('propose les favoris sans les imposer, et un seul au plus', () => {
     const prompt = buildPlanPrompt({
       weekStart: '2026-09-12',
+      batchRecipeCount: 3,
       recentRecipeNames: [],
       favoriteRecipeNames: ['Chili sin carne'],
     });
@@ -52,6 +63,7 @@ describe('buildPlanPrompt', () => {
   it('reprend les notes de l’utilisateur, débarrassées des espaces', () => {
     const prompt = buildPlanPrompt({
       weekStart: '2026-09-12',
+      batchRecipeCount: 3,
       recentRecipeNames: [],
       notes: '  pas de porc  ',
     });
@@ -63,6 +75,7 @@ describe('buildPlanPrompt', () => {
   it('ignore des notes vides', () => {
     const prompt = buildPlanPrompt({
       weekStart: '2026-09-12',
+      batchRecipeCount: 3,
       recentRecipeNames: [],
       notes: '   ',
     });
@@ -145,9 +158,23 @@ describe('instructions système', () => {
     expect(MEAL_REPLACEMENT_SYSTEM_INSTRUCTION).toContain('une seule recette');
   });
 
-  it('rappellent la contrainte de semaine dans les deux cas', () => {
-    expect(SYSTEM_INSTRUCTION).toContain('one-pot');
+  it('ne demandent le one-pot que pour un remplacement', () => {
+    // Composer la semaine n'a plus besoin de plats rapides : tout est cuisiné
+    // le dimanche. Seul un repas remplacé en pleine semaine se cuisine le soir
+    // même, et c'est là, et seulement là, que la contrainte garde un sens.
+    expect(SYSTEM_INSTRUCTION).not.toContain('one-pot');
     expect(MEAL_REPLACEMENT_SYSTEM_INSTRUCTION).toContain('one-pot');
+  });
+
+  it('dit que la semaine ne se cuisine pas', () => {
+    expect(SYSTEM_INSTRUCTION).toContain('ON NE CUISINE PAS');
+    expect(SYSTEM_INSTRUCTION).toContain('SAMEDI au VENDREDI');
+  });
+
+  it('demande les plats du batch dans l’ordre de préparation', () => {
+    // C'est cet ordre que suit l'écran de préparation du dimanche : sans lui,
+    // il faudrait un champ de plus dans le contrat.
+    expect(SYSTEM_INSTRUCTION).toContain("DANS L'ORDRE");
   });
 
   it('porte une version, stockée avec chaque plan', () => {

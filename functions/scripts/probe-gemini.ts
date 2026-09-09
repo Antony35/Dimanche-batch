@@ -43,6 +43,8 @@ const args = process.argv.slice(2);
 const targets = args.filter((arg) => arg === 'plan' || arg === 'meal');
 const model = args.find((arg) => arg !== 'plan' && arg !== 'meal') ?? GEMINI_MODEL;
 const weekStart = getUpcomingWeekId();
+/** Ce que demanderait un foyer par défaut. */
+const BATCH_RECIPE_COUNT = 4;
 
 // Affiché avant le contrôle de la clé : si un argument n'est pas passé comme
 // prévu, ça se voit tout de suite plutôt qu'après un appel API inutile.
@@ -102,6 +104,7 @@ async function probePlan(): Promise<void> {
   // section des favoris ne serait jamais envoyée au modèle avant la production.
   const prompt = buildPlanPrompt({
     weekStart,
+    batchRecipeCount: BATCH_RECIPE_COUNT,
     recentRecipeNames: ['Gratin de courgettes', 'Blanquette de veau'],
     favoriteRecipeNames: ['Chili sin carne'],
   });
@@ -122,10 +125,10 @@ async function probePlan(): Promise<void> {
     process.exit(1);
   }
   console.log(
-    `✅ Schéma : ${parsed.data.recipes.length} recettes, ${parsed.data.days.length} jours`,
+    `✅ Schéma : ${parsed.data.recipes.length} recettes, ${parsed.data.batchRecipeSlugs.length} plats au batch, ${parsed.data.days.length} jours`,
   );
 
-  const violations = validateGeneratedPlan(parsed.data);
+  const violations = validateGeneratedPlan(parsed.data, BATCH_RECIPE_COUNT);
   if (violations.length > 0) {
     console.error(`⚠️  Contraintes : ${violations.length} violation(s) — la reprise serait déclenchée`);
     for (const violation of violations) console.error(`   [${violation.code}] ${violation.message}`);
@@ -133,9 +136,20 @@ async function probePlan(): Promise<void> {
   }
 
   console.log('✅ Contraintes de la semaine type respectées\n');
+  console.log('   BATCH DU DIMANCHE');
+  for (const slug of parsed.data.batchRecipeSlugs) {
+    const recipe = parsed.data.recipes.find((candidate) => candidate.slug === slug);
+    if (recipe) {
+      console.log(
+        `   · ${recipe.name} — ${recipe.servings} portions, ${recipe.prepMinutes} min [${recipe.tags.join(', ')}]`,
+      );
+    }
+  }
+  console.log('\n   CUISINÉ LE JOUR MÊME');
   for (const recipe of parsed.data.recipes) {
+    if (parsed.data.batchRecipeSlugs.includes(recipe.slug)) continue;
     console.log(
-      `   ${recipe.name} — ${recipe.servings} portions, ${recipe.prepMinutes} min [${recipe.tags.join(', ')}]`,
+      `   · ${recipe.name} — ${recipe.servings} portions, ${recipe.prepMinutes} min [${recipe.tags.join(', ')}]`,
     );
   }
 }

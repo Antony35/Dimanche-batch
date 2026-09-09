@@ -97,6 +97,7 @@ async function composePlan(
   try {
     generated = await generateWeeklyPlanFromGemini({
       weekStart: input.weekStart,
+      batchRecipeCount: input.batchRecipeCount,
       recentRecipeNames,
       favoriteRecipeNames,
       notes: input.notes,

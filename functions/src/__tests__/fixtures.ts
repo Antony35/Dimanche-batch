@@ -47,3 +47,50 @@ export function makeGeneratedPlan(recipes: GeneratedRecipe[]): GeneratedPlan {
 
   return { recipes, batchRecipeSlugs: recipes.map((recipe) => recipe.slug), days };
 }
+
+/**
+ * Plan conforme au nouveau modèle : trois plats préparés le dimanche nourrissent
+ * les dix repas de la semaine, le week-end est pris à l'extérieur.
+ *
+ * Les portions et les étiquettes sont calibrées pour passer les contraintes —
+ * une fixture qui en violerait une rendrait rouge le premier test et suspects
+ * tous les autres.
+ */
+export function makeValidGeneratedPlan(): GeneratedPlan {
+  const recipes = [
+    makeGeneratedRecipe({ slug: 'batch-curry', tags: ['batch'], servings: 8, prepMinutes: 50 }),
+    makeGeneratedRecipe({ slug: 'chili-sin-carne', tags: ['congelable'], servings: 8, prepMinutes: 50 }),
+    makeGeneratedRecipe({ slug: 'soupe-poireaux', tags: ['congelable'], servings: 4, prepMinutes: 30 }),
+  ];
+
+  const slugFor = (dayIndex: number): string => {
+    if (dayIndex <= 3) return 'batch-curry';
+    if (dayIndex <= 5) return 'chili-sin-carne';
+    return 'soupe-poireaux';
+  };
+
+  const days = [0, 1, 2, 3, 4, 5, 6].map((dayIndex) => {
+    if (dayIndex < 2) {
+      const away = {
+        recipeSlug: null,
+        kind: 'eat-out' as const,
+        withStarter: false,
+        withDessert: false,
+      };
+      return { dayIndex, lunch: away, dinner: { ...away } };
+    }
+    const portion = {
+      recipeSlug: slugFor(dayIndex),
+      kind: 'batch-leftover' as const,
+      withStarter: false,
+      withDessert: false,
+    };
+    return { dayIndex, lunch: portion, dinner: { ...portion } };
+  });
+
+  return {
+    recipes,
+    batchRecipeSlugs: ['batch-curry', 'chili-sin-carne', 'soupe-poireaux'],
+    days,
+  };
+}

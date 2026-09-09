@@ -1,8 +1,8 @@
 import {
+  MAX_BATCH_TOTAL_MINUTES,
   MAX_WEEKDAY_PREP_MINUTES,
+  SERVINGS_PER_MEAL,
   addDays,
-  MIN_DISTINCT_RECIPES,
-  MIN_FREEZABLE_RECIPES,
   getDayName,
   type ConstraintViolation,
   type MealSlot,
@@ -18,7 +18,7 @@ import {
  * stockée avec le plan, ce qui permet de savoir quelle formulation a produit
  * quel résultat.
  */
-export const PROMPT_VERSION = 3;
+export const PROMPT_VERSION = 4;
 
 /**
  * Exigences portant sur une recette, indépendamment du contexte qui la demande.
@@ -35,25 +35,29 @@ Des étapes courtes et concrètes, à l'infinitif. Cinq à huit étapes suffisen
 
 export const SYSTEM_INSTRUCTION = `Tu conçois des plans de repas hebdomadaires pour un foyer français de deux personnes qui pratique le batch cooking du dimanche.
 
-RYTHME DE LA SEMAINE
-Le dimanche soir, le foyer cuisine une grande quantité d'un plat unique — le batch. Les midis du lundi au vendredi sont des portions réchauffées de ce batch. Les soirs de semaine sont cuisinés le jour même, rapidement. Le week-end, le temps ne manque pas.
+RYTHME DE LA SEMAINE — c'est le principe de l'application, lis-le attentivement
+La semaine va du SAMEDI au VENDREDI. Les dayIndex suivent cet ordre : 0 samedi, 1 dimanche, 2 lundi, 3 mardi, 4 mercredi, 5 jeudi, 6 vendredi.
+- Samedi (0) : les courses sont faites le matin. Les repas de ce jour sont cuisinés le jour même, avec des produits frais.
+- Dimanche (1) : le foyer prépare le BATCH — plusieurs grands plats en une seule session de cuisine. Les repas du dimanche sont cuisinés le jour même ou pris sur le batch fraîchement préparé.
+- Lundi à vendredi (2 à 6) : ON NE CUISINE PAS. Les dix repas — cinq midis et cinq soirs — sont des portions du batch, réchauffées.
 
-SÉMANTIQUE DES REPAS — c'est ce qui détermine la liste de courses, lis-la attentivement
-- "cooked" : le plat est réellement cuisiné ce jour-là. Ses ingrédients seront achetés.
-- "batch-leftover" : une portion d'un plat déjà cuisiné un autre jour. Aucun ingrédient supplémentaire n'est acheté. Utilise ce type pour tous les midis de semaine qui réchauffent le batch du dimanche.
-- "freezer-backup" : une portion sortie du congélateur, cuisinée lors d'une semaine précédente. N'achète rien non plus.
+SÉMANTIQUE DES REPAS — c'est ce qui détermine la liste de courses
+- "batch-leftover" : une portion d'un plat du batch. C'est le type de TOUS les repas du lundi au vendredi. Le recipeSlug doit être l'un des batchRecipeSlugs.
+- "cooked" : le plat est cuisiné ce jour-là. Réservé au samedi et au dimanche. Le recipeSlug ne doit PAS être un plat du batch, qui est déjà acheté.
+- "freezer-backup" : une portion sortie du congélateur, cuisinée une semaine précédente. N'achète rien.
 - "eat-out" : repas pris à l'extérieur. Dans ce cas seulement, recipeSlug vaut null.
 
-Conséquence directe : la recette du batch doit avoir un nombre de portions (servings) qui couvre TOUS les repas qui la référencent. Si cinq midis réchauffent le batch et que le dimanche soir en consomme deux parts, la recette doit produire au moins sept portions, et ses quantités d'ingrédients doivent correspondre à ces sept portions.
+PORTIONS — la contrainte la plus facile à rater
+Le foyer compte ${SERVINGS_PER_MEAL} personnes, donc ${SERVINGS_PER_MEAL} portions par repas. Chaque plat du batch doit produire assez de portions pour TOUS les repas qui le servent. Un plat servi quatre repas doit déclarer au moins ${SERVINGS_PER_MEAL * 4} portions, et ses quantités d'ingrédients doivent correspondre à ce total.
 
 CONTRAINTES IMPÉRATIVES
-1. Au moins ${MIN_DISTINCT_RECIPES} recettes distinctes réellement cuisinées ("cooked") dans la semaine.
-2. Toute recette cuisinée un soir de semaine (dayIndex 0 à 4) doit porter l'étiquette "one-pot" et se préparer en ${MAX_WEEKDAY_PREP_MINUTES} minutes ou moins. Après une journée de travail, personne ne sort trois casseroles.
-3. Au moins ${MIN_FREEZABLE_RECIPES} recettes du plan portent l'étiquette "congelable". Elles servent de filet de sécurité quand un repas prévu à la maison est finalement sauté.
-4. Chaque recette déclarée dans "recipes" doit être utilisée au moins une fois dans "days". Chaque recipeSlug cité dans "days" doit exister dans "recipes".
-5. Les 7 jours portent les dayIndex 0 à 6, sans doublon ni manquant.
-6. Le samedi (5) et le dimanche (6) échappent à la contrainte one-pot : une recette plus élaborée y est bienvenue.
-7. Le dimanche soir (dayIndex 6) est le batch de la semaine suivante : marque-le "cooked".
+1. Déclare dans "batchRecipeSlugs" les plats préparés le dimanche, DANS L'ORDRE où il faut les cuisiner.
+2. Les dix repas du lundi au vendredi sont tous "batch-leftover" et pointent vers un plat du batch.
+3. Un plat du batch servi le jeudi (5) ou le vendredi (6) doit porter l'étiquette "congelable" : cuisiné dimanche, il attendrait cinq jours au frigo.
+4. La somme des temps de préparation des plats du batch ne dépasse pas ${MAX_BATCH_TOTAL_MINUTES} minutes — le dimanche n'est pas une journée entière de cuisine.
+5. Chaque recette déclarée dans "recipes" est utilisée, soit dans le batch, soit par un repas. Chaque recipeSlug cité existe dans "recipes".
+6. Les 7 jours portent les dayIndex 0 à 6, sans doublon ni manquant.
+7. Le samedi et le dimanche, propose des plats plus élaborés : c'est le moment où l'on prend le temps de cuisiner.
 
 ${RECIPE_STYLE}`;
 
@@ -76,6 +80,8 @@ ${RECIPE_STYLE}`;
 
 export interface PlanPromptInput {
   weekStart: string;
+  /** Nombre de plats à préparer le dimanche, choisi par le foyer. */
+  batchRecipeCount: number;
   /** Noms des recettes servies récemment, à ne pas reproposer. */
   recentRecipeNames: string[];
   /**
@@ -91,6 +97,7 @@ export interface PlanPromptInput {
 export function buildPlanPrompt(input: PlanPromptInput): string {
   const parts: string[] = [
     `Établis le plan de la semaine du ${input.weekStart} au ${addDays(input.weekStart, 6)} (le jour 0 est le ${getDayName(0)} ${input.weekStart}).`,
+    `Le foyer veut préparer exactement ${input.batchRecipeCount} plats le dimanche. Répartis les dix repas du lundi au vendredi entre eux.`,
   ];
 
   if (input.recentRecipeNames.length > 0) {

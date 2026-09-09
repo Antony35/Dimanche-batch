@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { makeGeneratedPlan, makeGeneratedRecipe } from '../../__tests__/fixtures';
+import { makeGeneratedRecipe, makeValidGeneratedPlan } from '../../__tests__/fixtures';
 import { PlanGenerationError, generateWeeklyPlanFromGemini } from '../generate-plan';
 import { MealGenerationError, generateMealRecipeFromGemini } from '../regenerate-meal';
 
@@ -14,28 +14,17 @@ vi.mock('../client', () => ({ generateJson }));
 
 
 
-/** Plan conforme aux contraintes de la semaine type. */
-function validPlan() {
-  const recipes = [
-    makeGeneratedRecipe({ slug: 'batch-curry', tags: ['one-pot', 'batch'] }),
-    makeGeneratedRecipe({ slug: 'soupe-poireaux', tags: ['one-pot', 'congelable'] }),
-    makeGeneratedRecipe({ slug: 'chili-sin-carne', tags: ['one-pot', 'congelable'] }),
-  ];
-  return makeGeneratedPlan(recipes);
-}
+const validPlan = makeValidGeneratedPlan;
 
-/** Plan refusé : un plat de deux heures, non one-pot, un mardi soir. */
-function planWithWeekdayViolation() {
+/** Plan refusé : un plat du batch qui ne produit pas assez de portions. */
+function planWithViolation() {
   const plan = validPlan();
-  const fautive = plan.recipes.find((recipe) => recipe.slug === 'soupe-poireaux');
-  if (fautive) {
-    fautive.tags = ['weekend'];
-    fautive.prepMinutes = 120;
-  }
+  const fautif = plan.recipes.find((recipe) => recipe.slug === 'batch-curry');
+  if (fautif) fautif.servings = 2;
   return plan;
 }
 
-const promptInput = { weekStart: '2026-09-12', recentRecipeNames: [] };
+const promptInput = { weekStart: '2026-09-12', batchRecipeCount: 3, recentRecipeNames: [] };
 
 beforeEach(() => {
   generateJson.mockReset();
@@ -53,7 +42,7 @@ describe('generateWeeklyPlanFromGemini', () => {
 
   it('reprend une fois, en disant au modèle ce qui n’allait pas', async () => {
     generateJson
-      .mockResolvedValueOnce({ data: planWithWeekdayViolation(), model: 'gemini-test' })
+      .mockResolvedValueOnce({ data: planWithViolation(), model: 'gemini-test' })
       .mockResolvedValueOnce({ data: validPlan(), model: 'gemini-test' });
 
     const result = await generateWeeklyPlanFromGemini(promptInput);
@@ -61,14 +50,15 @@ describe('generateWeeklyPlanFromGemini', () => {
     expect(result.attempts).toBe(2);
     expect(generateJson).toHaveBeenCalledTimes(2);
 
-    // La reprise n'est pas une répétition : elle porte les violations.
+    // La reprise n'est pas une répétition : elle porte les violations, et
+    // chiffrées — c'est ce qui rend un seul essai supplémentaire suffisant.
     const secondPrompt: string = generateJson.mock.calls[1]?.[0].prompt;
     expect(secondPrompt).toContain('refusée');
-    expect(secondPrompt).toContain('one-pot');
+    expect(secondPrompt).toContain('portions');
   });
 
   it('abandonne après deux essais, jamais trois', async () => {
-    generateJson.mockResolvedValue({ data: planWithWeekdayViolation(), model: 'gemini-test' });
+    generateJson.mockResolvedValue({ data: planWithViolation(), model: 'gemini-test' });
 
     await expect(generateWeeklyPlanFromGemini(promptInput)).rejects.toBeInstanceOf(
       PlanGenerationError,
@@ -86,7 +76,7 @@ describe('generateWeeklyPlanFromGemini', () => {
   });
 
   it('remonte les violations avec l’erreur, pour les logs', async () => {
-    generateJson.mockResolvedValue({ data: planWithWeekdayViolation(), model: 'gemini-test' });
+    generateJson.mockResolvedValue({ data: planWithViolation(), model: 'gemini-test' });
 
     await expect(generateWeeklyPlanFromGemini(promptInput)).rejects.toMatchObject({
       violations: expect.arrayContaining([expect.objectContaining({ code: expect.any(String) })]),
