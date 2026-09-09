@@ -40,6 +40,12 @@ export const WeeklyPlanSchema = z.object({
   generatedBy: z.string().min(1),
   /** Modèle Gemini utilisé — utile pour comparer la qualité entre versions. */
   model: z.string().min(1),
+  /**
+   * Version du prompt qui a produit ce plan. Stockée avec le modèle et pour la
+   * même raison : quand une semaine revient bancale, il faut pouvoir dire quelle
+   * formulation l'a composée. Absente des plans écrits avant son introduction.
+   */
+  promptVersion: z.number().int().min(1).optional(),
 });
 
 /** Payload de la callable `generateWeeklyPlan`. */

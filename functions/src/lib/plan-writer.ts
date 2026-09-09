@@ -11,11 +11,13 @@ import {
   type GeneratedPlan,
   type GeneratedRecipe,
   type GroceryItem,
+  type GroceryList,
   type Meal,
   type MealSlot,
   type Recipe,
   type WeeklyPlan,
 } from '@dimanche-batch/shared';
+import { PROMPT_VERSION } from '../gemini/prompt';
 import { db } from './firestore';
 
 export interface WritePlanParams {
@@ -159,19 +161,25 @@ async function commitPlan(params: CommitPlanParams): Promise<{ itemCount: number
     batch.set(db.doc(paths.recipe(householdId, id)), data, { merge: true });
   }
 
-  batch.set(db.doc(paths.weeklyPlan(householdId, weekId)), {
+  // Les documents écrits sont typés par les schémas qui les décrivent :
+  // ajouter un champ au schéma sans l'écrire ici devient une erreur de
+  // compilation, au lieu d'un document incomplet découvert à la lecture.
+  const planDocument: Omit<WeeklyPlan, 'id'> = {
     weekStart: plan.weekStart,
     days: plan.days,
     recipeIds: plan.recipeIds,
     generatedAt: plan.generatedAt,
     generatedBy: plan.generatedBy,
     model: plan.model,
-  });
+    promptVersion: plan.promptVersion ?? PROMPT_VERSION,
+  };
+  batch.set(db.doc(paths.weeklyPlan(householdId, weekId)), planDocument);
 
-  batch.set(db.doc(paths.groceryList(householdId, weekId)), {
+  const listDocument: Omit<GroceryList, 'id'> = {
     itemCount: mergedItems.length,
     generatedAt: Date.now(),
-  });
+  };
+  batch.set(db.doc(paths.groceryList(householdId, weekId)), listDocument);
 
   // Les articles disparus d'une régénération doivent partir : sinon la liste
   // garderait des ingrédients d'un repas qui n'est plus au menu.
@@ -296,5 +304,6 @@ function toWeeklyPlan(
     generatedAt: Date.now(),
     generatedBy: context.generatedBy,
     model: context.model,
+    promptVersion: PROMPT_VERSION,
   };
 }

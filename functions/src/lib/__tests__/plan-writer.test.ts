@@ -9,6 +9,7 @@ import {
   makeGeneratedPlan,
   makeGeneratedRecipe,
 } from '../../__tests__/fixtures';
+import { PROMPT_VERSION } from '../../gemini/prompt';
 import { db } from '../firestore';
 import { writeWeeklyPlan } from '../plan-writer';
 
@@ -66,6 +67,10 @@ describe('écriture initiale', () => {
     expect(plan.get('generatedBy')).toBe(ALICE);
     expect(plan.get('model')).toBe(MODEL);
     expect(plan.get('days')).toHaveLength(7);
+
+    // La version du prompt est stockée avec le modèle et pour la même raison :
+    // savoir quelle formulation a composé une semaine qui revient bancale.
+    expect(plan.get('promptVersion')).toBe(PROMPT_VERSION);
 
     const recipe = await db.doc(paths.recipe(HOUSEHOLD_ID, 'batch-curry')).get();
     expect(recipe.get('name')).toBe('Curry de lentilles');

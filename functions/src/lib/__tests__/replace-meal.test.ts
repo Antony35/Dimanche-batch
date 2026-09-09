@@ -117,6 +117,17 @@ describe('replaceMeal', () => {
     expect(days[0].dinner.recipeId).toBe('batch-curry');
   });
 
+  it('conserve la version du prompt du plan qu’il modifie', async () => {
+    // Remplacer un repas ne recompose pas la semaine : la version qui l'a
+    // produite reste la bonne réponse à « qu'est-ce qui a écrit ce plan ».
+    await seedPlan();
+    const before = (await readPlan()).get('promptVersion');
+
+    await swapMardiDinner();
+
+    expect((await readPlan()).get('promptVersion')).toBe(before);
+  });
+
   it('crée le document de la nouvelle recette', async () => {
     await seedPlan();
     await swapMardiDinner();
