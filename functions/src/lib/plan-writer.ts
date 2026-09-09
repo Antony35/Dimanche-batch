@@ -1,4 +1,5 @@
 import {
+  GroceryItemSchema,
   RecipeSchema,
   buildGroceryList,
   getWeekDates,
@@ -48,8 +49,8 @@ export async function writeWeeklyPlan(params: WritePlanParams): Promise<WritePla
   const weeklyPlan = toWeeklyPlan(plan, { weekId, weekStart, dates, generatedBy, model });
 
   const items = buildGroceryList(weeklyPlan, recipes);
-  const previousItems = await readExistingGroceryItems(householdId, weekId);
-  const mergedItems = mergePreservingChecked(items, previousItems);
+  const previous = await readExistingGroceryItems(householdId, weekId);
+  const mergedItems = mergePreservingChecked(items, previous.items);
 
   const batch = db.batch();
 
@@ -75,9 +76,9 @@ export async function writeWeeklyPlan(params: WritePlanParams): Promise<WritePla
   // Les articles disparus d'une régénération doivent partir : sinon la liste
   // garderait des ingrédients d'un repas qui n'est plus au menu.
   const nextIds = new Set(mergedItems.map((item) => item.id));
-  for (const previous of previousItems) {
-    if (!nextIds.has(previous.id)) {
-      batch.delete(db.doc(paths.groceryItem(householdId, weekId, previous.id)));
+  for (const staleId of previous.ids) {
+    if (!nextIds.has(staleId)) {
+      batch.delete(db.doc(paths.groceryItem(householdId, weekId, staleId)));
     }
   }
 
@@ -109,12 +110,32 @@ async function readExistingRecipes(
   return existing;
 }
 
+interface ExistingGroceryItems {
+  /** Articles exploitables, seuls porteurs d'un `checked` digne de confiance. */
+  items: GroceryItem[];
+  /** Tous les identifiants présents, valides ou non — base du nettoyage. */
+  ids: string[];
+}
+
+/**
+ * Un document illisible ne transmet pas son `checked`, mais reste candidat à
+ * la suppression : l'ignorer complètement le laisserait orphelin dans la liste
+ * pour toujours. D'où les deux sorties plutôt qu'une.
+ */
 async function readExistingGroceryItems(
   householdId: string,
   weekId: string,
-): Promise<GroceryItem[]> {
+): Promise<ExistingGroceryItems> {
   const snapshot = await db.collection(paths.groceryItems(householdId, weekId)).get();
-  return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }) as GroceryItem);
+
+  const items: GroceryItem[] = [];
+  const ids: string[] = [];
+  for (const doc of snapshot.docs) {
+    ids.push(doc.id);
+    const parsed = GroceryItemSchema.safeParse({ id: doc.id, ...doc.data() });
+    if (parsed.success) items.push(parsed.data);
+  }
+  return { items, ids };
 }
 
 function toRecipes(

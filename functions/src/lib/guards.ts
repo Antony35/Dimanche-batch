@@ -1,4 +1,3 @@
-import type { CallableRequest } from 'firebase-functions/v2/https';
 import { DAILY_GENERATION_LIMIT, paths, toIsoDate } from '@dimanche-batch/shared';
 import { FieldValue } from 'firebase-admin/firestore';
 import { db } from './firestore';
@@ -10,7 +9,12 @@ import { internal, permissionDenied, resourceExhausted } from './errors';
  * l'appartenance au foyer doit être revérifiée ici, à chaque appel.
  */
 
-export function requireAuth(request: CallableRequest): string {
+/**
+ * Le guard ne demande que ce dont il se sert. Un `CallableRequest` complet
+ * reste assignable — c'est ce que passent les callables — mais un test peut
+ * l'appeler sans fabriquer un jeton d'identité décodé de toutes pièces.
+ */
+export function requireAuth(request: { auth?: { uid?: string } }): string {
   const uid = request.auth?.uid;
   if (!uid) throw permissionDenied('Connecte-toi pour continuer.');
   return uid;
@@ -54,7 +58,11 @@ export async function consumeGenerationQuota(householdId: string): Promise<numbe
   try {
     return await db.runTransaction(async (transaction) => {
       const snapshot = await transaction.get(usageRef);
-      const current = (snapshot.get('generations') as number | undefined) ?? 0;
+      // Un compteur absent ou corrompu vaut zéro. Sans ce garde-fou, une valeur
+      // non numérique rendrait la comparaison au plafond toujours fausse et
+      // ouvrirait le quota en grand.
+      const stored: unknown = snapshot.get('generations');
+      const current = typeof stored === 'number' && Number.isFinite(stored) ? stored : 0;
 
       if (current >= DAILY_GENERATION_LIMIT) {
         throw resourceExhausted(
