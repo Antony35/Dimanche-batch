@@ -5,6 +5,4 @@
 
 export { joinHousehold } from './callable/join-household';
 export { generateWeeklyPlan } from './callable/generate-weekly-plan';
-
-// J3 — régénération d'un repas isolé :
-// export { regenerateMeal } from './callable/regenerate-meal';
+export { regenerateMeal } from './callable/regenerate-meal';

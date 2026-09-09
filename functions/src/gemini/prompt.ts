@@ -4,6 +4,7 @@ import {
   MIN_FREEZABLE_RECIPES,
   getDayName,
   type ConstraintViolation,
+  type MealSlot,
 } from '@dimanche-batch/shared';
 
 /**
@@ -16,7 +17,20 @@ import {
  * stockée avec le plan, ce qui permet de savoir quelle formulation a produit
  * quel résultat.
  */
-export const PROMPT_VERSION = 1;
+export const PROMPT_VERSION = 2;
+
+/**
+ * Exigences portant sur une recette, indépendamment du contexte qui la demande.
+ * Partagé par la génération d'une semaine et par le remplacement d'un repas.
+ */
+const RECIPE_STYLE = `CUISINE
+Cuisine française du quotidien, de saison, équilibrée. Privilégie les légumes, les légumineuses et les céréales complètes ; la viande n'est pas obligatoire tous les jours. Les portions sont réalistes pour deux adultes. Évite les ingrédients introuvables en supermarché français.
+
+INGRÉDIENTS
+Chaque ingrédient porte une quantité chiffrée, une unité de la liste autorisée et un rayon de supermarché. Écris les noms en minuscules et au singulier ("oignon", pas "Oignons") : ils seront regroupés automatiquement dans la liste de courses. N'inclus ni le sel, ni le poivre, ni l'eau.
+
+ÉTAPES
+Des étapes courtes et concrètes, à l'infinitif. Cinq à huit étapes suffisent.`;
 
 export const SYSTEM_INSTRUCTION = `Tu conçois des plans de repas hebdomadaires pour un foyer français de deux personnes qui pratique le batch cooking du dimanche.
 
@@ -40,14 +54,24 @@ CONTRAINTES IMPÉRATIVES
 6. Le samedi (5) et le dimanche (6) échappent à la contrainte one-pot : une recette plus élaborée y est bienvenue.
 7. Le dimanche soir (dayIndex 6) est le batch de la semaine suivante : marque-le "cooked".
 
-CUISINE
-Cuisine française du quotidien, de saison, équilibrée. Privilégie les légumes, les légumineuses et les céréales complètes ; la viande n'est pas obligatoire tous les jours. Les portions sont réalistes pour deux adultes. Évite les ingrédients introuvables en supermarché français.
+${RECIPE_STYLE}`;
 
-INGRÉDIENTS
-Chaque ingrédient porte une quantité chiffrée, une unité de la liste autorisée et un rayon de supermarché. Écris les noms en minuscules et au singulier ("oignon", pas "Oignons") : ils seront regroupés automatiquement dans la liste de courses. N'inclus ni le sel, ni le poivre, ni l'eau.
+/**
+ * Instruction système de la régénération d'un repas isolé.
+ *
+ * Elle ne reprend pas la structure de la semaine — il n'y a qu'une recette à
+ * produire — mais applique la même exigence sur la recette elle-même. Le bloc
+ * commun est partagé plutôt que recopié : deux textes qui doivent dire la même
+ * chose finissent toujours par diverger.
+ */
+export const MEAL_REPLACEMENT_SYSTEM_INSTRUCTION = `Tu proposes une recette de remplacement pour un repas dans un plan hebdomadaire déjà établi, pour un foyer français de deux personnes.
 
-ÉTAPES
-Des étapes courtes et concrètes, à l'infinitif. Cinq à huit étapes suffisent.`;
+Tu ne produis qu'une seule recette. Le reste de la semaine est fixé et ne doit pas être remis en cause.
+
+CONTRAINTE DE SEMAINE
+Une recette servie du lundi au vendredi (dayIndex 0 à 4) doit porter l'étiquette "one-pot" et se préparer en ${MAX_WEEKDAY_PREP_MINUTES} minutes ou moins. Après une journée de travail, personne ne sort trois casseroles. Le samedi et le dimanche échappent à cette contrainte.
+
+${RECIPE_STYLE}`;
 
 export interface PlanPromptInput {
   weekStart: string;
@@ -97,4 +121,43 @@ export function buildRetryPrompt(
     JSON.stringify(rejectedPlan),
     'Produis un plan complet qui corrige ces points en respectant toutes les contraintes.',
   ].join('\n\n');
+}
+
+export interface MealReplacementPromptInput {
+  /** 0 = lundi, cohérent avec le contrat Gemini. */
+  dayIndex: number;
+  slot: MealSlot;
+  date: string;
+  /** Recette actuellement servie sur ce créneau, à ne pas reproposer. */
+  currentRecipeName: string | null;
+  /** Autres recettes de la semaine, pour ne pas créer de doublon. */
+  otherRecipeNames: string[];
+  notes?: string | undefined;
+}
+
+export function buildMealReplacementPrompt(input: MealReplacementPromptInput): string {
+  const moment = input.slot === 'lunch' ? 'midi' : 'soir';
+  const parts: string[] = [
+    `Propose une recette pour le ${moment} du ${getDayName(input.dayIndex)} ${input.date} (dayIndex ${input.dayIndex}).`,
+  ];
+
+  if (input.currentRecipeName) {
+    parts.push(
+      `Le créneau est actuellement occupé par « ${input.currentRecipeName} » : propose autre chose, et pas une variante proche.`,
+    );
+  }
+
+  if (input.otherRecipeNames.length > 0) {
+    parts.push(
+      `Le reste de la semaine sert déjà ces plats, n'en produis pas de doublon :\n${input.otherRecipeNames
+        .map((name) => `- ${name}`)
+        .join('\n')}`,
+    );
+  }
+
+  if (input.notes && input.notes.trim().length > 0) {
+    parts.push(`Contraintes particulières :\n${input.notes.trim()}`);
+  }
+
+  return parts.join('\n\n');
 }
