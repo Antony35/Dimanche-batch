@@ -8,6 +8,7 @@ import {
   getWeekDates,
   toIsoDate,
   type DayPlan,
+  type GenerationLock,
   type MealSlot,
   type Recipe,
 } from '@dimanche-batch/shared';
@@ -25,7 +26,6 @@ import {
   MealChoiceSheet,
   type MealChoiceTarget,
 } from '@/features/meal-plan/components/meal-choice-sheet';
-import { GenerationProgress } from '@/features/meal-plan/components/generation-progress';
 import { WeekSwitch } from '@/features/meal-plan/components/week-switch';
 import { useRecipes } from '@/features/meal-plan/api/use-recipes';
 import { useGenerationProgress } from '@/features/meal-plan/api/use-generation-progress';
@@ -75,9 +75,6 @@ export default function PlanningScreen() {
         <WeekSwitch showingCurrent={showingCurrent} onChange={setShowingCurrent} />
       </View>
 
-      {regenerate.isPending ? (
-        <GenerationProgress lock={progress} fallbackLabel="Recherche d’une recette" />
-      ) : null}
       {isStale && plan !== null ? <StaleNotice /> : null}
       {error ? <ErrorState message={error.message} /> : null}
       {regenerate.error ? <ErrorState message={regenerate.error.message} /> : null}
@@ -98,6 +95,7 @@ export default function PlanningScreen() {
             isToday={day.date === today}
             recipesById={recipesById}
             pending={pendingSlot}
+            progress={progress}
             onChoose={(slot, currentRecipeName) =>
               setTarget({ date: day.date, slot, currentRecipeName })
             }
@@ -155,6 +153,7 @@ function DaySection({
   isToday,
   recipesById,
   pending,
+  progress,
   onChoose,
 }: {
   day: DayPlan;
@@ -162,6 +161,7 @@ function DaySection({
   recipesById: Map<string, Recipe>;
   /** Créneau en cours d'enregistrement, s'il y en a un. */
   pending: { date: string; slot: MealSlot } | undefined;
+  progress: GenerationLock | null;
   onChoose: (slot: MealSlot, currentRecipeName: string | null) => void;
 }) {
   const theme = useTheme();
@@ -189,6 +189,7 @@ function DaySection({
         meal={day.lunch}
         recipesById={recipesById}
         isRegenerating={isPending('lunch')}
+        progress={progress}
         onChangeMeal={() => onChoose('lunch', nameOf(day.lunch.recipeId))}
       />
       <MealCard
@@ -196,6 +197,7 @@ function DaySection({
         meal={day.dinner}
         recipesById={recipesById}
         isRegenerating={isPending('dinner')}
+        progress={progress}
         onChangeMeal={() => onChoose('dinner', nameOf(day.dinner.recipeId))}
       />
     </View>

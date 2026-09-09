@@ -1,7 +1,8 @@
 import { useRouter } from 'expo-router';
 import { View } from 'react-native';
-import type { Meal, Recipe } from '@dimanche-batch/shared';
+import type { GenerationLock, Meal, Recipe } from '@dimanche-batch/shared';
 import { Button, Card, Tag, Text } from '@/components/ui';
+import { GenerationProgress } from './generation-progress';
 import { useTheme } from '@/theme';
 
 /**
@@ -27,6 +28,8 @@ export interface MealCardProps {
   /** Absent sur l'accueil : on ne change un repas que depuis le planning. */
   onChangeMeal?: () => void;
   isRegenerating?: boolean;
+  /** Avancement publié par le serveur, affiché à la place du bouton. */
+  progress?: GenerationLock | null;
 }
 
 export function MealCard({
@@ -35,6 +38,7 @@ export function MealCard({
   recipesById,
   onChangeMeal,
   isRegenerating = false,
+  progress = null,
 }: MealCardProps) {
   const theme = useTheme();
   const router = useRouter();
@@ -74,12 +78,17 @@ export function MealCard({
         </View>
       ) : null}
 
-      {onChangeMeal ? (
+      {isRegenerating ? (
+        // L'attente s'affiche dans la carte où l'on a agi : un bandeau en haut
+        // de l'écran serait hors de vue dès qu'on touche au milieu de semaine.
+        <View style={{ marginTop: theme.spacing.xs }}>
+          <GenerationProgress lock={progress} fallbackLabel="Envoi de la demande" />
+        </View>
+      ) : onChangeMeal ? (
         <Button
-          label={isRegenerating ? 'Enregistrement…' : 'Changer ce repas'}
+          label="Changer ce repas"
           variant="ghost"
           onPress={onChangeMeal}
-          loading={isRegenerating}
           style={{ marginTop: theme.spacing.xs }}
         />
       ) : null}
