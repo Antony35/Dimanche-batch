@@ -48,11 +48,31 @@ export function useGroceryList(householdId: string | null, weekId: string): Groc
       collection(db, paths.groceryItems(householdId, weekId)),
       (snapshot) => {
         const items: GroceryItem[] = [];
+        let unreadable = 0;
+
         for (const document of snapshot.docs) {
           const parsed = GroceryItemSchema.safeParse({ id: document.id, ...document.data() });
-          if (parsed.success) items.push(parsed.data);
+          if (parsed.success) {
+            items.push(parsed.data);
+            continue;
+          }
+          // Écarter en silence rendrait une liste illisible indiscernable d'une
+          // liste vide, et le diagnostic impossible depuis le téléphone.
+          unreadable += 1;
+          console.warn('article de courses illisible', document.id, parsed.error.issues);
         }
-        setState({ key: `${householdId}/${weekId}`, items, error: null });
+
+        setState({
+          key: `${householdId}/${weekId}`,
+          items,
+          error:
+            unreadable > 0
+              ? new Error(
+                  `${unreadable} article(s) enregistré(s) dans un format que l’application ne ` +
+                    'comprend pas. Régénère la semaine depuis l’accueil.',
+                )
+              : null,
+        });
       },
       (error) => setState({ key: `${householdId}/${weekId}`, items: [], error }),
     );
