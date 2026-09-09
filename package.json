@@ -23,7 +23,8 @@
     "build:android": "cd app && eas build --platform android --profile preview",
     "gemini:probe": "npm run gemini:probe -w functions --",
     "test:functions": "firebase emulators:exec --only firestore \"npm run test -w functions\"",
-    "test:all": "npm run test && npm run test:functions && npm run test:rules"
+    "test:all": "npm run test && npm run test:functions && npm run test:rules",
+    "test:coverage": "npm run test -w @dimanche-batch/shared -- --coverage.enabled --coverage.provider=v8 --coverage.reporter=text --coverage.include=src/**"
   },
   "devDependencies": {
     "firebase-tools": "^14.9.0",

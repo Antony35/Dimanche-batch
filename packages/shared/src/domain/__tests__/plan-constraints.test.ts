@@ -72,6 +72,17 @@ describe('validateGeneratedPlan', () => {
     expect(codes(plan)).not.toContain('missing-recipe');
   });
 
+  it('refuse deux recettes portant le même slug', () => {
+    // Le slug devient l'identifiant du document : deux recettes homonymes
+    // n'en écriraient qu'une, et le plan citerait la mauvaise.
+    const plan = makeValidGeneratedPlan();
+    const premiere = plan.recipes[0];
+    const seconde = plan.recipes[1];
+    if (premiere && seconde) seconde.slug = premiere.slug;
+
+    expect(codes(plan)).toContain('duplicate-slug');
+  });
+
   it('refuse des jours en double', () => {
     const plan = makeValidGeneratedPlan();
     plan.days[6]!.dayIndex = 5;

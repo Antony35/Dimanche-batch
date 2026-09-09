@@ -1,0 +1,241 @@
+import { describe, expect, it } from 'vitest';
+import { GeneratedPlanSchema, GeneratedRecipeSchema } from '../gemini';
+import { GroceryItemSchema, GroceryListSchema } from '../grocery-list';
+import { HouseholdSchema, InviteCodeSchema } from '../household';
+import { RecipeSchema } from '../recipe';
+import { RegenerateMealInputSchema, WeeklyPlanSchema } from '../weekly-plan';
+import { makeGeneratedRecipe, makeRecipe, makeValidGeneratedPlan } from '../../domain/__tests__/fixtures';
+
+/**
+ * Les schémas sont la seule défense des frontières du système : réponse Gemini,
+ * payload d'une callable, document Firestore relu. Un schéma trop permissif ne
+ * se voit nulle part — il laisse simplement passer, et la donnée fausse ressort
+ * trois écrans plus loin. Ces tests fixent ce que chacun doit refuser.
+ */
+
+function expectRejected(schema: { safeParse: (value: unknown) => { success: boolean } }, value: unknown) {
+  expect(schema.safeParse(value).success).toBe(false);
+}
+
+const INGREDIENT = { name: 'lentille', qty: 1, unit: 'g', aisle: 'epicerie' };
+
+/** Recette valide dont un seul ingrédient est remplacé, sans passer par le typage. */
+function withIngredient(ingredient: unknown): unknown {
+  return { ...makeGeneratedRecipe({ slug: 'curry' }), ingredients: [ingredient] };
+}
+
+describe('GeneratedRecipeSchema', () => {
+  it('accepte une recette conforme au contrat du modèle', () => {
+    expect(GeneratedRecipeSchema.safeParse(makeGeneratedRecipe({ slug: 'curry' })).success).toBe(
+      true,
+    );
+  });
+
+  it('impose un slug en minuscules, chiffres et tirets', () => {
+    // Le slug devient l'identifiant du document Firestore : une majuscule ou un
+    // espace y produirait deux documents pour une même recette.
+    for (const slug of ['Curry', 'curry lentilles', 'curry_lentilles', 'ab', 'curry/lentilles']) {
+      expectRejected(GeneratedRecipeSchema, makeGeneratedRecipe({ slug }));
+    }
+  });
+
+  it('refuse une quantité nulle ou négative', () => {
+    for (const qty of [0, -1]) {
+      expectRejected(GeneratedRecipeSchema, withIngredient({ ...INGREDIENT, qty }));
+    }
+  });
+
+  it('refuse une unité ou un rayon hors des listes autorisées', () => {
+    // Ces valeurs viennent d'un modèle, pas de notre code : le compilateur ne
+    // les verra jamais, seul le schéma peut les arrêter. D'où l'objet non typé.
+    expectRejected(GeneratedRecipeSchema, withIngredient({ ...INGREDIENT, unit: 'tasse' }));
+    expectRejected(GeneratedRecipeSchema, withIngredient({ ...INGREDIENT, aisle: 'cave-a-vin' }));
+    expectRejected(GeneratedRecipeSchema, withIngredient({ ...INGREDIENT, name: '' }));
+  });
+
+  it('exige au moins un ingrédient et une étape', () => {
+    expectRejected(GeneratedRecipeSchema, makeGeneratedRecipe({ slug: 'curry', ingredients: [] }));
+    expectRejected(GeneratedRecipeSchema, makeGeneratedRecipe({ slug: 'curry', steps: [] }));
+  });
+
+  it('refuse un temps de préparation non entier', () => {
+    expectRejected(GeneratedRecipeSchema, makeGeneratedRecipe({ slug: 'c', prepMinutes: 25.5 }));
+  });
+});
+
+describe('GeneratedPlanSchema', () => {
+  it('accepte le plan de référence', () => {
+    expect(GeneratedPlanSchema.safeParse(makeValidGeneratedPlan()).success).toBe(true);
+  });
+
+  it('exige exactement 7 jours', () => {
+    const plan = makeValidGeneratedPlan();
+    expectRejected(GeneratedPlanSchema, { ...plan, days: plan.days.slice(0, 6) });
+    expectRejected(GeneratedPlanSchema, { ...plan, days: [...plan.days, plan.days[0]] });
+  });
+
+  it('exige au moins 3 recettes', () => {
+    const plan = makeValidGeneratedPlan();
+    expectRejected(GeneratedPlanSchema, { ...plan, recipes: plan.recipes.slice(0, 2) });
+  });
+
+  it('refuse un dayIndex hors de la semaine', () => {
+    const plan = makeValidGeneratedPlan();
+    const days = plan.days.map((day, index) => (index === 0 ? { ...day, dayIndex: 7 } : day));
+    expectRejected(GeneratedPlanSchema, { ...plan, days });
+  });
+
+  it('accepte un repas sans recette, qui est le cas du repas pris dehors', () => {
+    const plan = makeValidGeneratedPlan();
+    const days = plan.days.map((day, index) =>
+      index === 0 ? { ...day, lunch: { ...day.lunch, recipeSlug: null } } : day,
+    );
+    expect(GeneratedPlanSchema.safeParse({ ...plan, days }).success).toBe(true);
+  });
+});
+
+describe('RecipeSchema', () => {
+  it('accepte une recette telle que la function l’écrit', () => {
+    expect(RecipeSchema.safeParse(makeRecipe({ id: 'curry' })).success).toBe(true);
+  });
+
+  it('accepte `lastUsedAt` nul mais refuse une date mal formée', () => {
+    expect(RecipeSchema.safeParse(makeRecipe({ id: 'c', lastUsedAt: null })).success).toBe(true);
+    expectRejected(RecipeSchema, makeRecipe({ id: 'c', lastUsedAt: '14/09/2026' }));
+    expectRejected(RecipeSchema, makeRecipe({ id: 'c', lastUsedAt: '2026-9-14' }));
+  });
+
+  it('refuse un document auquel il manque un champ', () => {
+    const { isFavorite: _omis, ...sansFavori } = makeRecipe({ id: 'curry' });
+    expectRejected(RecipeSchema, sansFavori);
+  });
+});
+
+describe('WeeklyPlanSchema', () => {
+  const plan = {
+    id: '2026-09-14',
+    weekStart: '2026-09-14',
+    days: Array.from({ length: 7 }, (_, index) => ({
+      date: `2026-09-${String(14 + index).padStart(2, '0')}`,
+      lunch: { recipeId: 'curry', kind: 'batch-leftover', withStarter: false, withDessert: false },
+      dinner: { recipeId: null, kind: 'eat-out', withStarter: false, withDessert: false },
+    })),
+    recipeIds: ['curry'],
+    generatedAt: 1_757_000_000_000,
+    generatedBy: 'uid-alice',
+    model: 'gemini-3.6-flash',
+  };
+
+  it('accepte un plan complet', () => {
+    expect(WeeklyPlanSchema.safeParse(plan).success).toBe(true);
+  });
+
+  it('exige 7 jours, ni plus ni moins', () => {
+    expectRejected(WeeklyPlanSchema, { ...plan, days: plan.days.slice(0, 5) });
+  });
+
+  it('refuse un `kind` inconnu', () => {
+    const days = plan.days.map((day, index) =>
+      index === 0 ? { ...day, lunch: { ...day.lunch, kind: 'reheated' } } : day,
+    );
+    expectRejected(WeeklyPlanSchema, { ...plan, days });
+  });
+
+  it('refuse un identifiant de semaine qui n’est pas une date ISO', () => {
+    expectRejected(WeeklyPlanSchema, { ...plan, id: 'semaine-38' });
+  });
+});
+
+describe('GroceryItemSchema', () => {
+  const item = {
+    id: 'lentilles-corail--mass',
+    name: 'lentilles corail',
+    qty: 250,
+    unit: 'g',
+    aisle: 'epicerie',
+    checked: false,
+    fromRecipeIds: ['curry'],
+  };
+
+  it('accepte un article tel que la function l’écrit', () => {
+    expect(GroceryItemSchema.safeParse(item).success).toBe(true);
+  });
+
+  it('refuse une quantité nulle : un article sans quantité n’a rien à faire dans la liste', () => {
+    expectRejected(GroceryItemSchema, { ...item, qty: 0 });
+  });
+
+  it('refuse un `checked` qui ne serait pas un booléen', () => {
+    // Le client n'écrit que ce champ : c'est celui qu'il faut le plus contraindre.
+    expectRejected(GroceryItemSchema, { ...item, checked: 'true' });
+  });
+
+  it('accepte une liste de recettes d’origine vide', () => {
+    expect(GroceryItemSchema.safeParse({ ...item, fromRecipeIds: [] }).success).toBe(true);
+  });
+});
+
+describe('GroceryListSchema', () => {
+  it('décrit le document parent de la sous-collection', () => {
+    const list = { id: '2026-09-14', itemCount: 12, generatedAt: 1_757_000_000_000 };
+    expect(GroceryListSchema.safeParse(list).success).toBe(true);
+    expectRejected(GroceryListSchema, { ...list, itemCount: -1 });
+    expectRejected(GroceryListSchema, { ...list, itemCount: 1.5 });
+  });
+});
+
+describe('HouseholdSchema et InviteCodeSchema', () => {
+  const household = {
+    id: 'household-1',
+    name: 'Maison',
+    members: ['uid-alice'],
+    inviteCode: 'BATCH-7F2K',
+    createdAt: 1_757_000_000_000,
+    createdBy: 'uid-alice',
+  };
+
+  it('accepte un foyer à un ou deux membres', () => {
+    expect(HouseholdSchema.safeParse(household).success).toBe(true);
+    expect(
+      HouseholdSchema.safeParse({ ...household, members: ['uid-alice', 'uid-bob'] }).success,
+    ).toBe(true);
+  });
+
+  it('refuse un foyer sans membre', () => {
+    expectRejected(HouseholdSchema, { ...household, members: [] });
+  });
+
+  it('accepte un code consommé, donc nul', () => {
+    expect(HouseholdSchema.safeParse({ ...household, inviteCode: null }).success).toBe(true);
+  });
+
+  it('refuse les caractères confondables dans un code', () => {
+    // O/0 et I/1 ne sont pas dans l’alphabet : un code dicté ne doit pas être
+    // ambigu, et le schéma doit refuser ce que le générateur ne produit pas.
+    for (const code of ['BATCH-O0F2', 'BATCH-I1F2', 'BATCH-7F2', 'batch-7f2k', '7F2K']) {
+      expectRejected(InviteCodeSchema, code);
+    }
+  });
+});
+
+describe('RegenerateMealInputSchema', () => {
+  const input = {
+    householdId: 'household-1',
+    weekId: '2026-09-14',
+    date: '2026-09-16',
+    slot: 'dinner',
+  };
+
+  it('accepte un payload complet', () => {
+    expect(RegenerateMealInputSchema.safeParse(input).success).toBe(true);
+    expect(RegenerateMealInputSchema.safeParse({ ...input, notes: 'sans porc' }).success).toBe(true);
+  });
+
+  it('n’accepte que les deux créneaux du jour', () => {
+    expectRejected(RegenerateMealInputSchema, { ...input, slot: 'snack' });
+  });
+
+  it('refuse des notes assez longues pour noyer le prompt', () => {
+    expectRejected(RegenerateMealInputSchema, { ...input, notes: 'a'.repeat(501) });
+  });
+});
