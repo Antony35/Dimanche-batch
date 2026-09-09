@@ -5,11 +5,11 @@ import { refreshInviteCode, useHousehold } from '@/features/household/api/use-ho
 import { useTheme } from '@/theme';
 
 /**
- * Historique des semaines passées (J5). En attendant, cet écran héberge les
- * réglages du foyer — dont le code d'invitation, nécessaire dès aujourd'hui
- * pour relier le second téléphone.
+ * Réglages du foyer : qui en fait partie, comment y relier un second
+ * téléphone, et comment en sortir. Hors des onglets à dessein — on y vient
+ * rarement, et jamais au milieu des courses.
  */
-export default function HistoryScreen() {
+export default function SettingsScreen() {
   const theme = useTheme();
   const { user, signOut } = useAuth();
   const { household } = useHousehold();
