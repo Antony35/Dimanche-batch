@@ -17,7 +17,7 @@ import {
  * stockée avec le plan, ce qui permet de savoir quelle formulation a produit
  * quel résultat.
  */
-export const PROMPT_VERSION = 2;
+export const PROMPT_VERSION = 3;
 
 /**
  * Exigences portant sur une recette, indépendamment du contexte qui la demande.
@@ -77,6 +77,12 @@ export interface PlanPromptInput {
   weekStart: string;
   /** Noms des recettes servies récemment, à ne pas reproposer. */
   recentRecipeNames: string[];
+  /**
+   * Recettes que le foyer a mises en favori et qui ne sont pas dans
+   * `recentRecipeNames`. Sans elles, le bouton favori ne servirait qu'à faire
+   * une liste : c'est ici qu'il agit.
+   */
+  favoriteRecipeNames?: string[] | undefined;
   /** Contraintes ponctuelles saisies dans l'app. */
   notes?: string | undefined;
 }
@@ -89,6 +95,16 @@ export function buildPlanPrompt(input: PlanPromptInput): string {
   if (input.recentRecipeNames.length > 0) {
     parts.push(
       `Ces plats ont été servis lors des dernières semaines, ne les repropose pas et évite d'en produire des variantes trop proches :\n${input.recentRecipeNames
+        .map((name) => `- ${name}`)
+        .join('\n')}`,
+    );
+  }
+
+  if (input.favoriteRecipeNames && input.favoriteRecipeNames.length > 0) {
+    // Une seule au plus : le foyer veut revoir ses favoris, pas manger la même
+    // chose toutes les semaines. La variété reste la contrainte dominante.
+    parts.push(
+      `Le foyer a mis ces plats en favori. Tu peux en reprendre un, au maximum, et seulement s'il s'intègre naturellement à la semaine :\n${input.favoriteRecipeNames
         .map((name) => `- ${name}`)
         .join('\n')}`,
     );

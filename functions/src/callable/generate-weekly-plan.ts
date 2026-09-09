@@ -74,12 +74,14 @@ export const generateWeeklyPlan = onCall(
     await consumeGenerationQuota(input.householdId);
 
     const recentRecipeNames = await readRecentRecipeNames(input.householdId, input.weekStart);
+    const favoriteRecipeNames = await readFavoriteRecipeNames(input.householdId, recentRecipeNames);
 
     let generated;
     try {
       generated = await generateWeeklyPlanFromGemini({
         weekStart: input.weekStart,
         recentRecipeNames,
+        favoriteRecipeNames,
         notes: input.notes,
       });
     } catch (error) {
@@ -167,4 +169,31 @@ async function readRecentRecipeNames(householdId: string, weekStart: string): Pr
   return recipes
     .map((recipe) => recipe.get('name'))
     .filter((name): name is string => typeof name === 'string');
+}
+
+/** Au-delà, la liste noierait le reste du prompt. */
+const MAX_FAVORITES_IN_PROMPT = 8;
+
+/**
+ * Favoris du foyer, hors de ceux déjà servis récemment.
+ *
+ * Un favori mangé la semaine dernière n'a pas à revenir tout de suite : le
+ * retirer ici évite de demander au modèle une chose et son contraire.
+ */
+async function readFavoriteRecipeNames(
+  householdId: string,
+  recentRecipeNames: string[],
+): Promise<string[]> {
+  const recent = new Set(recentRecipeNames);
+
+  const snapshot = await db
+    .collection(paths.recipes(householdId))
+    .where('isFavorite', '==', true)
+    .limit(MAX_FAVORITES_IN_PROMPT * 2)
+    .get();
+
+  return snapshot.docs
+    .map((doc) => doc.get('name'))
+    .filter((name): name is string => typeof name === 'string' && !recent.has(name))
+    .slice(0, MAX_FAVORITES_IN_PROMPT);
 }
