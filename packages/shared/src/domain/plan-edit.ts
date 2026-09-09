@@ -23,6 +23,13 @@ export class MealNotFoundError extends Error {
  * coup : la recette écartée peut très bien rester servie ailleurs dans la
  * semaine, et la retirer aveuglément casserait la requête qui charge les
  * recettes du plan en une fois.
+ *
+ * Les plats du batch y sont réunis systématiquement. Un plat cuisiné dimanche
+ * reste acheté même si plus aucun repas ne le sert — l'utilisateur a pu changer
+ * les derniers créneaux qui l'utilisaient. Sans cette union, il sortirait de
+ * `recipeIds`, la fonction qui recharge les recettes ne le trouverait plus, et
+ * ses ingrédients disparaîtraient de la liste de courses sans le moindre
+ * message : le foyer sous-achèterait.
  */
 export function replaceMealInPlan(
   plan: WeeklyPlan,
@@ -33,7 +40,11 @@ export function replaceMealInPlan(
   if (!plan.days.some((day) => day.date === date)) throw new MealNotFoundError(date);
 
   const days = plan.days.map((day) => (day.date === date ? { ...day, [slot]: meal } : day));
-  return { ...plan, days, recipeIds: collectRecipeIds(days) };
+  return {
+    ...plan,
+    days,
+    recipeIds: [...new Set([...collectRecipeIds(days), ...plan.batchRecipeIds])],
+  };
 }
 
 /** Recettes citées par au moins un repas, dans l'ordre où elles apparaissent. */

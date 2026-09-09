@@ -51,7 +51,9 @@ export default function TodayScreen() {
           isGenerating={generate.isPending}
           error={generate.error}
           onGenerate={() => {
-            if (householdId) generate.mutate({ householdId, weekStart: weekId });
+            if (householdId) {
+              generate.mutate({ householdId, weekStart: weekId, batchRecipeCount: 4 });
+            }
           }}
         />
       ) : day === null ? (

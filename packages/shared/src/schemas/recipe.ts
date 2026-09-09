@@ -17,7 +17,7 @@ export const RecipeSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1).max(120),
   /** Nombre de portions produites — pas le nombre de convives. */
-  servings: z.number().int().min(1).max(12),
+  servings: z.number().int().min(1).max(16),
   prepMinutes: z.number().int().min(1).max(240),
   tags: z.array(RecipeTagSchema).max(9),
   ingredients: z.array(IngredientSchema).min(1).max(30),

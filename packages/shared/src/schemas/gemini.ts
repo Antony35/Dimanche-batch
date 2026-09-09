@@ -15,7 +15,7 @@ export const GeneratedRecipeSchema = z.object({
     .string()
     .regex(/^[a-z0-9-]{3,60}$/, 'slug en minuscules, tirets uniquement'),
   name: z.string().min(1).max(120),
-  servings: z.number().int().min(1).max(12),
+  servings: z.number().int().min(1).max(16),
   prepMinutes: z.number().int().min(1).max(240),
   tags: z.array(RecipeTagSchema).min(1).max(9),
   ingredients: z
@@ -48,6 +48,14 @@ export const GeneratedDaySchema = z.object({
 
 export const GeneratedPlanSchema = z.object({
   recipes: z.array(GeneratedRecipeSchema).min(3).max(12),
+  /**
+   * Plats préparés le dimanche, dans l'ordre de préparation — c'est cet ordre
+   * que suit l'écran de préparation, sans champ supplémentaire à demander.
+   * Champ plat plutôt qu'objet englobant : l'API refuse certaines constructions
+   * de schéma sans nommer le champ fautif, un niveau d'imbrication en moins est
+   * un risque en moins (voir `functions/src/gemini/response-schema.ts`).
+   */
+  batchRecipeSlugs: z.array(z.string()).min(1).max(8),
   days: z.array(GeneratedDaySchema).length(7),
 });
 

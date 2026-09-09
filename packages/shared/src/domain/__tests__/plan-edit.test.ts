@@ -87,3 +87,37 @@ describe('findMeal', () => {
     expect(findMeal(planWithTwoRecipes(), '2026-10-01', 'lunch')).toBeNull();
   });
 });
+
+describe('replaceMealInPlan, invariant du batch', () => {
+  it('garde un plat du batch dans `recipeIds` même quand plus aucun repas ne le sert', () => {
+    // Le plat est cuisiné le dimanche : il est acheté et préparé. Le sortir de
+    // `recipeIds` ferait disparaître ses ingrédients de la liste de courses.
+    const plan = makePlan(
+      [{ dinner: { recipeId: 'batch', kind: 'batch-leftover' } }],
+      WEEK,
+      ['batch'],
+    );
+
+    const next = replaceMealInPlan(
+      plan,
+      WEEK,
+      'dinner',
+      makeMeal({ recipeId: 'chili', kind: 'cooked' }),
+    );
+
+    expect(next.recipeIds).toContain('batch');
+    expect(next.recipeIds).toContain('chili');
+  });
+
+  it('ne duplique pas un plat du batch également servi par un repas', () => {
+    const plan = makePlan(
+      [{ lunch: { recipeId: 'batch', kind: 'batch-leftover' } }],
+      WEEK,
+      ['batch'],
+    );
+
+    const next = replaceMealInPlan(plan, WEEK, 'dinner', makeMeal({ recipeId: 'batch', kind: 'batch-leftover' }));
+
+    expect(next.recipeIds.filter((id) => id === 'batch')).toHaveLength(1);
+  });
+});

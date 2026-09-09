@@ -30,7 +30,8 @@ export function makeMeal(overrides: Partial<Meal> = {}): Meal {
 
 export function makePlan(
   days: Array<{ lunch?: Partial<Meal>; dinner?: Partial<Meal> }>,
-  weekStart = '2026-09-14',
+  weekStart = '2026-09-12',
+  batchRecipeIds: string[] = [],
 ): WeeklyPlan {
   const dates = getWeekDates(weekStart);
   const planDays: DayPlan[] = dates.map((date, index) => ({
@@ -44,6 +45,7 @@ export function makePlan(
     weekStart,
     days: planDays,
     recipeIds: [],
+    batchRecipeIds,
     generatedAt: 0,
     generatedBy: 'uid-test',
     model: 'gemini-test',
@@ -102,5 +104,5 @@ export function makeValidGeneratedPlan(): GeneratedPlan {
     },
   }));
 
-  return { recipes, days };
+  return { recipes, batchRecipeSlugs: ['batch-curry'], days };
 }

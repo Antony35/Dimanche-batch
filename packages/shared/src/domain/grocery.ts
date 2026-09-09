@@ -23,46 +23,65 @@ function itemKey(name: string, unit: string): string {
   return `${normalizeIngredientName(name).replace(/[^a-z0-9]+/g, '-')}--${unit}`;
 }
 
+/** Verse les ingrédients d'une recette dans l'accumulateur, une fois. */
+function addRecipeIngredients(accumulator: Map<string, GroceryItem>, recipe: Recipe): void {
+  for (const ingredient of recipe.ingredients) {
+    const base = toBaseQuantity(ingredient.qty, ingredient.unit);
+    const key = itemKey(ingredient.name, dimensionOf(ingredient.unit));
+    const existing = accumulator.get(key);
+
+    if (existing) {
+      existing.qty += base.qty;
+      if (!existing.fromRecipeIds.includes(recipe.id)) {
+        existing.fromRecipeIds.push(recipe.id);
+      }
+      continue;
+    }
+
+    accumulator.set(key, {
+      id: key,
+      name: normalizeIngredientName(ingredient.name),
+      qty: base.qty,
+      unit: base.unit,
+      aisle: ingredient.aisle,
+      checked: false,
+      fromRecipeIds: [recipe.id],
+    });
+  }
+}
+
 /**
  * Construit la liste de courses d'un plan.
  *
- * Seuls les repas `cooked` consomment des ingrédients : un midi marqué
- * `batch-leftover` réutilise une portion déjà achetée, et l'inclure reviendrait
- * à acheter la semaine en double. C'est la règle la plus importante du module.
+ * Deux sources, et une seule fois chacune :
+ *
+ * 1. **les plats du batch**, comptés une fois aux portions déclarées. Ils sont
+ *    cuisinés le dimanche et couvrent les dix repas du lundi au vendredi ;
+ *    compter chaque repas qui les sert reviendrait à acheter la semaine dix fois.
+ * 2. **les repas cuisinés le jour même**, samedi et dimanche.
+ *
+ * Un repas `cooked` qui citerait un plat du batch est ignoré : le plat est déjà
+ * compté au titre du batch. La contrainte de génération l'interdit, mais un plan
+ * édité repas par repas pourrait produire ce cas, et il ne doit pas coûter le
+ * double.
  */
 export function buildGroceryList(plan: WeeklyPlan, recipes: Recipe[]): GroceryItem[] {
   const recipesById = new Map(recipes.map((recipe) => [recipe.id, recipe]));
   const accumulator = new Map<string, GroceryItem>();
+  const batchIds = new Set(plan.batchRecipeIds);
+
+  for (const recipeId of batchIds) {
+    const recipe = recipesById.get(recipeId);
+    if (recipe) addRecipeIngredients(accumulator, recipe);
+  }
 
   for (const day of plan.days) {
     for (const meal of [day.lunch, day.dinner]) {
       if (meal.kind !== 'cooked' || meal.recipeId === null) continue;
+      if (batchIds.has(meal.recipeId)) continue;
+
       const recipe = recipesById.get(meal.recipeId);
-      if (!recipe) continue;
-
-      for (const ingredient of recipe.ingredients) {
-        const base = toBaseQuantity(ingredient.qty, ingredient.unit);
-        const key = itemKey(ingredient.name, dimensionOf(ingredient.unit));
-        const existing = accumulator.get(key);
-
-        if (existing) {
-          existing.qty += base.qty;
-          if (!existing.fromRecipeIds.includes(recipe.id)) {
-            existing.fromRecipeIds.push(recipe.id);
-          }
-          continue;
-        }
-
-        accumulator.set(key, {
-          id: key,
-          name: normalizeIngredientName(ingredient.name),
-          qty: base.qty,
-          unit: base.unit,
-          aisle: ingredient.aisle,
-          checked: false,
-          fromRecipeIds: [recipe.id],
-        });
-      }
+      if (recipe) addRecipeIngredients(accumulator, recipe);
     }
   }
 

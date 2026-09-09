@@ -1,7 +1,7 @@
 import type { GeneratedPlan, GeneratedRecipe } from '@dimanche-batch/shared';
 
 export const HOUSEHOLD_ID = 'household-test';
-export const WEEK_START = '2026-09-14';
+export const WEEK_START = '2026-09-12';
 export const ALICE = 'uid-alice';
 export const BOB = 'uid-bob';
 export const MALLORY = 'uid-mallory';
@@ -24,9 +24,9 @@ export function makeGeneratedRecipe(
 /**
  * Plan où chaque recette est réellement cuisinée au moins un soir.
  *
- * Le détail compte : seuls les repas `cooked` alimentent la liste de courses.
- * Un plan dont toutes les recettes seraient en `batch-leftover` produirait une
- * liste vide et rendrait vert n'importe quel test de courses.
+ * Volontairement resté sur l'ancienne sémantique — un repas `cooked` par
+ * recette — pour que les tests d'écriture continuent de vérifier ce chemin.
+ * Les scénarios propres au batch passent `batchRecipeIds` explicitement.
  */
 export function makeGeneratedPlan(recipes: GeneratedRecipe[]): GeneratedPlan {
   const days = [0, 1, 2, 3, 4, 5, 6].map((dayIndex) => ({
@@ -45,5 +45,5 @@ export function makeGeneratedPlan(recipes: GeneratedRecipe[]): GeneratedPlan {
     },
   }));
 
-  return { recipes, days };
+  return { recipes, batchRecipeSlugs: recipes.map((recipe) => recipe.slug), days };
 }

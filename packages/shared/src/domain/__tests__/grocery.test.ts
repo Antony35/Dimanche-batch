@@ -218,3 +218,67 @@ describe('formatGroceryListForSharing, cas limites', () => {
     expect(text).toBe('Tomate 2');
   });
 });
+
+describe('buildGroceryList, comptabilité du batch', () => {
+  const curry = makeRecipe({
+    id: 'curry',
+    servings: 12,
+    ingredients: [{ name: 'lentilles corail', qty: 600, unit: 'g', aisle: 'epicerie' }],
+  });
+  const gratin = makeRecipe({
+    id: 'gratin',
+    ingredients: [{ name: 'courgette', qty: 3, unit: 'piece', aisle: 'fruits-legumes' }],
+  });
+
+  /** Semaine réaliste : le curry nourrit les dix repas, le gratin est cuisiné samedi. */
+  function weekWithBatch() {
+    return makePlan(
+      [
+        { dinner: { recipeId: 'gratin', kind: 'cooked' } },
+        {},
+        { lunch: { recipeId: 'curry', kind: 'batch-leftover' }, dinner: { recipeId: 'curry', kind: 'batch-leftover' } },
+        { lunch: { recipeId: 'curry', kind: 'batch-leftover' }, dinner: { recipeId: 'curry', kind: 'batch-leftover' } },
+        { lunch: { recipeId: 'curry', kind: 'batch-leftover' }, dinner: { recipeId: 'curry', kind: 'batch-leftover' } },
+      ],
+      '2026-09-12',
+      ['curry'],
+    );
+  }
+
+  it('compte un plat du batch une seule fois, quel que soit le nombre de repas servis', () => {
+    // Six repas servent le curry : le compter par repas achèterait 3,6 kg.
+    const items = buildGroceryList(weekWithBatch(), [curry, gratin]);
+    const lentilles = items.find((item) => item.name === 'lentilles corail');
+
+    expect(lentilles?.qty).toBe(600);
+  });
+
+  it('additionne le batch et les plats cuisinés le week-end', () => {
+    const items = buildGroceryList(weekWithBatch(), [curry, gratin]);
+
+    expect(items.map((item) => item.name).sort()).toEqual(['courgette', 'lentilles corail']);
+  });
+
+  it('ne compte pas deux fois un plat du batch marqué cuisiné', () => {
+    // Un plan édité repas par repas peut produire ce cas ; il ne doit pas
+    // coûter le double, le plat est déjà acheté au titre du batch.
+    const plan = makePlan(
+      [{ dinner: { recipeId: 'curry', kind: 'cooked' } }],
+      '2026-09-12',
+      ['curry'],
+    );
+
+    const items = buildGroceryList(plan, [curry]);
+    expect(items).toHaveLength(1);
+    expect(items[0]?.qty).toBe(600);
+  });
+
+  it('ignore un plat du batch dont la recette n’est pas fournie, sans planter', () => {
+    const plan = makePlan([], '2026-09-12', ['curry', 'inconnue']);
+    expect(buildGroceryList(plan, [curry])).toHaveLength(1);
+  });
+
+  it('rend une liste vide pour une semaine sans batch ni plat cuisiné', () => {
+    expect(buildGroceryList(makePlan([]), [curry])).toEqual([]);
+  });
+});

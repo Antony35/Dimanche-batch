@@ -3,7 +3,12 @@ import { GeneratedPlanSchema, GeneratedRecipeSchema } from '../gemini';
 import { GroceryItemSchema, GroceryListSchema } from '../grocery-list';
 import { HouseholdSchema, InviteCodeSchema } from '../household';
 import { RecipeSchema } from '../recipe';
-import { RegenerateMealInputSchema, WeeklyPlanSchema } from '../weekly-plan';
+import {
+  GenerateWeeklyPlanInputSchema,
+  RegenerateMealInputSchema,
+  SetMealInputSchema,
+  WeeklyPlanSchema,
+} from '../weekly-plan';
 import { makeGeneratedRecipe, makeRecipe, makeValidGeneratedPlan } from '../../domain/__tests__/fixtures';
 
 /**
@@ -237,5 +242,99 @@ describe('RegenerateMealInputSchema', () => {
 
   it('refuse des notes assez longues pour noyer le prompt', () => {
     expectRejected(RegenerateMealInputSchema, { ...input, notes: 'a'.repeat(501) });
+  });
+});
+
+describe('WeeklyPlanSchema, le batch', () => {
+  const plan = {
+    id: '2026-09-12',
+    weekStart: '2026-09-12',
+    days: Array.from({ length: 7 }, (_, index) => ({
+      date: `2026-09-${String(12 + index).padStart(2, '0')}`,
+      lunch: { recipeId: 'curry', kind: 'batch-leftover', withStarter: false, withDessert: false },
+      dinner: { recipeId: null, kind: 'eat-out', withStarter: false, withDessert: false },
+    })),
+    recipeIds: ['curry'],
+    generatedAt: 1_757_000_000_000,
+    generatedBy: 'uid-alice',
+    model: 'gemini-3.6-flash',
+  };
+
+  it('accepte un plan composé avant l’introduction du batch, et rend un tableau vide', () => {
+    // Le plan déjà en production n’a pas ce champ : il doit rester lisible, et
+    // `buildGroceryList` retombe alors sur le comportement d’avant.
+    const parsed = WeeklyPlanSchema.safeParse(plan);
+    expect(parsed.success).toBe(true);
+    expect(parsed.success && parsed.data.batchRecipeIds).toEqual([]);
+  });
+
+  it('accepte un plan qui déclare son batch', () => {
+    const parsed = WeeklyPlanSchema.safeParse({ ...plan, batchRecipeIds: ['curry', 'chili'] });
+    expect(parsed.success && parsed.data.batchRecipeIds).toEqual(['curry', 'chili']);
+  });
+
+  it('refuse un identifiant de plat vide', () => {
+    expectRejected(WeeklyPlanSchema, { ...plan, batchRecipeIds: [''] });
+  });
+});
+
+describe('GeneratedPlanSchema, le batch', () => {
+  it('exige que le modèle déclare les plats du dimanche', () => {
+    const { batchRecipeSlugs: _absent, ...sansBatch } = makeValidGeneratedPlan();
+    expectRejected(GeneratedPlanSchema, sansBatch);
+  });
+
+  it('refuse un batch vide', () => {
+    expectRejected(GeneratedPlanSchema, { ...makeValidGeneratedPlan(), batchRecipeSlugs: [] });
+  });
+});
+
+describe('SetMealInputSchema', () => {
+  const base = {
+    householdId: 'household-1',
+    weekId: '2026-09-12',
+    date: '2026-09-14',
+    slot: 'dinner',
+  };
+
+  it('exige un identifiant de plat pour une portion du batch', () => {
+    expect(
+      SetMealInputSchema.safeParse({ ...base, meal: { choice: 'batch', recipeId: 'curry' } })
+        .success,
+    ).toBe(true);
+    expectRejected(SetMealInputSchema, { ...base, meal: { choice: 'batch' } });
+  });
+
+  it('n’en demande aucun pour un repas à l’extérieur, et l’écarte s’il vient', () => {
+    expect(SetMealInputSchema.safeParse({ ...base, meal: { choice: 'eat-out' } }).success).toBe(
+      true,
+    );
+
+    // Zod retire les clés en trop plutôt que de les refuser : ce qui ressort de
+    // l'union ne porte pas de `recipeId`, donc rien ne peut le lire par erreur.
+    const parsed = SetMealInputSchema.safeParse({
+      ...base,
+      meal: { choice: 'eat-out', recipeId: 'curry' },
+    });
+    expect(parsed.success && parsed.data.meal).toEqual({ choice: 'eat-out' });
+  });
+
+  it('refuse un choix inconnu', () => {
+    expectRejected(SetMealInputSchema, { ...base, meal: { choice: 'freezer' } });
+  });
+});
+
+describe('GenerateWeeklyPlanInputSchema', () => {
+  const base = { householdId: 'household-1', weekStart: '2026-09-12' };
+
+  it('exige un nombre de plats compris entre 3 et 6', () => {
+    for (const batchRecipeCount of [3, 4, 5, 6]) {
+      expect(GenerateWeeklyPlanInputSchema.safeParse({ ...base, batchRecipeCount }).success).toBe(
+        true,
+      );
+    }
+    for (const batchRecipeCount of [2, 7, 4.5]) {
+      expectRejected(GenerateWeeklyPlanInputSchema, { ...base, batchRecipeCount });
+    }
   });
 });

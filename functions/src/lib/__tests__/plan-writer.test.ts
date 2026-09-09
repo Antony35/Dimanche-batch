@@ -108,6 +108,7 @@ describe('écriture initiale', () => {
     // pas une par repas où la recette apparaît.
     const plan: GeneratedPlan = {
       recipes: [curry],
+      batchRecipeSlugs: ['batch-curry'],
       days: [0, 1, 2, 3, 4, 5, 6].map((dayIndex) => ({
         dayIndex,
         lunch: {
