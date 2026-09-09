@@ -1,5 +1,3 @@
-import { useState } from 'react';
-import * as Clipboard from 'expo-clipboard';
 import { Share, View } from 'react-native';
 import {
   formatGroceryListForSharing,
@@ -18,7 +16,6 @@ export default function GroceryScreen() {
   const theme = useTheme();
   const { household } = useHousehold();
   const weekId = getPlanningWeekId();
-  const [copiedState, setCopiedState] = useState<string | null>(null);
 
   const householdId = household?.id ?? null;
   const { items, groups, checkedCount, isLoading, error } = useGroceryList(householdId, weekId);
@@ -30,8 +27,8 @@ export default function GroceryScreen() {
   }
 
   // Ce qui est déjà dans le panier n'a pas à voyager : on partage le reste.
-  // Deux formats, parce que le lecteur n'est pas le même — un humain lit les
-  // rayons, une application de liste les prendrait pour des articles.
+  // Les en-têtes de rayon sont conservés : ils se lisent, et l'import par
+  // suggestion de Listonic les traverse sans en faire des articles.
   async function handleShare() {
     await Share.share({
       message: formatGroceryListForSharing(items, {
@@ -42,18 +39,6 @@ export default function GroceryScreen() {
 
   const remaining = items.length - checkedCount;
   const nothingToSend = remaining === 0;
-
-  // La confirmation vaut pour l'état copié, pas pour toujours : cocher un
-  // article rend la copie périmée, et le bouton doit le dire.
-  const listState = `${items.length}/${checkedCount}`;
-  const copied = copiedState === listState;
-
-  async function handleCopy() {
-    await Clipboard.setStringAsync(
-      formatGroceryListForSharing(items, { includeAisleHeaders: false }),
-    );
-    setCopiedState(listState);
-  }
 
   return (
     <Screen>
@@ -85,28 +70,14 @@ export default function GroceryScreen() {
         />
       ) : (
         <>
-          <View style={{ gap: theme.spacing.sm }}>
-            <Button
-              label={copied ? 'Copié — colle-le dans Listonic' : 'Copier pour Listonic'}
-              variant="secondary"
-              disabled={nothingToSend}
-              onPress={() => {
-                void handleCopy();
-              }}
-            />
-            <Button
-              label="Partager la liste"
-              variant="ghost"
-              disabled={nothingToSend}
-              onPress={() => {
-                void handleShare();
-              }}
-            />
-            <Text variant="caption" tone="faint">
-              La copie met un article par ligne, sans les noms de rayon. Le partage garde les
-              rayons : c’est la version qui se lit, pas celle qui s’importe.
-            </Text>
-          </View>
+          <Button
+            label={nothingToSend ? 'Rien à partager' : 'Partager ce qui reste'}
+            variant="secondary"
+            disabled={nothingToSend}
+            onPress={() => {
+              void handleShare();
+            }}
+          />
 
           {groups.map((group) => (
             <AisleSection

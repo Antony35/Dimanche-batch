@@ -360,7 +360,7 @@ Ce qui est **délibérément** simple en v1, et où brancher la suite :
 |---|---|---|
 | Un seul foyer par utilisateur | Usage à deux, pas de cas multi-foyer | `members` est déjà un tableau ; ajouter un sélecteur de foyer |
 | Auth email + mot de passe | Zéro dépendance native, build simple | Ajouter Google Sign-In (provider Firebase, pas de migration de données) |
-| Partage Listonic par copie de texte | Vérifié le 2026-09-09 : Listonic n'expose aucune cible de partage Android, le share sheet ne le propose pas. Il reste le presse-papier | Le formatage est isolé dans `shared/domain/grocery-export.ts` : une vraie intégration s'y branche sans toucher à l'écran |
+| Partage Listonic via le share sheet texte | Vérifié le 2026-09-09 sur le téléphone : Listonic n'apparaît pas comme cible de partage, mais son import par suggestion accepte le texte collé et en tire chaque article — en-têtes de rayon compris. Aucune intégration à écrire | Le formatage est isolé dans `shared/domain/grocery-export.ts` : une vraie API s'y brancherait sans toucher à l'écran |
 | Pas de saisie manuelle de recette | L'IA couvre le besoin initial | Les `recipes` sont déjà une collection à part entière ; il suffit d'un écran d'édition |
 | Pas de gestion des restes du frigo | Hors périmètre | Nouveau champ d'entrée du prompt, pas de changement de schéma |
 | App Check désactivé | L'auth suffit pour deux utilisateurs | Activer et exiger le token dans les callables |
@@ -389,7 +389,7 @@ Ce qui est **délibérément** simple en v1, et où brancher la suite :
 | J1 | **fait** | Monorepo, domaine partagé (30 tests), Security Rules + leurs tests, `joinHousehold`, auth e-mail, écran de foyer partagé, navigation des 6 écrans, thème clair/sombre |
 | J2 | **fait** | `generateWeeklyPlan` déployée : prompt versionné, `responseSchema`, validation Zod puis contraintes métier, unique retry, écriture Firestore en batch, écran d'accueil avec repas du jour |
 | J3 | **fait** | Écran planning des 7 jours, `regenerateMeal` : contraintes locales au jour, recalcul complet des courses, `MealCard` partagé entre accueil et planning |
-| J4 | **fait** | Liste de courses : rendu dans l'ordre de parcours du magasin, cases à cocher synchronisées entre les deux téléphones, copie sans rayons pour Listonic et partage avec rayons pour un humain |
+| J4 | **fait** | Liste de courses : rendu dans l'ordre de parcours du magasin, cases à cocher synchronisées entre les deux téléphones, partage par le share sheet — lisible par un humain comme par l'import de Listonic |
 | J5 | à faire | Fiche recette, historique, favoris, anti-répétition dans le prompt |
 | J6 | à faire | Synchro à deux téléphones, cache offline, cas limites |
 | J7 | à faire | Build EAS, installation, premier vrai dimanche |
