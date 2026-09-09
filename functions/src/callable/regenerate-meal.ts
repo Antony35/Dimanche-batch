@@ -17,9 +17,15 @@ import {
   REGION,
 } from '../config';
 import { db } from '../lib/firestore';
-import { internal, invalidArgument, notFound, parseInput } from '../lib/errors';
-import { consumeGenerationQuota, requireAuth, requireHouseholdMember } from '../lib/guards';
+import { internal, invalidArgument, notFound, parseInput, unavailable } from '../lib/errors';
+import {
+  consumeGenerationQuota,
+  refundGenerationQuota,
+  requireAuth,
+  requireHouseholdMember,
+} from '../lib/guards';
 import { PlanNotFoundError, replaceMeal } from '../lib/plan-writer';
+import { GeminiUnavailableError } from '../gemini/client';
 import { MealGenerationError, generateMealRecipeFromGemini } from '../gemini/regenerate-meal';
 
 /**
@@ -73,16 +79,31 @@ export const regenerateMeal = onCall(
         notes: input.notes,
       });
     } catch (error) {
+      // Aucun appel n'a abouti : la génération décomptée est rendue au foyer.
+      if (error instanceof GeminiUnavailableError) {
+        await refundGenerationQuota(input.householdId);
+        throw unavailable(
+          'Le service de génération est saturé en ce moment. Ta génération n’a pas été ' +
+            'décomptée : réessaie dans une minute.',
+          error,
+        );
+      }
+
       if (error instanceof MealGenerationError) {
         logger.error('remplacement abandonné', {
           violations: error.violations.map((violation) => violation.code),
         });
         throw internal(
-          'Impossible de trouver une recette qui convienne à ce jour. Réessaie dans un instant.',
+          'Aucune recette proposée ne convenait à ce jour de la semaine, même après ' +
+            'correction. Réessaie : le résultat varie d’une fois sur l’autre.',
           error,
         );
       }
-      throw internal('La génération de la recette a échoué.', error);
+
+      throw internal(
+        'La recherche d’une recette a échoué pour une raison inattendue. Réessaie dans un instant.',
+        error,
+      );
     }
 
     try {
@@ -106,9 +127,15 @@ export const regenerateMeal = onCall(
       if (error instanceof PlanNotFoundError) {
         // Le plan a disparu entre la lecture et l'écriture : l'autre téléphone
         // a régénéré la semaine pendant l'appel.
-        throw invalidArgument('Le plan de la semaine a changé pendant la génération. Réessaie.');
+        throw invalidArgument(
+          'Le plan de la semaine a changé pendant la génération, sans doute depuis l’autre ' +
+            'téléphone. Rouvre le planning et réessaie.',
+        );
       }
-      throw internal("La recette a été générée mais n'a pas pu être enregistrée.", error);
+      throw internal(
+        'La recette a bien été trouvée mais n’a pas pu être enregistrée. Réessaie dans un instant.',
+        error,
+      );
     }
   },
 );
@@ -116,7 +143,9 @@ export const regenerateMeal = onCall(
 async function readPlan(householdId: string, weekId: string): Promise<WeeklyPlan> {
   const snapshot = await db.doc(paths.weeklyPlan(householdId, weekId)).get();
   if (!snapshot.exists) {
-    throw notFound('Aucun plan pour cette semaine. Génère-la d’abord.');
+    throw notFound(
+      'Aucun plan pour cette semaine. Génère la semaine depuis l’accueil avant de changer un repas.',
+    );
   }
 
   const parsed = WeeklyPlanSchema.safeParse({ id: snapshot.id, ...snapshot.data() });

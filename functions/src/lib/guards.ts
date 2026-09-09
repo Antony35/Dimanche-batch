@@ -1,5 +1,6 @@
 import { DAILY_GENERATION_LIMIT, paths, toIsoDate } from '@dimanche-batch/shared';
 import { FieldValue } from 'firebase-admin/firestore';
+import { logger } from 'firebase-functions';
 import { db } from './firestore';
 import { internal, permissionDenied, resourceExhausted } from './errors';
 
@@ -80,5 +81,40 @@ export async function consumeGenerationQuota(householdId: string): Promise<numbe
   } catch (error) {
     if (error instanceof Error && 'code' in error) throw error;
     throw internal('Impossible de vérifier le quota de génération.', error);
+  }
+}
+
+/**
+ * Rend au foyer une génération décomptée pour rien.
+ *
+ * Le quota protège la clé Gemini, pas le budget de l'utilisateur : quand
+ * aucun appel n'a abouti — service saturé, panne réseau — rien n'a été
+ * consommé et le compteur ne doit pas en garder la trace.
+ *
+ * Un échec de remboursement ne remonte jamais à l'appelant : il reçoit déjà
+ * l'erreur qui l'intéresse, et une seconde erreur par-dessus ne l'aiderait pas.
+ */
+export async function refundGenerationQuota(householdId: string): Promise<void> {
+  const today = toIsoDate(new Date());
+  const usageRef = db.doc(paths.usageDay(householdId, today));
+
+  try {
+    await db.runTransaction(async (transaction) => {
+      const snapshot = await transaction.get(usageRef);
+      const stored: unknown = snapshot.get('generations');
+      const current = typeof stored === 'number' && Number.isFinite(stored) ? stored : 0;
+      if (current <= 0) return;
+
+      transaction.set(
+        usageRef,
+        { generations: current - 1, updatedAt: Date.now() },
+        { merge: true },
+      );
+    });
+  } catch (error) {
+    logger.error('quota non remboursé', {
+      householdId,
+      erreur: error instanceof Error ? error.message : String(error),
+    });
   }
 }

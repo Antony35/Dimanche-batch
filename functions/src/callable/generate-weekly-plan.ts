@@ -14,9 +14,15 @@ import {
   REGION,
 } from '../config';
 import { db } from '../lib/firestore';
-import { internal, invalidArgument, parseInput } from '../lib/errors';
-import { consumeGenerationQuota, requireAuth, requireHouseholdMember } from '../lib/guards';
+import { internal, invalidArgument, parseInput, unavailable } from '../lib/errors';
+import {
+  consumeGenerationQuota,
+  refundGenerationQuota,
+  requireAuth,
+  requireHouseholdMember,
+} from '../lib/guards';
 import { writeWeeklyPlan } from '../lib/plan-writer';
+import { GeminiUnavailableError } from '../gemini/client';
 import { PlanGenerationError, generateWeeklyPlanFromGemini } from '../gemini/generate-plan';
 
 /** Nombre de semaines passées consultées pour éviter les répétitions. */
@@ -77,16 +83,31 @@ export const generateWeeklyPlan = onCall(
         notes: input.notes,
       });
     } catch (error) {
+      // Aucun appel n'a abouti : la génération décomptée est rendue au foyer.
+      if (error instanceof GeminiUnavailableError) {
+        await refundGenerationQuota(input.householdId);
+        throw unavailable(
+          'Le service de génération est saturé en ce moment. Ta génération n’a pas été ' +
+            'décomptée : réessaie dans une minute.',
+          error,
+        );
+      }
+
       if (error instanceof PlanGenerationError) {
         logger.error('génération abandonnée', {
           violations: error.violations.map((violation) => violation.code),
         });
         throw internal(
-          'Impossible de composer une semaine cohérente pour le moment. Réessaie dans un instant.',
+          'La semaine proposée ne respectait pas tes contraintes, même après correction. ' +
+            'Réessaie : le résultat varie d’une fois sur l’autre.',
           error,
         );
       }
-      throw internal('La génération du plan a échoué.', error);
+
+      throw internal(
+        'La génération de la semaine a échoué pour une raison inattendue. Réessaie dans un instant.',
+        error,
+      );
     }
 
     try {
@@ -107,7 +128,10 @@ export const generateWeeklyPlan = onCall(
 
       return result;
     } catch (error) {
-      throw internal("Le plan a été généré mais n'a pas pu être enregistré.", error);
+      throw internal(
+        'La semaine a bien été composée mais n’a pas pu être enregistrée. Réessaie dans un instant.',
+        error,
+      );
     }
   },
 );

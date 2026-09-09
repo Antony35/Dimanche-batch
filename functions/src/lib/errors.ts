@@ -31,6 +31,15 @@ export function resourceExhausted(message: string): HttpsError {
 }
 
 /**
+ * Le service tiers est momentanément hors d'état. Distinct d'`internal` : rien
+ * n'est cassé chez nous, et réessayer a de bonnes chances de marcher.
+ */
+export function unavailable(message: string, cause?: unknown): HttpsError {
+  logger.warn('unavailable', { message, cause: serializeCause(cause) });
+  return new HttpsError('unavailable', message);
+}
+
+/**
  * Valide un payload client. Le message d'erreur Zod n'est jamais renvoyé tel
  * quel : il fuiterait la structure interne et serait illisible pour un humain.
  */

@@ -4,7 +4,12 @@ import { HttpsError } from 'firebase-functions/v2/https';
 import { clearFirestore } from '../../__tests__/emulator';
 import { ALICE, BOB, HOUSEHOLD_ID, MALLORY } from '../../__tests__/fixtures';
 import { db } from '../firestore';
-import { consumeGenerationQuota, requireAuth, requireHouseholdMember } from '../guards';
+import {
+  consumeGenerationQuota,
+  refundGenerationQuota,
+  requireAuth,
+  requireHouseholdMember,
+} from '../guards';
 
 /**
  * Ces guards sont le seul contrôle d'accès des callables : l'admin SDK n'est
@@ -117,5 +122,44 @@ describe('consumeGenerationQuota', () => {
     expect(accepted).toBeGreaterThan(0);
     expect(accepted).toBeLessThanOrEqual(DAILY_GENERATION_LIMIT);
     expect(usage.get('generations')).toBe(accepted);
+  });
+});
+
+describe('refundGenerationQuota', () => {
+  it('rend la génération décomptée pour rien', async () => {
+    await consumeGenerationQuota(HOUSEHOLD_ID);
+    await consumeGenerationQuota(HOUSEHOLD_ID);
+
+    await refundGenerationQuota(HOUSEHOLD_ID);
+
+    const usage = await db.doc(paths.usageDay(HOUSEHOLD_ID, TODAY)).get();
+    expect(usage.get('generations')).toBe(1);
+  });
+
+  it('rouvre le quota juste sous le plafond', async () => {
+    await db
+      .doc(paths.usageDay(HOUSEHOLD_ID, TODAY))
+      .set({ generations: DAILY_GENERATION_LIMIT });
+    await expectHttpsError(consumeGenerationQuota(HOUSEHOLD_ID), 'resource-exhausted');
+
+    await refundGenerationQuota(HOUSEHOLD_ID);
+
+    // Une seule génération redevient possible, pas davantage.
+    await expect(consumeGenerationQuota(HOUSEHOLD_ID)).resolves.toBe(DAILY_GENERATION_LIMIT);
+    await expectHttpsError(consumeGenerationQuota(HOUSEHOLD_ID), 'resource-exhausted');
+  });
+
+  it('ne descend jamais sous zéro', async () => {
+    await refundGenerationQuota(HOUSEHOLD_ID);
+    await refundGenerationQuota(HOUSEHOLD_ID);
+
+    const usage = await db.doc(paths.usageDay(HOUSEHOLD_ID, TODAY)).get();
+    expect(usage.exists ? usage.get('generations') : 0).toBe(0);
+  });
+
+  it('ne remonte jamais d’erreur à l’appelant', async () => {
+    // L'appelant reçoit déjà l'erreur qui l'intéresse ; une seconde par-dessus
+    // ne l'aiderait pas. Un foyer inexistant ne doit donc rien lever.
+    await expect(refundGenerationQuota('foyer-fantome')).resolves.toBeUndefined();
   });
 });

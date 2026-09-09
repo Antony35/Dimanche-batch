@@ -7,7 +7,7 @@ partagent le même foyer et voient les mêmes données en temps réel.
 
 **Statut : v1 en cours — J1 à J3 livrés.** Le monorepo, le domaine partagé, les
 Security Rules, l'authentification, le foyer partagé, la génération Gemini, le
-planning des 7 jours et la régénération d'un repas isolé ; 101 tests couvrent le
+planning des 7 jours et la régénération d'un repas isolé ; 112 tests couvrent le
 domaine, les callables et les règles. J4 ouvre la liste de courses. Ce document
 fait autorité sur l'architecture ; il est mis à jour en même temps que le code,
 jamais après.
@@ -223,6 +223,29 @@ Contrat Gemini :
   pas de parsing de markdown.
 - Validation Zod après réception. En cas d'échec : **un seul** retry, puis erreur
   `HttpsError('internal')` avec un message lisible côté app. Jamais de boucle.
+
+**Deux reprises de nature différente, à ne pas confondre :**
+
+| Reprise | Quand | Combien |
+|---|---|---|
+| Contenu | Le modèle a répondu, mais hors schéma ou hors contraintes | **1 seule**, en réinjectant les violations |
+| Transport | 429/500/502/503/504 — le modèle n'a rien produit | 3 essais, attente 1 s puis 3 s |
+
+La seconde n'est pas la boucle que le projet s'interdit : rien n'a été généré,
+donc rien n'a été consommé côté modèle. Elle est portée par `gemini/client.ts`,
+et sa classification vit dans `gemini/transport-errors.ts` — isolée pour être
+testable sans réseau, car elle repose sur la forme des erreurs d'un SDK tiers,
+qui n'expose pas son statut HTTP de façon stable.
+
+Quand les trois essais échouent, la callable **rend au foyer la génération
+décomptée** (`refundGenerationQuota`) : le quota protège la clé Gemini, pas le
+budget de l'utilisateur, et une saturation chez Google ne doit rien lui coûter.
+Un plan refusé aux contraintes, lui, n'est pas remboursé — les appels ont bien
+eu lieu.
+
+Les messages d'erreur remontés à l'app disent ce qui s'est passé **et** ce que
+l'utilisateur peut faire. Un message qui dit seulement « erreur interne » oblige
+à ouvrir les logs pour répondre à quelqu'un qui est devant son téléphone.
 - Le prompt vit dans `functions/src/gemini/prompt.ts`, en une seule constante versionnée,
   jamais construit par concaténation dispersée dans le code.
 
@@ -264,7 +287,7 @@ dossier où vit le code.
 | Suite | Couvre | Coût |
 |---|---|---|
 | `npm run test` | `packages/shared` : unités, semaine, agrégation des courses, contraintes de plan | aucune dépendance, moins d'une seconde |
-| `npm run test:functions` | `functions/src/lib` : guards, quota, écriture du plan | démarre l'émulateur Firestore |
+| `npm run test:functions` | `functions/src` : guards, quota, écriture du plan, classification des erreurs Gemini | démarre l'émulateur Firestore |
 | `npm run test:rules` | `firestore.rules` face à un client non privilégié | démarre l'émulateur Firestore |
 
 Ce qui appartient au domaine pur se teste dans `shared`, jamais à travers une
