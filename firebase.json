@@ -16,7 +16,9 @@
         ".git",
         "**/*.local",
         "scripts",
-        ".probe"
+        ".probe",
+        "**/__tests__/**",
+        "vitest.config.ts"
       ]
     }
   ],
