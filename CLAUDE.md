@@ -5,13 +5,13 @@ un plan de repas de 7 jours (midi + soir) est généré par l'API Gemini, puis c
 liste de courses groupée par rayon, partageable vers Listonic. Les deux téléphones
 partagent le même foyer et voient les mêmes données en temps réel.
 
-**Statut : v1 en cours — J1 à J5 livrés.** Le monorepo, le domaine partagé, les
+**Statut : v1 en cours — J1 à J6 livrés.** Le monorepo, le domaine partagé, les
 Security Rules, l'authentification, le foyer partagé, la génération Gemini, le
 planning des 7 jours, la régénération d'un repas isolé, la liste de courses, la
-fiche recette et l'historique ; 174 tests couvrent le domaine, les schémas, les
-callables et les règles. Restent la synchro à deux téléphones (J6) et le build
-(J7). Ce document fait autorité sur l'architecture ; il est mis à jour en même
-temps que le code, jamais après.
+fiche recette, l'historique et le fonctionnement hors ligne ; 184 tests couvrent
+le domaine, les schémas, les callables et les règles. Reste le build (J7). Ce
+document fait autorité sur l'architecture ; il est mis à jour en même temps que
+le code, jamais après.
 
 ---
 
@@ -50,7 +50,7 @@ une semaine, mais jamais au prix d'une dette qui bloquerait la v2.
 | État local | React Context minimal (session, foyer) | |
 | Données | Firebase Firestore | Temps réel entre les deux téléphones |
 | Auth | Firebase Auth — email + mot de passe | Importé depuis `@firebase/auth`, pas `firebase/auth` : voir §7 |
-| Cache offline | AsyncStorage, explicite | Le SDK JS Firestore n'a pas de persistance offline sur React Native |
+| Cache offline | AsyncStorage, explicite (`lib/offline-cache.ts`) | Le SDK JS Firestore n'a pas de persistance offline sur React Native |
 | Backend | Cloud Functions for Firebase (Node 24, 2ᵉ gén., `firebase-functions` 7), région `europe-west1` | Plan Blaze, plafond de dépense à définir |
 | IA | Gemini API, appelée **uniquement** depuis les Cloud Functions | |
 | Validation | Zod, partagé client/serveur | |
@@ -186,6 +186,10 @@ households/{hid}/groceryLists/{weekId}/items/{itemId}
 
 households/{hid}/usage/{yyyy-mm-dd}        # rate limiting
   generations: number
+
+households/{hid}/locks/{weekId}            # une génération à la fois par semaine
+  startedAt: number                        # ms epoch ; repris au-delà du TTL
+  by: string                               # uid
 ```
 
 **Security Rules** — l'intention à implémenter :
@@ -201,7 +205,9 @@ households/{hid}/usage/{yyyy-mm-dd}        # rate limiting
 - `recipes` : même mécanisme, limité à `isFavorite`.
 - `households` : `members` est immuable côté client — on ne s'ajoute pas à un
   foyer, et on n'en exclut pas l'autre personne. Seule `joinHousehold` y touche.
-- `usage` : lecture seule côté client.
+- `usage` et `locks` : lecture seule côté client. Voir un verrou permet
+  d'afficher « génération en cours » ; pouvoir en poser un permettrait de
+  bloquer l'autre téléphone indéfiniment.
 
 Les règles sont testées avec l'émulateur (`npm run test:rules`, dans
 `packages/rules-tests`). Une règle non testée est une règle fausse. Ajouter une
@@ -255,6 +261,14 @@ Contraintes métier que le prompt doit garantir (voir la semaine type) : au moin
 au moins 2 recettes qui se congèlent bien, portions pour 2, ingrédients quantifiés avec
 un rayon de supermarché.
 
+**Une génération à la fois par semaine.** `acquireGenerationLock` est posé
+avant la consommation du quota, à dessein : sans lui, deux téléphones qui
+appuient en même temps passent tous deux la vérification d'existence du plan,
+consomment chacun une génération, et le dernier écrit écrase l'autre. Le foyer
+paierait deux fois pour un seul résultat. Un verrou plus vieux que
+`GENERATION_LOCK_TTL_MS` est repris — une function tuée par son timeout n'a pas
+pu libérer le sien, et le foyer ne doit pas rester bloqué pour autant.
+
 **Mémoire du foyer.** Le prompt reçoit deux listes de sens opposé : les recettes
 servies lors des 3 dernières semaines, à ne pas reproposer, et les favoris, dont
 le modèle peut reprendre **un seul** au plus. Un favori servi récemment est
@@ -292,7 +306,14 @@ servirait qu'à faire une liste.
   redémarrage de l'app. Un `paths` dans `app/tsconfig.json` réaligne le typage
   sur ce que Metro résout réellement.
 - Pas de `setState` synchrone dans un `useEffect` : dériver l'état au rendu
-  (voir `useHousehold`). La règle est appliquée par le lint.
+  (voir `useHousehold`). La règle est appliquée par le lint. Une hydratation
+  depuis le disque est asynchrone par nature et fait exception — elle s'écrit
+  alors dans l'état, et la course avec le premier snapshot serveur se tranche
+  par un drapeau, jamais en espérant un ordre d'arrivée.
+- **Ce qui vient du cache local n'est jamais persisté.** `metadata.fromCache`
+  distingue un snapshot confirmé par le serveur d'un snapshot qui reflète nos
+  propres écritures en attente. Persister le second figerait une vue partielle
+  du foyer.
 - Erreurs : jamais de `catch` silencieux. Soit on remonte à l'utilisateur, soit on log
   avec du contexte. **Écarter en silence un document qui ne passe pas son schéma
   est un `catch` silencieux déguisé** : une liste illisible devient alors
@@ -414,7 +435,7 @@ Ce qui est **délibérément** simple en v1, et où brancher la suite :
 | J3 | **fait** | Écran planning des 7 jours, `regenerateMeal` : contraintes locales au jour, recalcul complet des courses, `MealCard` partagé entre accueil et planning |
 | J4 | **fait** | Liste de courses : rendu dans l'ordre de parcours du magasin, cases à cocher synchronisées entre les deux téléphones, partage par le share sheet — lisible par un humain comme par l'import de Listonic |
 | J5 | **fait** | Fiche recette, historique des 12 dernières semaines, favoris branchés sur le prompt, réglages sortis des onglets |
-| J6 | à faire | Synchro à deux téléphones, cache offline, cas limites |
+| J6 | **fait** | Cache offline du plan, des recettes et des courses ; indicateur « hors ligne » ; verrou empêchant deux générations simultanées sur une même semaine |
 | J7 | à faire | Build EAS, installation, premier vrai dimanche |
 
 Ce qui reste à faire hors code, dans l'ordre :
