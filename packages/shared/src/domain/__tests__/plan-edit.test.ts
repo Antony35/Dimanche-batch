@@ -1,0 +1,89 @@
+import { describe, expect, it } from 'vitest';
+import { MealNotFoundError, collectRecipeIds, findMeal, replaceMealInPlan } from '../plan-edit';
+import { makeMeal, makePlan } from './fixtures';
+
+const WEEK = '2026-09-14';
+const MARDI = '2026-09-15';
+
+function planWithTwoRecipes() {
+  return makePlan([
+    { lunch: { recipeId: 'batch', kind: 'batch-leftover' }, dinner: { recipeId: 'soupe', kind: 'cooked' } },
+    { lunch: { recipeId: 'batch', kind: 'batch-leftover' }, dinner: { recipeId: 'soupe', kind: 'cooked' } },
+  ], WEEK);
+}
+
+describe('replaceMealInPlan', () => {
+  it('ne modifie que le créneau visé', () => {
+    const plan = planWithTwoRecipes();
+    const next = replaceMealInPlan(
+      plan,
+      MARDI,
+      'dinner',
+      makeMeal({ recipeId: 'chili', kind: 'cooked' }),
+    );
+
+    expect(findMeal(next, MARDI, 'dinner')?.recipeId).toBe('chili');
+    expect(findMeal(next, MARDI, 'lunch')?.recipeId).toBe('batch');
+    expect(findMeal(next, WEEK, 'dinner')?.recipeId).toBe('soupe');
+  });
+
+  it('ne mute pas le plan d’origine', () => {
+    // Le plan vient d’un snapshot Firestore : le muter fausserait la
+    // comparaison avec ce qui est réellement en base.
+    const plan = planWithTwoRecipes();
+    replaceMealInPlan(plan, MARDI, 'dinner', makeMeal({ recipeId: 'chili', kind: 'cooked' }));
+
+    expect(findMeal(plan, MARDI, 'dinner')?.recipeId).toBe('soupe');
+  });
+
+  it('retire des `recipeIds` une recette qui n’est plus servie nulle part', () => {
+    const plan = makePlan([{ dinner: { recipeId: 'soupe', kind: 'cooked' } }], WEEK);
+    const next = replaceMealInPlan(
+      plan,
+      WEEK,
+      'dinner',
+      makeMeal({ recipeId: 'chili', kind: 'cooked' }),
+    );
+
+    expect(next.recipeIds).toEqual(['chili']);
+  });
+
+  it('garde une recette encore servie un autre jour', () => {
+    // Remplacer le mardi ne doit pas décrocher `soupe` : elle reste au menu
+    // du lundi, et la requête qui charge les recettes du plan en dépend.
+    const plan = planWithTwoRecipes();
+    const next = replaceMealInPlan(
+      plan,
+      MARDI,
+      'dinner',
+      makeMeal({ recipeId: 'chili', kind: 'cooked' }),
+    );
+
+    expect(next.recipeIds).toContain('soupe');
+    expect(next.recipeIds).toContain('chili');
+    expect(next.recipeIds).toContain('batch');
+  });
+
+  it('refuse une date absente du plan', () => {
+    expect(() =>
+      replaceMealInPlan(planWithTwoRecipes(), '2026-10-01', 'dinner', makeMeal()),
+    ).toThrow(MealNotFoundError);
+  });
+});
+
+describe('collectRecipeIds', () => {
+  it('dédoublonne et ignore les repas sans recette', () => {
+    const plan = planWithTwoRecipes();
+    expect(collectRecipeIds(plan.days)).toEqual(['batch', 'soupe']);
+  });
+
+  it('rend une liste vide pour une semaine entièrement prise dehors', () => {
+    expect(collectRecipeIds(makePlan([]).days)).toEqual([]);
+  });
+});
+
+describe('findMeal', () => {
+  it('rend `null` plutôt que de lever pour une date inconnue', () => {
+    expect(findMeal(planWithTwoRecipes(), '2026-10-01', 'lunch')).toBeNull();
+  });
+});

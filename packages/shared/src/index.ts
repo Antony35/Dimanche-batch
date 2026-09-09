@@ -18,6 +18,7 @@ export * from './domain/week';
 export * from './domain/grocery';
 export * from './domain/grocery-export';
 export * from './domain/plan-constraints';
+export * from './domain/plan-edit';
 export * from './domain/invite';
 
 export * from './firestore-paths';

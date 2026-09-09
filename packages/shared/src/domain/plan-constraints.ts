@@ -1,4 +1,4 @@
-import type { GeneratedPlan } from '../schemas/gemini';
+import type { GeneratedPlan, GeneratedRecipe } from '../schemas/gemini';
 import { isWeekday } from './week';
 
 /**
@@ -72,21 +72,7 @@ export function validateGeneratedPlan(plan: GeneratedPlan): ConstraintViolation[
       referencedSlugs.add(recipe.slug);
       if (meal.kind === 'cooked') {
         cookedSlugs.add(recipe.slug);
-
-        if (isWeekday(day.dayIndex)) {
-          if (!recipe.tags.includes('one-pot')) {
-            violations.push({
-              code: 'weekday-not-one-pot',
-              message: `${label} : « ${recipe.name} » doit être one-pot en semaine.`,
-            });
-          }
-          if (recipe.prepMinutes > MAX_WEEKDAY_PREP_MINUTES) {
-            violations.push({
-              code: 'weekday-too-long',
-              message: `${label} : ${recipe.prepMinutes} min dépasse les ${MAX_WEEKDAY_PREP_MINUTES} min tolérées en semaine.`,
-            });
-          }
-        }
+        violations.push(...weekdayViolations(recipe, day.dayIndex, label));
       }
     }
   }
@@ -117,6 +103,62 @@ export function validateGeneratedPlan(plan: GeneratedPlan): ConstraintViolation[
     }
   }
 
+  return violations;
+}
+
+/**
+ * Contraintes d'une recette cuisinée un soir de semaine. Extrait parce que la
+ * régénération d'un repas isolé doit appliquer exactement les mêmes, sans
+ * dupliquer ni les seuils ni les messages.
+ */
+function weekdayViolations(
+  recipe: GeneratedRecipe,
+  dayIndex: number,
+  label: string,
+): ConstraintViolation[] {
+  if (!isWeekday(dayIndex)) return [];
+
+  const violations: ConstraintViolation[] = [];
+  if (!recipe.tags.includes('one-pot')) {
+    violations.push({
+      code: 'weekday-not-one-pot',
+      message: `${label} : « ${recipe.name} » doit être one-pot en semaine.`,
+    });
+  }
+  if (recipe.prepMinutes > MAX_WEEKDAY_PREP_MINUTES) {
+    violations.push({
+      code: 'weekday-too-long',
+      message: `${label} : ${recipe.prepMinutes} min dépasse les ${MAX_WEEKDAY_PREP_MINUTES} min tolérées en semaine.`,
+    });
+  }
+  return violations;
+}
+
+/**
+ * Contraintes applicables au remplacement d'un seul repas.
+ *
+ * Volontairement limitée à ce qui est local au jour visé. Les contraintes
+ * d'ensemble — trois recettes distinctes, deux congelables — portent sur la
+ * composition de la semaine, décidée à la génération : les réappliquer ici
+ * ferait refuser un remplacement parfaitement raisonnable parce que la recette
+ * écartée était l'une des deux congelables. Voir CLAUDE.md §9 pour le point
+ * d'extension.
+ */
+export function validateMealReplacement(
+  recipe: GeneratedRecipe,
+  dayIndex: number,
+): ConstraintViolation[] {
+  const violations: ConstraintViolation[] = [];
+
+  if (dayIndex < 0 || dayIndex > 6) {
+    violations.push({
+      code: 'day-index',
+      message: `Le jour ${dayIndex} n'existe pas dans la semaine.`,
+    });
+    return violations;
+  }
+
+  violations.push(...weekdayViolations(recipe, dayIndex, `jour ${dayIndex}`));
   return violations;
 }
 

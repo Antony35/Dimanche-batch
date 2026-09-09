@@ -67,6 +67,14 @@ export const RegenerateMealInputSchema = z.object({
   notes: z.string().max(500).optional(),
 });
 
+export const RegenerateMealResultSchema = z.object({
+  weekId: WeekIdSchema,
+  /** Identifiant de la recette qui occupe désormais le créneau. */
+  recipeId: z.string().min(1),
+  recipeName: z.string().min(1),
+  itemCount: z.number().int().min(0),
+});
+
 export type MealKind = z.infer<typeof MealKindSchema>;
 export type Meal = z.infer<typeof MealSchema>;
 export type MealSlot = 'lunch' | 'dinner';
@@ -75,3 +83,4 @@ export type WeeklyPlan = z.infer<typeof WeeklyPlanSchema>;
 export type GenerateWeeklyPlanInput = z.infer<typeof GenerateWeeklyPlanInputSchema>;
 export type GenerateWeeklyPlanResult = z.infer<typeof GenerateWeeklyPlanResultSchema>;
 export type RegenerateMealInput = z.infer<typeof RegenerateMealInputSchema>;
+export type RegenerateMealResult = z.infer<typeof RegenerateMealResultSchema>;

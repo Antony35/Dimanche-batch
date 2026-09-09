@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { describeViolations, validateGeneratedPlan } from '../plan-constraints';
+import {
+  describeViolations,
+  validateGeneratedPlan,
+  validateMealReplacement,
+} from '../plan-constraints';
 import { makeGeneratedRecipe, makeValidGeneratedPlan } from './fixtures';
 
 function codes(plan: ReturnType<typeof makeValidGeneratedPlan>): string[] {
@@ -96,5 +100,35 @@ describe('describeViolations', () => {
 
   it('rend une chaîne vide pour un plan conforme', () => {
     expect(describeViolations(validateGeneratedPlan(makeValidGeneratedPlan()))).toBe('');
+  });
+});
+
+describe('validateMealReplacement', () => {
+  const rapide = makeGeneratedRecipe({ slug: 'chili', tags: ['one-pot'], prepMinutes: 30 });
+  const longue = makeGeneratedRecipe({ slug: 'gratin', tags: ['weekend'], prepMinutes: 90 });
+
+  it('accepte une recette one-pot et rapide un soir de semaine', () => {
+    expect(validateMealReplacement(rapide, 2)).toEqual([]);
+  });
+
+  it('refuse un plat long ou non one-pot en semaine', () => {
+    const codes = validateMealReplacement(longue, 2).map((violation) => violation.code);
+    expect(codes).toContain('weekday-not-one-pot');
+    expect(codes).toContain('weekday-too-long');
+  });
+
+  it('laisse passer le même plat le week-end', () => {
+    expect(validateMealReplacement(longue, 5)).toEqual([]);
+    expect(validateMealReplacement(longue, 6)).toEqual([]);
+  });
+
+  it('ne vérifie pas les contraintes d’ensemble de la semaine', () => {
+    // Un remplacement ne connaît pas le reste du plan : exiger ici deux
+    // recettes congelables refuserait tout remplacement d’une seule recette.
+    expect(validateMealReplacement(rapide, 0)).toEqual([]);
+  });
+
+  it('refuse un jour hors de la semaine', () => {
+    expect(validateMealReplacement(rapide, 7).map((v) => v.code)).toEqual(['day-index']);
   });
 });
