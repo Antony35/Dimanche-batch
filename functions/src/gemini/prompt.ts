@@ -6,6 +6,7 @@ import {
   getDayName,
   type ConstraintViolation,
   type MealSlot,
+  type MealStyle,
 } from '@dimanche-batch/shared';
 
 /**
@@ -148,8 +149,10 @@ export function buildRetryPrompt(
 }
 
 export interface MealReplacementPromptInput {
-  /** 0 = lundi, cohérent avec le contrat Gemini. */
+  /** 0 = samedi, cohérent avec le contrat Gemini. */
   dayIndex: number;
+  /** Style demandé. Absent, il se déduit du jour. */
+  style?: MealStyle | undefined;
   slot: MealSlot;
   date: string;
   /** Recette actuellement servie sur ce créneau, à ne pas reproposer. */
@@ -164,6 +167,18 @@ export function buildMealReplacementPrompt(input: MealReplacementPromptInput): s
   const parts: string[] = [
     `Propose une recette pour le ${moment} du ${getDayName(input.dayIndex)} ${input.date} (dayIndex ${input.dayIndex}).`,
   ];
+
+  // Le style demandé prime sur le jour : sans cette phrase, le modèle
+  // proposerait un plat élaboré un samedi alors qu'on a demandé du rapide.
+  if (input.style === 'one-pot') {
+    parts.push(
+      `Ce plat doit être un one-pot : une seule casserole, ${MAX_WEEKDAY_PREP_MINUTES} minutes au maximum. Donne-lui l'étiquette "one-pot".`,
+    );
+  } else if (input.style === 'elaborate') {
+    parts.push(
+      'Ce plat peut demander du temps et plusieurs ustensiles : le foyer a décidé de cuisiner ce jour-là.',
+    );
+  }
 
   if (input.currentRecipeName) {
     parts.push(

@@ -1,4 +1,5 @@
 import type { GeneratedPlan, GeneratedRecipe } from '../schemas/gemini';
+import type { MealStyle } from '../schemas/weekly-plan';
 import { isWeekday } from './week';
 
 /**
@@ -243,17 +244,10 @@ function batchDurationViolations(
 }
 
 /**
- * Contraintes d'une recette cuisinée un soir de semaine. Extrait parce que la
- * régénération d'un repas isolé doit appliquer exactement les mêmes, sans
- * dupliquer ni les seuils ni les messages.
+ * Contraintes d'un plat qu'on cuisine sans y passer la soirée : une casserole,
+ * et moins de trois quarts d'heure.
  */
-function weekdayViolations(
-  recipe: GeneratedRecipe,
-  dayIndex: number,
-  label: string,
-): ConstraintViolation[] {
-  if (!isWeekday(dayIndex)) return [];
-
+function quickMealViolations(recipe: GeneratedRecipe, label: string): ConstraintViolation[] {
   const violations: ConstraintViolation[] = [];
   if (!recipe.tags.includes('one-pot')) {
     violations.push({
@@ -280,11 +274,15 @@ function weekdayViolations(
  * pour le point d'extension.
  *
  * C'est ici, et seulement ici, que la contrainte one-pot survit : remplacer un
- * repas de semaine oblige à cuisiner le soir même.
+ * repas oblige à cuisiner le jour même.
+ *
+ * Le `style` demandé prime sur le jour. Sans lui, la contrainte s'applique en
+ * semaine et pas le week-end — ce qui reste le comportement par défaut.
  */
 export function validateMealReplacement(
   recipe: GeneratedRecipe,
   dayIndex: number,
+  style?: MealStyle,
 ): ConstraintViolation[] {
   const violations: ConstraintViolation[] = [];
 
@@ -296,7 +294,10 @@ export function validateMealReplacement(
     return violations;
   }
 
-  violations.push(...weekdayViolations(recipe, dayIndex, `jour ${dayIndex}`));
+  const mustBeQuick = style === undefined ? isWeekday(dayIndex) : style === 'one-pot';
+  if (!mustBeQuick) return violations;
+
+  violations.push(...quickMealViolations(recipe, `jour ${dayIndex}`));
   return violations;
 }
 

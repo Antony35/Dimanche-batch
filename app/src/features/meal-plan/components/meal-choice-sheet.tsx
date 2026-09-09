@@ -1,5 +1,10 @@
 import { Modal, Pressable, ScrollView, View } from 'react-native';
-import { type BatchRecipe, type MealSlot } from '@dimanche-batch/shared';
+import {
+  MAX_WEEKDAY_PREP_MINUTES,
+  type BatchRecipe,
+  type MealSlot,
+  type MealStyle,
+} from '@dimanche-batch/shared';
 import { Button, Card, Text } from '@/components/ui';
 import { useTheme } from '@/theme';
 
@@ -15,7 +20,7 @@ export interface MealChoiceSheetProps {
   /** Plats préparés le dimanche, seuls candidats à une portion. */
   batchRecipes: BatchRecipe[];
   onClose: () => void;
-  onCook: () => void;
+  onCook: (style: MealStyle) => void;
   onServeBatch: (recipeId: string) => void;
   onEatOut: () => void;
 }
@@ -88,10 +93,25 @@ export function MealChoiceSheet({
               AUTRE CHOSE
             </Text>
             <Button label="Repas à l’extérieur" variant="secondary" onPress={onEatOut} />
-            <Button label="Cuisiner un plat ce jour-là" variant="ghost" onPress={onCook} />
+          </View>
+
+          <View style={{ gap: theme.spacing.sm }}>
+            <Text variant="overline" tone="faint">
+              CUISINER CE JOUR-LÀ
+            </Text>
+            <Button
+              label="Un one-pot, rapide"
+              variant="ghost"
+              onPress={() => onCook('one-pot')}
+            />
             <Text variant="caption" tone="faint">
-              Cuisiner demande une nouvelle recette au modèle : cela consomme une génération du
-              foyer, et modifie la liste de courses.
+              Une seule casserole, {MAX_WEEKDAY_PREP_MINUTES} minutes au plus. Pour un soir de
+              semaine où l’on veut autre chose que le batch.
+            </Text>
+            <Button label="Un vrai plat cuisiné" variant="ghost" onPress={() => onCook('elaborate')} />
+            <Text variant="caption" tone="faint">
+              Sans limite de temps ni d’ustensiles. Les deux demandent une recette au modèle :
+              cela consomme une génération du foyer et modifie la liste de courses.
             </Text>
           </View>
         </ScrollView>

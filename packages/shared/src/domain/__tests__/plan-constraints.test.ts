@@ -224,3 +224,27 @@ describe('describeViolations', () => {
     expect(describeViolations(validateGeneratedPlan(makeValidGeneratedPlan()))).toBe('');
   });
 });
+
+describe('validateMealReplacement, style demandé', () => {
+  const rapide = makeGeneratedRecipe({ slug: 'chili', tags: ['one-pot'], prepMinutes: 30 });
+  const longue = makeGeneratedRecipe({ slug: 'gratin', tags: ['weekend'], prepMinutes: 90 });
+
+  it('impose la rapidité quand l’utilisateur demande un one-pot, même le week-end', () => {
+    // Le style prime sur le jour : demander un plat rapide un samedi est
+    // légitime, et doit être tenu.
+    expect(validateMealReplacement(longue, 0, 'one-pot').map((v) => v.code)).toContain(
+      'weekday-not-one-pot',
+    );
+    expect(validateMealReplacement(rapide, 0, 'one-pot')).toEqual([]);
+  });
+
+  it('laisse le champ libre quand l’utilisateur demande un plat élaboré', () => {
+    // Y compris en semaine : c'est son foyer, il sait s'il a le temps.
+    expect(validateMealReplacement(longue, 3, 'elaborate')).toEqual([]);
+  });
+
+  it('se déduit du jour quand aucun style n’est demandé', () => {
+    expect(validateMealReplacement(longue, 3)).not.toEqual([]);
+    expect(validateMealReplacement(longue, 0)).toEqual([]);
+  });
+});

@@ -76,12 +76,23 @@ export const GenerateWeeklyPlanResultSchema = z.object({
   itemCount: z.number().int().min(0),
 });
 
+/**
+ * Style du plat demandé lors d'un remplacement.
+ *
+ * `one-pot` impose un plat rapide en une seule casserole, quel que soit le
+ * jour ; `elaborate` laisse le champ libre. Absent, le style se déduit du jour
+ * — contraint en semaine, libre le week-end — ce qui est le comportement par
+ * défaut de l'app.
+ */
+export const MealStyleSchema = z.enum(['one-pot', 'elaborate']);
+
 /** Payload de la callable `regenerateMeal`. */
 export const RegenerateMealInputSchema = z.object({
   householdId: z.string().min(1),
   weekId: WeekIdSchema,
   date: IsoDateSchema,
   slot: z.enum(['lunch', 'dinner']),
+  style: MealStyleSchema.optional(),
   notes: z.string().max(500).optional(),
 });
 
@@ -128,6 +139,7 @@ export type DayPlan = z.infer<typeof DayPlanSchema>;
 export type WeeklyPlan = z.infer<typeof WeeklyPlanSchema>;
 export type GenerateWeeklyPlanInput = z.infer<typeof GenerateWeeklyPlanInputSchema>;
 export type GenerateWeeklyPlanResult = z.infer<typeof GenerateWeeklyPlanResultSchema>;
+export type MealStyle = z.infer<typeof MealStyleSchema>;
 export type RegenerateMealInput = z.infer<typeof RegenerateMealInputSchema>;
 export type RegenerateMealResult = z.infer<typeof RegenerateMealResultSchema>;
 export type SetMealChoice = z.infer<typeof SetMealChoiceSchema>;

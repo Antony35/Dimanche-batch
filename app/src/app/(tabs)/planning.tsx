@@ -103,9 +103,15 @@ export default function PlanningScreen() {
         target={target}
         batchRecipes={batchRecipes}
         onClose={closeSheet}
-        onCook={() => {
+        onCook={(style) => {
           if (householdId && target) {
-            regenerate.mutate({ householdId, weekId, date: target.date, slot: target.slot });
+            regenerate.mutate({
+              householdId,
+              weekId,
+              date: target.date,
+              slot: target.slot,
+              style,
+            });
           }
           closeSheet();
         }}
