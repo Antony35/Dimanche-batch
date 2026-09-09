@@ -30,6 +30,11 @@ export function resourceExhausted(message: string): HttpsError {
   return new HttpsError('resource-exhausted', message);
 }
 
+/** L'état du système interdit l'opération maintenant, mais pas plus tard. */
+export function failedPrecondition(message: string): HttpsError {
+  return new HttpsError('failed-precondition', message);
+}
+
 /**
  * Le service tiers est momentanément hors d'état. Distinct d'`internal` : rien
  * n'est cassé chez nous, et réessayer a de bonnes chances de marcher.

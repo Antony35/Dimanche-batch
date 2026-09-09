@@ -19,8 +19,10 @@ import {
 import { db } from '../lib/firestore';
 import { internal, invalidArgument, notFound, parseInput, unavailable } from '../lib/errors';
 import {
+  acquireGenerationLock,
   consumeGenerationQuota,
   refundGenerationQuota,
+  releaseGenerationLock,
   requireAuth,
   requireHouseholdMember,
 } from '../lib/guards';
@@ -61,84 +63,101 @@ export const regenerateMeal = onCall(
       throw invalidArgument('Ce jour ne fait pas partie de la semaine planifiée.');
     }
 
-    await consumeGenerationQuota(input.householdId);
-
-    const current = findMeal(plan, input.date, input.slot);
-    const names = await readRecipeNames(input.householdId, plan.recipeIds);
-
-    let generated;
+    // Le verrou est celui de la semaine, pas du repas : deux régénérations
+    // simultanées sur deux créneaux différents recalculeraient toutes deux la
+    // liste de courses, et la seconde écraserait le travail de la première.
+    await acquireGenerationLock(input.householdId, input.weekId, uid);
     try {
-      generated = await generateMealRecipeFromGemini({
-        dayIndex,
-        slot: input.slot,
-        date: input.date,
-        currentRecipeName: current?.recipeId ? (names.get(current.recipeId) ?? null) : null,
-        otherRecipeNames: [...names.entries()]
-          .filter(([id]) => id !== current?.recipeId)
-          .map(([, name]) => name),
-        notes: input.notes,
-      });
-    } catch (error) {
-      // Aucun appel n'a abouti : la génération décomptée est rendue au foyer.
-      if (error instanceof GeminiUnavailableError) {
-        await refundGenerationQuota(input.householdId);
-        throw unavailable(
-          'Le service de génération est saturé en ce moment. Ta génération n’a pas été ' +
-            'décomptée : réessaie dans une minute.',
-          error,
-        );
-      }
-
-      if (error instanceof MealGenerationError) {
-        logger.error('remplacement abandonné', {
-          violations: error.violations.map((violation) => violation.code),
-        });
-        throw internal(
-          'Aucune recette proposée ne convenait à ce jour de la semaine, même après ' +
-            'correction. Réessaie : le résultat varie d’une fois sur l’autre.',
-          error,
-        );
-      }
-
-      throw internal(
-        'La recherche d’une recette a échoué pour une raison inattendue. Réessaie dans un instant.',
-        error,
-      );
-    }
-
-    try {
-      const result = await replaceMeal({
-        householdId: input.householdId,
-        weekId: input.weekId,
-        date: input.date,
-        slot: input.slot,
-        recipe: generated.recipe,
-      });
-
-      logger.info('repas remplacé', {
-        weekId: result.weekId,
-        recette: result.recipeId,
-        articles: result.itemCount,
-        tentatives: generated.attempts,
-      });
-
-      return result;
-    } catch (error) {
-      if (error instanceof PlanNotFoundError) {
-        // Le plan a disparu entre la lecture et l'écriture : l'autre téléphone
-        // a régénéré la semaine pendant l'appel.
-        throw invalidArgument(
-          'Le plan de la semaine a changé pendant la génération, sans doute depuis l’autre ' +
-            'téléphone. Rouvre le planning et réessaie.',
-        );
-      }
-      throw internal(
-        'La recette a bien été trouvée mais n’a pas pu être enregistrée. Réessaie dans un instant.',
-        error,
-      );
+      return await replaceOneMeal(input, dayIndex, plan);
+    } finally {
+      await releaseGenerationLock(input.householdId, input.weekId);
     }
   },
 );
+
+/** Corps du remplacement, une fois l'appel jugé légitime et le verrou posé. */
+async function replaceOneMeal(
+  input: RegenerateMealInput,
+  dayIndex: number,
+  plan: WeeklyPlan,
+): Promise<RegenerateMealResult> {
+  await consumeGenerationQuota(input.householdId);
+
+  const current = findMeal(plan, input.date, input.slot);
+  const names = await readRecipeNames(input.householdId, plan.recipeIds);
+
+  let generated;
+  try {
+    generated = await generateMealRecipeFromGemini({
+      dayIndex,
+      slot: input.slot,
+      date: input.date,
+      currentRecipeName: current?.recipeId ? (names.get(current.recipeId) ?? null) : null,
+      otherRecipeNames: [...names.entries()]
+        .filter(([id]) => id !== current?.recipeId)
+        .map(([, name]) => name),
+      notes: input.notes,
+    });
+  } catch (error) {
+    // Aucun appel n'a abouti : la génération décomptée est rendue au foyer.
+    if (error instanceof GeminiUnavailableError) {
+      await refundGenerationQuota(input.householdId);
+      throw unavailable(
+        'Le service de génération est saturé en ce moment. Ta génération n’a pas été ' +
+          'décomptée : réessaie dans une minute.',
+        error,
+      );
+    }
+
+    if (error instanceof MealGenerationError) {
+      logger.error('remplacement abandonné', {
+        violations: error.violations.map((violation) => violation.code),
+      });
+      throw internal(
+        'Aucune recette proposée ne convenait à ce jour de la semaine, même après ' +
+          'correction. Réessaie : le résultat varie d’une fois sur l’autre.',
+        error,
+      );
+    }
+
+    throw internal(
+      'La recherche d’une recette a échoué pour une raison inattendue. Réessaie dans un instant.',
+      error,
+    );
+  }
+
+  try {
+    const result = await replaceMeal({
+      householdId: input.householdId,
+      weekId: input.weekId,
+      date: input.date,
+      slot: input.slot,
+      recipe: generated.recipe,
+    });
+
+    logger.info('repas remplacé', {
+      weekId: result.weekId,
+      recette: result.recipeId,
+      articles: result.itemCount,
+      tentatives: generated.attempts,
+    });
+
+    return result;
+  } catch (error) {
+    if (error instanceof PlanNotFoundError) {
+      // Le plan a disparu entre la lecture et l'écriture : l'autre téléphone
+      // a régénéré la semaine pendant l'appel.
+      throw invalidArgument(
+        'Le plan de la semaine a changé pendant la génération, sans doute depuis l’autre ' +
+          'téléphone. Rouvre le planning et réessaie.',
+      );
+    }
+    throw internal(
+      'La recette a bien été trouvée mais n’a pas pu être enregistrée. Réessaie dans un instant.',
+      error,
+    );
+  }
+}
 
 async function readPlan(householdId: string, weekId: string): Promise<WeeklyPlan> {
   const snapshot = await db.doc(paths.weeklyPlan(householdId, weekId)).get();

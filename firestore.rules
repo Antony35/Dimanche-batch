@@ -74,6 +74,13 @@ service cloud.firestore {
         allow read: if isMember(householdId);
         allow write: if false; // compteur de quota, géré en transaction serveur
       }
+
+      // Verrous de génération : le client peut voir qu'une génération est en
+      // cours sur l'autre téléphone, mais jamais en poser ni en lever un.
+      match /locks/{weekId} {
+        allow read: if isMember(householdId);
+        allow write: if false;
+      }
     }
 
     // Tout le reste est fermé.

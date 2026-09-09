@@ -4,7 +4,7 @@ import {
   assertSucceeds,
   type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing';
-import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
+import { deleteDoc, doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import { ALICE, BOB, HOUSEHOLD_ID, MALLORY, WEEK_ID, createTestEnvironment, seed } from './setup';
 
 let testEnv: RulesTestEnvironment;
@@ -134,6 +134,19 @@ describe('liste de courses', () => {
   it('refuse tout accès à qui n’est pas membre', async () => {
     await assertFails(getDoc(doc(outsiderDb(), itemPath)));
     await assertFails(updateDoc(doc(outsiderDb(), itemPath), { checked: true }));
+  });
+});
+
+describe('verrou de génération', () => {
+  it('est lisible mais jamais posé ni levé par le client', async () => {
+    // Pouvoir le lire sert à afficher « génération en cours » ; pouvoir
+    // l'écrire permettrait de bloquer l'autre téléphone indéfiniment.
+    const alice = testEnv.authenticatedContext(ALICE).firestore();
+    const lock = doc(alice, `households/${HOUSEHOLD_ID}/locks/${WEEK_ID}`);
+
+    await assertSucceeds(getDoc(lock));
+    await assertFails(setDoc(lock, { startedAt: Date.now(), by: ALICE }));
+    await assertFails(deleteDoc(lock));
   });
 });
 

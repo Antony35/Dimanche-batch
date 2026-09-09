@@ -14,6 +14,7 @@ export const COLLECTIONS = {
   groceryLists: 'groceryLists',
   groceryItems: 'items',
   usage: 'usage',
+  locks: 'locks',
 } as const;
 
 export const paths = {
@@ -43,7 +44,20 @@ export const paths = {
   usage: (householdId: string) => `${COLLECTIONS.households}/${householdId}/${COLLECTIONS.usage}`,
   usageDay: (householdId: string, isoDate: string) =>
     `${COLLECTIONS.households}/${householdId}/${COLLECTIONS.usage}/${isoDate}`,
+
+  locks: (householdId: string) => `${COLLECTIONS.households}/${householdId}/${COLLECTIONS.locks}`,
+  generationLock: (householdId: string, weekId: string) =>
+    `${COLLECTIONS.households}/${householdId}/${COLLECTIONS.locks}/${weekId}`,
 } as const;
 
 /** Plafond de générations Gemini par foyer et par jour. Voir CLAUDE.md §4. */
 export const DAILY_GENERATION_LIMIT = 10;
+
+/**
+ * Durée au-delà de laquelle un verrou de génération est considéré abandonné.
+ *
+ * Supérieure au `timeoutSeconds` des functions (120 s) : une function tuée par
+ * son timeout n'a pas pu libérer son verrou, et le foyer ne doit pas rester
+ * bloqué pour autant.
+ */
+export const GENERATION_LOCK_TTL_MS = 180_000;

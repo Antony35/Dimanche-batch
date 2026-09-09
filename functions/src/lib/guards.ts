@@ -1,8 +1,13 @@
-import { DAILY_GENERATION_LIMIT, paths, toIsoDate } from '@dimanche-batch/shared';
+import {
+  DAILY_GENERATION_LIMIT,
+  GENERATION_LOCK_TTL_MS,
+  paths,
+  toIsoDate,
+} from '@dimanche-batch/shared';
 import { FieldValue } from 'firebase-admin/firestore';
 import { logger } from 'firebase-functions';
 import { db } from './firestore';
-import { internal, permissionDenied, resourceExhausted } from './errors';
+import { failedPrecondition, internal, permissionDenied, resourceExhausted } from './errors';
 
 /**
  * Toute callable commence par ces deux garde-fous. Les Security Rules protègent
@@ -114,6 +119,65 @@ export async function refundGenerationQuota(householdId: string): Promise<void> 
   } catch (error) {
     logger.error('quota non remboursé', {
       householdId,
+      erreur: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+/**
+ * Empêche deux générations simultanées sur la même semaine.
+ *
+ * Sans ce verrou, deux téléphones qui appuient en même temps passent tous deux
+ * la vérification d'existence du plan, consomment chacun une génération, et le
+ * dernier écrit écrase l'autre. Le foyer paie deux fois pour un seul résultat,
+ * et voit un plan qu'il n'a pas demandé.
+ *
+ * Posé avant la consommation du quota, à dessein : un appel refusé ici ne doit
+ * rien coûter. Un verrou plus vieux que `GENERATION_LOCK_TTL_MS` est repris —
+ * une function tuée par son timeout n'a pas pu libérer le sien.
+ */
+export async function acquireGenerationLock(
+  householdId: string,
+  weekId: string,
+  uid: string,
+): Promise<void> {
+  const lockRef = db.doc(paths.generationLock(householdId, weekId));
+
+  try {
+    await db.runTransaction(async (transaction) => {
+      const snapshot = await transaction.get(lockRef);
+      const startedAt: unknown = snapshot.get('startedAt');
+
+      if (
+        snapshot.exists &&
+        typeof startedAt === 'number' &&
+        Date.now() - startedAt < GENERATION_LOCK_TTL_MS
+      ) {
+        throw failedPrecondition(
+          'Une génération est déjà en cours pour cette semaine, sans doute depuis l’autre ' +
+            'téléphone. Attends qu’elle se termine.',
+        );
+      }
+
+      transaction.set(lockRef, { startedAt: Date.now(), by: uid });
+    });
+  } catch (error) {
+    if (error instanceof Error && 'code' in error) throw error;
+    throw internal('Impossible de vérifier qu’aucune génération n’est en cours.', error);
+  }
+}
+
+/**
+ * Libère le verrou. N'échoue jamais vers l'appelant : le TTL rattrape de toute
+ * façon, et une seconde erreur par-dessus la première n'aiderait personne.
+ */
+export async function releaseGenerationLock(householdId: string, weekId: string): Promise<void> {
+  try {
+    await db.doc(paths.generationLock(householdId, weekId)).delete();
+  } catch (error) {
+    logger.error('verrou non libéré', {
+      householdId,
+      weekId,
       erreur: error instanceof Error ? error.message : String(error),
     });
   }

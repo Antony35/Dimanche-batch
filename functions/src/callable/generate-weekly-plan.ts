@@ -16,8 +16,10 @@ import {
 import { db } from '../lib/firestore';
 import { internal, invalidArgument, parseInput, unavailable } from '../lib/errors';
 import {
+  acquireGenerationLock,
   consumeGenerationQuota,
   refundGenerationQuota,
+  releaseGenerationLock,
   requireAuth,
   requireHouseholdMember,
 } from '../lib/guards';
@@ -71,72 +73,86 @@ export const generateWeeklyPlan = onCall(
       );
     }
 
-    await consumeGenerationQuota(input.householdId);
-
-    const recentRecipeNames = await readRecentRecipeNames(input.householdId, input.weekStart);
-    const favoriteRecipeNames = await readFavoriteRecipeNames(input.householdId, recentRecipeNames);
-
-    let generated;
+    // Le verrou précède le quota : un appel concurrent ne doit rien coûter.
+    await acquireGenerationLock(input.householdId, input.weekStart, uid);
     try {
-      generated = await generateWeeklyPlanFromGemini({
-        weekStart: input.weekStart,
-        recentRecipeNames,
-        favoriteRecipeNames,
-        notes: input.notes,
-      });
-    } catch (error) {
-      // Aucun appel n'a abouti : la génération décomptée est rendue au foyer.
-      if (error instanceof GeminiUnavailableError) {
-        await refundGenerationQuota(input.householdId);
-        throw unavailable(
-          'Le service de génération est saturé en ce moment. Ta génération n’a pas été ' +
-            'décomptée : réessaie dans une minute.',
-          error,
-        );
-      }
-
-      if (error instanceof PlanGenerationError) {
-        logger.error('génération abandonnée', {
-          violations: error.violations.map((violation) => violation.code),
-        });
-        throw internal(
-          'La semaine proposée ne respectait pas tes contraintes, même après correction. ' +
-            'Réessaie : le résultat varie d’une fois sur l’autre.',
-          error,
-        );
-      }
-
-      throw internal(
-        'La génération de la semaine a échoué pour une raison inattendue. Réessaie dans un instant.',
-        error,
-      );
-    }
-
-    try {
-      const result = await writeWeeklyPlan({
-        householdId: input.householdId,
-        weekStart: input.weekStart,
-        generatedBy: uid,
-        plan: generated.plan,
-        model: generated.model,
-      });
-
-      logger.info('plan écrit', {
-        weekId: result.weekId,
-        recettes: result.recipeCount,
-        articles: result.itemCount,
-        tentatives: generated.attempts,
-      });
-
-      return result;
-    } catch (error) {
-      throw internal(
-        'La semaine a bien été composée mais n’a pas pu être enregistrée. Réessaie dans un instant.',
-        error,
-      );
+      return await composePlan(input, uid);
+    } finally {
+      await releaseGenerationLock(input.householdId, input.weekStart);
     }
   },
 );
+
+/** Corps de la génération, une fois l'appel jugé légitime et le verrou posé. */
+async function composePlan(
+  input: GenerateWeeklyPlanInput,
+  uid: string,
+): Promise<GenerateWeeklyPlanResult> {
+  await consumeGenerationQuota(input.householdId);
+
+  const recentRecipeNames = await readRecentRecipeNames(input.householdId, input.weekStart);
+  const favoriteRecipeNames = await readFavoriteRecipeNames(input.householdId, recentRecipeNames);
+
+  let generated;
+  try {
+    generated = await generateWeeklyPlanFromGemini({
+      weekStart: input.weekStart,
+      recentRecipeNames,
+      favoriteRecipeNames,
+      notes: input.notes,
+    });
+  } catch (error) {
+    // Aucun appel n'a abouti : la génération décomptée est rendue au foyer.
+    if (error instanceof GeminiUnavailableError) {
+      await refundGenerationQuota(input.householdId);
+      throw unavailable(
+        'Le service de génération est saturé en ce moment. Ta génération n’a pas été ' +
+          'décomptée : réessaie dans une minute.',
+        error,
+      );
+    }
+
+    if (error instanceof PlanGenerationError) {
+      logger.error('génération abandonnée', {
+        violations: error.violations.map((violation) => violation.code),
+      });
+      throw internal(
+        'La semaine proposée ne respectait pas tes contraintes, même après correction. ' +
+          'Réessaie : le résultat varie d’une fois sur l’autre.',
+        error,
+      );
+    }
+
+    throw internal(
+      'La génération de la semaine a échoué pour une raison inattendue. Réessaie dans un instant.',
+      error,
+    );
+  }
+
+  try {
+    const result = await writeWeeklyPlan({
+      householdId: input.householdId,
+      weekStart: input.weekStart,
+      generatedBy: uid,
+      plan: generated.plan,
+      model: generated.model,
+    });
+
+    logger.info('plan écrit', {
+      weekId: result.weekId,
+      recettes: result.recipeCount,
+      articles: result.itemCount,
+      tentatives: generated.attempts,
+    });
+
+    return result;
+  } catch (error) {
+    throw internal(
+      'La semaine a bien été composée mais n’a pas pu être enregistrée. Réessaie dans un instant.',
+      error,
+    );
+  }
+}
 
 /**
  * Noms des recettes servies lors des semaines précédentes.

@@ -1,12 +1,19 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
-import { DAILY_GENERATION_LIMIT, paths, toIsoDate } from '@dimanche-batch/shared';
+import {
+  DAILY_GENERATION_LIMIT,
+  GENERATION_LOCK_TTL_MS,
+  paths,
+  toIsoDate,
+} from '@dimanche-batch/shared';
 import { HttpsError } from 'firebase-functions/v2/https';
 import { clearFirestore } from '../../__tests__/emulator';
 import { ALICE, BOB, HOUSEHOLD_ID, MALLORY } from '../../__tests__/fixtures';
 import { db } from '../firestore';
 import {
+  acquireGenerationLock,
   consumeGenerationQuota,
   refundGenerationQuota,
+  releaseGenerationLock,
   requireAuth,
   requireHouseholdMember,
 } from '../guards';
@@ -161,5 +168,76 @@ describe('refundGenerationQuota', () => {
     // L'appelant reçoit déjà l'erreur qui l'intéresse ; une seconde par-dessus
     // ne l'aiderait pas. Un foyer inexistant ne doit donc rien lever.
     await expect(refundGenerationQuota('foyer-fantome')).resolves.toBeUndefined();
+  });
+});
+
+describe('acquireGenerationLock', () => {
+  const WEEK = '2026-09-14';
+
+  it('pose le verrou de la semaine', async () => {
+    await expect(acquireGenerationLock(HOUSEHOLD_ID, WEEK, ALICE)).resolves.toBeUndefined();
+
+    const lock = await db.doc(paths.generationLock(HOUSEHOLD_ID, WEEK)).get();
+    expect(lock.exists).toBe(true);
+    expect(lock.get('by')).toBe(ALICE);
+  });
+
+  it('refuse une seconde génération sur la même semaine', async () => {
+    // Le cas réel : les deux téléphones appuient à quelques secondes d'écart.
+    await acquireGenerationLock(HOUSEHOLD_ID, WEEK, ALICE);
+
+    await expectHttpsError(
+      acquireGenerationLock(HOUSEHOLD_ID, WEEK, BOB),
+      'failed-precondition',
+    );
+  });
+
+  it('laisse passer une génération sur une autre semaine', async () => {
+    await acquireGenerationLock(HOUSEHOLD_ID, WEEK, ALICE);
+
+    await expect(
+      acquireGenerationLock(HOUSEHOLD_ID, '2026-09-21', BOB),
+    ).resolves.toBeUndefined();
+  });
+
+  it('reprend un verrou abandonné', async () => {
+    // Une function tuée par son timeout n'a pas pu libérer le sien : sans
+    // reprise, le foyer resterait bloqué pour toujours.
+    await db.doc(paths.generationLock(HOUSEHOLD_ID, WEEK)).set({
+      startedAt: Date.now() - GENERATION_LOCK_TTL_MS - 1_000,
+      by: ALICE,
+    });
+
+    await expect(acquireGenerationLock(HOUSEHOLD_ID, WEEK, BOB)).resolves.toBeUndefined();
+    expect((await db.doc(paths.generationLock(HOUSEHOLD_ID, WEEK)).get()).get('by')).toBe(BOB);
+  });
+
+  it('reprend un verrou dont la date est illisible', async () => {
+    await db.doc(paths.generationLock(HOUSEHOLD_ID, WEEK)).set({ startedAt: 'hier', by: ALICE });
+
+    await expect(acquireGenerationLock(HOUSEHOLD_ID, WEEK, BOB)).resolves.toBeUndefined();
+  });
+
+  it('ne consomme aucun quota en refusant', async () => {
+    await acquireGenerationLock(HOUSEHOLD_ID, WEEK, ALICE);
+    await expectHttpsError(acquireGenerationLock(HOUSEHOLD_ID, WEEK, BOB), 'failed-precondition');
+
+    const usage = await db.doc(paths.usageDay(HOUSEHOLD_ID, TODAY)).get();
+    expect(usage.exists).toBe(false);
+  });
+});
+
+describe('releaseGenerationLock', () => {
+  const WEEK = '2026-09-14';
+
+  it('rend la semaine disponible', async () => {
+    await acquireGenerationLock(HOUSEHOLD_ID, WEEK, ALICE);
+    await releaseGenerationLock(HOUSEHOLD_ID, WEEK);
+
+    await expect(acquireGenerationLock(HOUSEHOLD_ID, WEEK, BOB)).resolves.toBeUndefined();
+  });
+
+  it('ne lève jamais, même sans verrou à libérer', async () => {
+    await expect(releaseGenerationLock(HOUSEHOLD_ID, WEEK)).resolves.toBeUndefined();
   });
 });

@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { COLLECTIONS, DAILY_GENERATION_LIMIT, paths } from '../firestore-paths';
+import {
+  COLLECTIONS,
+  DAILY_GENERATION_LIMIT,
+  GENERATION_LOCK_TTL_MS,
+  paths,
+} from '../firestore-paths';
 
 /**
  * Ces chaînes doivent viser exactement les documents que `firestore.rules`
@@ -25,6 +30,7 @@ describe('forme des chemins', () => {
       paths.groceryLists(HID),
       paths.groceryItems(HID, WEEK),
       paths.usage(HID),
+      paths.locks(HID),
     ]) {
       expect(segments(collection) % 2, `${collection} devrait être une collection`).toBe(1);
     }
@@ -36,6 +42,7 @@ describe('forme des chemins', () => {
       paths.groceryList(HID, WEEK),
       paths.groceryItem(HID, WEEK, 'lentilles--mass'),
       paths.usageDay(HID, '2026-09-14'),
+      paths.generationLock(HID, WEEK),
     ]) {
       expect(segments(document) % 2, `${document} devrait être un document`).toBe(0);
     }
@@ -47,6 +54,7 @@ describe('forme des chemins', () => {
     expect(paths.recipe(HID, 'curry')).toBe(`${paths.recipes(HID)}/curry`);
     expect(paths.groceryList(HID, WEEK)).toBe(`${paths.groceryLists(HID)}/${WEEK}`);
     expect(paths.usageDay(HID, WEEK)).toBe(`${paths.usage(HID)}/${WEEK}`);
+    expect(paths.generationLock(HID, WEEK)).toBe(`${paths.locks(HID)}/${WEEK}`);
   });
 
   it('imbrique les articles sous la liste de la semaine', () => {
@@ -69,15 +77,22 @@ describe('forme des chemins', () => {
         paths.groceryLists(HID),
         paths.groceryItems(HID, WEEK),
         paths.usage(HID),
+        paths.locks(HID),
       ].map((path) => path.split('/')[0]),
     );
     expect([...roots]).toEqual([COLLECTIONS.households]);
   });
 });
 
-describe('DAILY_GENERATION_LIMIT', () => {
-  it('est un entier positif : c’est le seul rempart devant la clé Gemini', () => {
+describe('constantes de garde', () => {
+  it('DAILY_GENERATION_LIMIT est un entier positif : le rempart devant la clé', () => {
     expect(Number.isInteger(DAILY_GENERATION_LIMIT)).toBe(true);
     expect(DAILY_GENERATION_LIMIT).toBeGreaterThan(0);
+  });
+
+  it('le TTL du verrou dépasse le timeout des functions', () => {
+    // 120 s côté function : un verrou qui expirerait avant laisserait deux
+    // générations se chevaucher, ce qu'il est justement censé empêcher.
+    expect(GENERATION_LOCK_TTL_MS).toBeGreaterThan(120_000);
   });
 });
