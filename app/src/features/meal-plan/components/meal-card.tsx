@@ -15,7 +15,7 @@ import { useTheme } from '@/theme';
 
 const KIND_LABELS: Record<Meal['kind'], string | null> = {
   cooked: null,
-  'batch-leftover': 'Reste du batch',
+  'batch-leftover': 'Portion du batch',
   'freezer-backup': 'Sorti du congélateur',
   'eat-out': 'Repas à l’extérieur',
 };
@@ -24,8 +24,8 @@ export interface MealCardProps {
   label: string;
   meal: Meal;
   recipesById: Map<string, Recipe>;
-  /** Absent sur l'accueil : on ne régénère que depuis le planning. */
-  onRegenerate?: () => void;
+  /** Absent sur l'accueil : on ne change un repas que depuis le planning. */
+  onChangeMeal?: () => void;
   isRegenerating?: boolean;
 }
 
@@ -33,7 +33,7 @@ export function MealCard({
   label,
   meal,
   recipesById,
-  onRegenerate,
+  onChangeMeal,
   isRegenerating = false,
 }: MealCardProps) {
   const theme = useTheme();
@@ -74,11 +74,11 @@ export function MealCard({
         </View>
       ) : null}
 
-      {onRegenerate ? (
+      {onChangeMeal ? (
         <Button
-          label={isRegenerating ? 'Génération…' : 'Changer ce repas'}
+          label={isRegenerating ? 'Enregistrement…' : 'Changer ce repas'}
           variant="ghost"
-          onPress={onRegenerate}
+          onPress={onChangeMeal}
           loading={isRegenerating}
           style={{ marginTop: theme.spacing.xs }}
         />

@@ -4,12 +4,15 @@ import {
   GenerateWeeklyPlanResultSchema,
   JoinHouseholdResultSchema,
   RegenerateMealResultSchema,
+  SetMealResultSchema,
   type GenerateWeeklyPlanInput,
   type GenerateWeeklyPlanResult,
   type JoinHouseholdInput,
   type JoinHouseholdResult,
   type RegenerateMealInput,
   type RegenerateMealResult,
+  type SetMealInput,
+  type SetMealResult,
 } from '@dimanche-batch/shared';
 import type { z } from 'zod';
 import { functions } from './firebase';
@@ -61,4 +64,8 @@ export function generateWeeklyPlan(
 
 export function regenerateMeal(input: RegenerateMealInput): Promise<RegenerateMealResult> {
   return call('regenerateMeal', RegenerateMealResultSchema, input);
+}
+
+export function setMeal(input: SetMealInput): Promise<SetMealResult> {
+  return call('setMeal', SetMealResultSchema, input);
 }

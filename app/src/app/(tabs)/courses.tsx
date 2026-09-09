@@ -1,7 +1,10 @@
+import { useState } from 'react';
 import { Share, View } from 'react-native';
 import {
   formatGroceryListForSharing,
+  getCurrentWeekId,
   getUpcomingWeekId,
+  getWeekDates,
   type GroceryItem,
 } from '@dimanche-batch/shared';
 import {
@@ -17,13 +20,18 @@ import { AisleSection } from '@/features/grocery-list/components/aisle-section';
 import { useGroceryList } from '@/features/grocery-list/api/use-grocery-list';
 import { useToggleGroceryItem } from '@/features/grocery-list/api/use-toggle-grocery-item';
 import { useHousehold } from '@/features/household/api/use-household';
+import { WeekSwitch } from '@/features/meal-plan/components/week-switch';
 import { useTheme } from '@/theme';
 
 /** Liste de courses de la semaine, groupée dans l'ordre de parcours du magasin. */
 export default function GroceryScreen() {
   const theme = useTheme();
   const { household } = useHousehold();
-  const weekId = getUpcomingWeekId();
+
+  // Les courses s'ouvrent sur la semaine à préparer : c'est pour elle qu'on
+  // achète. Celle en cours reste consultable, on peut avoir oublié un article.
+  const [showingCurrent, setShowingCurrent] = useState(false);
+  const weekId = showingCurrent ? getCurrentWeekId() : getUpcomingWeekId();
 
   const householdId = household?.id ?? null;
   const { items, groups, checkedCount, isLoading, isStale, error } = useGroceryList(
@@ -53,11 +61,12 @@ export default function GroceryScreen() {
 
   return (
     <Screen>
-      <View style={{ gap: theme.spacing.xs }}>
+      <View style={{ gap: theme.spacing.sm }}>
         <Text variant="overline" tone="faint">
-          SEMAINE DU {weekId}
+          DU {getWeekDates(weekId)[0]} AU {getWeekDates(weekId)[6]}
         </Text>
         <Text variant="title">Courses</Text>
+        <WeekSwitch showingCurrent={showingCurrent} onChange={setShowingCurrent} />
         {items.length > 0 ? (
           <Text tone="soft">
             {nothingToSend

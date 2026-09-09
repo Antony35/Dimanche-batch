@@ -1,7 +1,11 @@
-import { Alert, View } from 'react-native';
+import { useState } from 'react';
+import { View } from 'react-native';
 import {
-  getDayNameForDate,
+  getBatchSession,
   getCurrentWeekId,
+  getDayNameForDate,
+  getUpcomingWeekId,
+  getWeekDates,
   toIsoDate,
   type DayPlan,
   type MealSlot,
@@ -17,60 +21,68 @@ import {
 } from '@/components/ui';
 import { useHousehold } from '@/features/household/api/use-household';
 import { MealCard } from '@/features/meal-plan/components/meal-card';
+import {
+  MealChoiceSheet,
+  type MealChoiceTarget,
+} from '@/features/meal-plan/components/meal-choice-sheet';
+import { WeekSwitch } from '@/features/meal-plan/components/week-switch';
 import { useRecipes } from '@/features/meal-plan/api/use-recipes';
 import { useRegenerateMeal } from '@/features/meal-plan/api/use-regenerate-meal';
+import { useSetMeal } from '@/features/meal-plan/api/use-set-meal';
 import { useWeeklyPlan } from '@/features/meal-plan/api/use-weekly-plan';
 import { useTheme } from '@/theme';
 
-/** Les 7 jours de la semaine planifiée, midi et soir, avec régénération. */
+/** Les 7 jours de la semaine, du samedi au vendredi. */
 export default function PlanningScreen() {
   const theme = useTheme();
   const { household } = useHousehold();
   const today = toIsoDate(new Date());
-  const weekId = getCurrentWeekId();
+
+  // Le planning s'ouvre sur ce qu'on mange ; la semaine à préparer est à un
+  // geste, parce que c'est elle qu'on ajuste avant les courses.
+  const [showingCurrent, setShowingCurrent] = useState(true);
+  const weekId = showingCurrent ? getCurrentWeekId() : getUpcomingWeekId();
 
   const householdId = household?.id ?? null;
   const { plan, isLoading, isStale, error } = useWeeklyPlan(householdId, weekId);
   const { recipesById } = useRecipes(householdId);
   const regenerate = useRegenerateMeal();
+  const choose = useSetMeal();
 
-  function askRegenerate(date: string, slot: MealSlot, currentName: string | null) {
-    if (!householdId) return;
+  const [target, setTarget] = useState<MealChoiceTarget | null>(null);
+  const batchRecipes = plan ? getBatchSession(plan, recipesById).recipes : [];
+  const dates = getWeekDates(weekId);
 
-    Alert.alert(
-      'Changer ce repas ?',
-      currentName
-        ? `« ${currentName} » sera remplacé par une nouvelle proposition, et la liste de courses recalculée.`
-        : 'Une nouvelle recette sera proposée, et la liste de courses recalculée.',
-      [
-        { text: 'Annuler', style: 'cancel' },
-        {
-          text: 'Changer',
-          onPress: () => regenerate.mutate({ householdId, weekId, date, slot }),
-        },
-      ],
-    );
+  function closeSheet() {
+    setTarget(null);
   }
+
+  const pendingSlot =
+    regenerate.isPending || choose.isPending
+      ? (regenerate.variables ?? choose.variables)
+      : undefined;
 
   return (
     <Screen>
-      <View style={{ gap: theme.spacing.xs }}>
+      <View style={{ gap: theme.spacing.sm }}>
         <Text variant="overline" tone="faint">
-          SEMAINE DU {weekId}
+          DU {dates[0]} AU {dates[6]}
         </Text>
         <Text variant="title">Planning</Text>
+        <WeekSwitch showingCurrent={showingCurrent} onChange={setShowingCurrent} />
       </View>
 
       {isStale && plan !== null ? <StaleNotice /> : null}
       {error ? <ErrorState message={error.message} /> : null}
       {regenerate.error ? <ErrorState message={regenerate.error.message} /> : null}
+      {choose.error ? <ErrorState message={choose.error.message} /> : null}
 
       {isLoading ? (
         <LoadingState />
       ) : plan === null ? (
         <EmptyState
           title="Aucun plan pour cette semaine"
-          description="Lance la génération depuis l’accueil : elle compose les sept jours d’un coup."
+          description="Compose-la depuis l’accueil : le batch du dimanche nourrit ensuite toute la semaine."
         />
       ) : (
         plan.days.map((day) => (
@@ -79,11 +91,49 @@ export default function PlanningScreen() {
             day={day}
             isToday={day.date === today}
             recipesById={recipesById}
-            pending={regenerate.isPending ? regenerate.variables : undefined}
-            onRegenerate={askRegenerate}
+            pending={pendingSlot}
+            onChoose={(slot, currentRecipeName) =>
+              setTarget({ date: day.date, slot, currentRecipeName })
+            }
           />
         ))
       )}
+
+      <MealChoiceSheet
+        target={target}
+        batchRecipes={batchRecipes}
+        onClose={closeSheet}
+        onCook={() => {
+          if (householdId && target) {
+            regenerate.mutate({ householdId, weekId, date: target.date, slot: target.slot });
+          }
+          closeSheet();
+        }}
+        onServeBatch={(recipeId) => {
+          if (householdId && target) {
+            choose.mutate({
+              householdId,
+              weekId,
+              date: target.date,
+              slot: target.slot,
+              meal: { choice: 'batch', recipeId },
+            });
+          }
+          closeSheet();
+        }}
+        onEatOut={() => {
+          if (householdId && target) {
+            choose.mutate({
+              householdId,
+              weekId,
+              date: target.date,
+              slot: target.slot,
+              meal: { choice: 'eat-out' },
+            });
+          }
+          closeSheet();
+        }}
+      />
     </Screen>
   );
 }
@@ -93,14 +143,14 @@ function DaySection({
   isToday,
   recipesById,
   pending,
-  onRegenerate,
+  onChoose,
 }: {
   day: DayPlan;
   isToday: boolean;
   recipesById: Map<string, Recipe>;
-  /** Créneau en cours de régénération, s’il y en a un. */
+  /** Créneau en cours d'enregistrement, s'il y en a un. */
   pending: { date: string; slot: MealSlot } | undefined;
-  onRegenerate: (date: string, slot: MealSlot, currentName: string | null) => void;
+  onChoose: (slot: MealSlot, currentRecipeName: string | null) => void;
 }) {
   const theme = useTheme();
 
@@ -127,14 +177,14 @@ function DaySection({
         meal={day.lunch}
         recipesById={recipesById}
         isRegenerating={isPending('lunch')}
-        onRegenerate={() => onRegenerate(day.date, 'lunch', nameOf(day.lunch.recipeId))}
+        onChangeMeal={() => onChoose('lunch', nameOf(day.lunch.recipeId))}
       />
       <MealCard
         label="Soir"
         meal={day.dinner}
         recipesById={recipesById}
         isRegenerating={isPending('dinner')}
-        onRegenerate={() => onRegenerate(day.date, 'dinner', nameOf(day.dinner.recipeId))}
+        onChangeMeal={() => onChoose('dinner', nameOf(day.dinner.recipeId))}
       />
     </View>
   );
