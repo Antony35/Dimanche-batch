@@ -5,10 +5,12 @@ un plan de repas de 7 jours (midi + soir) est généré par l'API Gemini, puis c
 liste de courses groupée par rayon, partageable vers Listonic. Les deux téléphones
 partagent le même foyer et voient les mêmes données en temps réel.
 
-**Statut : v1 en cours — J1 livré** (monorepo, domaine partagé testé, Security
-Rules, authentification, foyer partagé, navigation des 6 écrans). La génération
-Gemini arrive en J2. Ce document fait autorité sur l'architecture ; il est mis à
-jour en même temps que le code, jamais après.
+**Statut : v1 en cours — J1 et J2 livrés.** Le monorepo, le domaine partagé, les
+Security Rules, l'authentification, le foyer partagé et la génération Gemini
+tournent en production ; 78 tests couvrent le domaine, les callables et les
+règles. J3 ouvre l'écran de planning et la régénération d'un repas. Ce document
+fait autorité sur l'architecture ; il est mis à jour en même temps que le code,
+jamais après.
 
 ---
 
@@ -51,7 +53,7 @@ une semaine, mais jamais au prix d'une dette qui bloquerait la v2.
 | Backend | Cloud Functions for Firebase (Node 24, 2ᵉ gén.), région `europe-west1` | Plan Blaze, plafond de dépense à définir |
 | IA | Gemini API, appelée **uniquement** depuis les Cloud Functions | |
 | Validation | Zod, partagé client/serveur | |
-| Tests | Vitest sur le domaine pur + `@firebase/rules-unit-testing` sur l'émulateur | L'émulateur exige un JRE installé |
+| Tests | Vitest : domaine pur, callables contre l'émulateur Firestore, Security Rules via `@firebase/rules-unit-testing` | L'émulateur exige un JRE installé — voir §7 |
 | Lint | ESLint (`eslint-config-expo`), config dans `app/` | |
 
 ---
@@ -254,6 +256,30 @@ un rayon de supermarché.
   avec du contexte.
 - Commits conventionnels (`feat:`, `fix:`, `chore:`).
 
+### Où va quel test
+
+Trois suites, séparées par ce dont elles ont besoin pour tourner, pas par le
+dossier où vit le code.
+
+| Suite | Couvre | Coût |
+|---|---|---|
+| `npm run test` | `packages/shared` : unités, semaine, agrégation des courses, contraintes de plan | aucune dépendance, moins d'une seconde |
+| `npm run test:functions` | `functions/src/lib` : guards, quota, écriture du plan | démarre l'émulateur Firestore |
+| `npm run test:rules` | `firestore.rules` face à un client non privilégié | démarre l'émulateur Firestore |
+
+Ce qui appartient au domaine pur se teste dans `shared`, jamais à travers une
+function : c'est plus rapide et le diagnostic est direct. Ce qui se teste dans
+`functions` est ce que Zod ne peut pas garantir — l'atomicité d'un batch, la
+justesse d'une transaction sous contention, ce qu'une réécriture doit épargner.
+
+Les tests des functions parlent à l'admin SDK, qui ignore les Security Rules :
+ils ne prouvent jamais qu'un accès est refusé au client. C'est le rôle exclusif
+de `test:rules`, et la raison pour laquelle les deux suites existent.
+
+`src/__tests__/emulator.ts` refuse de démarrer si `FIRESTORE_EMULATOR_HOST` est
+absent. C'est délibéré : sans cette garde, une suite lancée à la main écrirait
+dans le vrai Firestore avec les droits de l'admin SDK.
+
 ---
 
 ## 8. Commandes
@@ -265,8 +291,10 @@ npm install                      # installe tous les workspaces
 npm run build:shared             # requis avant tout déploiement de functions
 npm run dev                      # Expo dev server
 npm run emulators                # Firestore + Auth + Functions en local
-npm run test                     # Vitest sur le domaine partagé
-npm run test:rules               # Security Rules sur émulateur (nécessite Java)
+npm run test                     # Vitest sur le domaine partagé, sans émulateur
+npm run test:functions           # Guards et écritures Firestore, sur émulateur
+npm run test:rules               # Security Rules sur émulateur
+npm run test:all                 # les trois, dans cet ordre
 GEMINI_API_KEY=… npm run gemini:probe   # chaîne de génération, sans déployer
 npm run typecheck                # tsc --noEmit sur tous les workspaces
 npm run lint
@@ -342,8 +370,9 @@ Ce qui reste à faire hors code, dans l'ordre :
 4. ~~Nettoyage d'Artifact Registry.~~ Fait via
    `firebase functions:artifacts:setpolicy --location europe-west1 --days 7` :
    les images de plus de 7 jours sont supprimées automatiquement.
-5. Installer un JRE pour faire tourner la suite d'émulateurs (`npm run test:rules`
-   en dépend). Seul point encore ouvert.
+5. ~~Installer un JRE pour faire tourner la suite d'émulateurs.~~ Fait
+   (OpenJDK 21). `npm run test:all` passe en entier — plus aucun point ouvert
+   hors code.
 
 Le compte de service `<numéro>-compute@developer.gserviceaccount.com` doit porter
 **deux rôles** que Google n'accorde plus par défaut sur les projets récents :
