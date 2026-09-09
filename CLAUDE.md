@@ -5,12 +5,13 @@ un plan de repas de 7 jours (midi + soir) est généré par l'API Gemini, puis c
 liste de courses groupée par rayon, partageable vers Listonic. Les deux téléphones
 partagent le même foyer et voient les mêmes données en temps réel.
 
-**Statut : v1 en cours — J1 à J4 livrés.** Le monorepo, le domaine partagé, les
+**Statut : v1 en cours — J1 à J5 livrés.** Le monorepo, le domaine partagé, les
 Security Rules, l'authentification, le foyer partagé, la génération Gemini, le
-planning des 7 jours, la régénération d'un repas isolé et la liste de courses ;
-160 tests couvrent le domaine, les callables et les règles. J5 ouvre la fiche
-recette et l'historique. Ce document fait autorité sur l'architecture ; il est
-mis à jour en même temps que le code, jamais après.
+planning des 7 jours, la régénération d'un repas isolé, la liste de courses, la
+fiche recette et l'historique ; 174 tests couvrent le domaine, les schémas, les
+callables et les règles. Restent la synchro à deux téléphones (J6) et le build
+(J7). Ce document fait autorité sur l'architecture ; il est mis à jour en même
+temps que le code, jamais après.
 
 ---
 
@@ -254,6 +255,13 @@ Contraintes métier que le prompt doit garantir (voir la semaine type) : au moin
 au moins 2 recettes qui se congèlent bien, portions pour 2, ingrédients quantifiés avec
 un rayon de supermarché.
 
+**Mémoire du foyer.** Le prompt reçoit deux listes de sens opposé : les recettes
+servies lors des 3 dernières semaines, à ne pas reproposer, et les favoris, dont
+le modèle peut reprendre **un seul** au plus. Un favori servi récemment est
+retiré de la seconde liste — sans quoi on demanderait au modèle une chose et son
+contraire. C'est ce qui donne un effet au bouton favori ; sans cela il ne
+servirait qu'à faire une liste.
+
 ---
 
 ## 7. Conventions de code
@@ -264,11 +272,13 @@ un rayon de supermarché.
 - Composants fonctionnels, un composant par fichier, nommage `PascalCase.tsx`.
 - Les hooks de données vivent dans `features/<x>/api/`, préfixés `use` — un composant
   ne consomme jamais le SDK Firestore en direct.
-- **Une seule écriture Firestore part du client : cocher un article**
-  (`useToggleGroceryItem`). C'est une exception assumée, et sûre parce que les
-  Security Rules la bornent à `checked` — passer par une callable n'ajouterait
-  qu'une latence au milieu d'un magasin. Toute autre écriture passe par une
-  Cloud Function. Si tu en ajoutes une ici, c'est une erreur d'architecture.
+- **Deux écritures Firestore partent du client, et deux seulement** : cocher un
+  article (`useToggleGroceryItem`) et mettre une recette en favori
+  (`useToggleFavorite`). Ce sont des exceptions assumées, sûres parce que les
+  Security Rules les bornent à `checked` et `isFavorite` — passer par une
+  callable n'ajouterait qu'une latence à un geste qui doit répondre à l'instant.
+  Toute autre écriture passe par une Cloud Function. En ajouter une troisième
+  demande d'abord d'ajouter sa règle et son test.
 - Pas d'état optimiste écrit à la main sur une donnée Firestore : le SDK
   applique l'écriture localement avant de la confirmer, et le listener la
   reflète aussitôt. Une case bascule immédiatement, même hors réseau.
@@ -403,7 +413,7 @@ Ce qui est **délibérément** simple en v1, et où brancher la suite :
 | J2 | **fait** | `generateWeeklyPlan` déployée : prompt versionné, `responseSchema`, validation Zod puis contraintes métier, unique retry, écriture Firestore en batch, écran d'accueil avec repas du jour |
 | J3 | **fait** | Écran planning des 7 jours, `regenerateMeal` : contraintes locales au jour, recalcul complet des courses, `MealCard` partagé entre accueil et planning |
 | J4 | **fait** | Liste de courses : rendu dans l'ordre de parcours du magasin, cases à cocher synchronisées entre les deux téléphones, partage par le share sheet — lisible par un humain comme par l'import de Listonic |
-| J5 | à faire | Fiche recette, historique, favoris, anti-répétition dans le prompt |
+| J5 | **fait** | Fiche recette, historique des 12 dernières semaines, favoris branchés sur le prompt, réglages sortis des onglets |
 | J6 | à faire | Synchro à deux téléphones, cache offline, cas limites |
 | J7 | à faire | Build EAS, installation, premier vrai dimanche |
 
