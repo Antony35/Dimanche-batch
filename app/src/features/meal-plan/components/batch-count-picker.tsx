@@ -20,6 +20,29 @@ const CHOICES = Array.from(
  * l'après-midi : trois plats font un dimanche court mais une semaine répétitive,
  * six font l'inverse.
  */
+/**
+ * Dix repas à couvrir, deux portions chacun : le nombre de plats décide de la
+ * fréquence à laquelle chacun revient, et de la longueur du dimanche.
+ */
+function describeChoice(count: number): string {
+  const mealsPerRecipe = Math.round(10 / count);
+  const repetition =
+    mealsPerRecipe >= 3
+      ? `chaque plat revient environ ${mealsPerRecipe} fois dans la semaine`
+      : `chaque plat revient ${mealsPerRecipe} fois seulement`;
+
+  const sunday =
+    count <= 3
+      ? 'Dimanche court'
+      : count <= 4
+        ? 'Dimanche raisonnable'
+        : count === 5
+          ? 'Dimanche chargé'
+          : 'Dimanche long';
+
+  return `${count} plats pour les dix repas du lundi au vendredi : ${repetition}. ${sunday}.`;
+}
+
 export function BatchCountPicker({ value, onChange }: BatchCountPickerProps) {
   const theme = useTheme();
 
@@ -61,8 +84,7 @@ export function BatchCountPicker({ value, onChange }: BatchCountPickerProps) {
       </View>
 
       <Text variant="caption" tone="faint">
-        Ils couvrent les dix repas du lundi au vendredi. Plus de plats, plus de variété — et un
-        dimanche plus long.
+        {describeChoice(value)}
       </Text>
     </View>
   );
