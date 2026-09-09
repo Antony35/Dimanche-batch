@@ -45,19 +45,24 @@ export function useWeeklyPlan(householdId: string | null, weekId: string): Weekl
 
     const stateKey = `${householdId}/${weekId}`;
     const cacheKey = cacheKeys.weeklyPlan(householdId, weekId);
-    let hasServerData = false;
+    let hasUsableData = false;
 
     // Savoir ce qu'on mange ce soir ne doit pas dépendre du réseau.
     void readCache(cacheKey, WeeklyPlanSchema).then((cached) => {
-      if (!cached || hasServerData) return;
+      if (!cached || hasUsableData) return;
       setState({ key: stateKey, plan: cached, isLoading: false, isStale: true, error: null });
     });
 
     return onSnapshot(
       doc(db, paths.weeklyPlan(householdId, weekId)),
+      // Sans cette option, Firestore ne notifie pas un simple changement de
+      // connexion : `isStale` ne repasserait jamais à vrai en perdant le réseau.
+      { includeMetadataChanges: true },
       (snapshot) => {
-        hasServerData = true;
         const isStale = snapshot.metadata.fromCache;
+        // Un snapshot vide venu du cache mémoire, au démarrage hors ligne, n'est
+        // pas une réponse : le tenir pour telle ferait ignorer le cache disque.
+        hasUsableData = !isStale || snapshot.exists();
 
         if (!snapshot.exists()) {
           setState({ key: stateKey, plan: null, isLoading: false, isStale, error: null });

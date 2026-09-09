@@ -27,17 +27,18 @@ export function useRecipes(householdId: string | null): {
     if (!householdId) return;
 
     const cacheKey = cacheKeys.recipes(householdId);
-    let hasServerData = false;
+    let hasUsableData = false;
 
     // Sans les recettes en cache, le planning hors ligne n'afficherait que des
     // identifiants : le plan sait quoi servir, pas comment ça s'appelle.
     void readCache(cacheKey, CachedRecipesSchema).then((cached) => {
-      if (!cached || hasServerData) return;
+      if (!cached || hasUsableData) return;
       setState({ key: householdId, recipes: new Map(cached.map((r) => [r.id, r])) });
     });
 
     return onSnapshot(collection(db, paths.recipes(householdId)), (snapshot) => {
-      hasServerData = true;
+      // Un snapshot vide venu du cache mémoire n'est pas une réponse.
+      hasUsableData = !snapshot.metadata.fromCache || snapshot.docs.length > 0;
 
       const recipes = new Map<string, Recipe>();
       for (const document of snapshot.docs) {

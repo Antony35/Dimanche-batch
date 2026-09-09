@@ -55,20 +55,25 @@ export function useGroceryList(householdId: string | null, weekId: string): Groc
 
     const stateKey = `${householdId}/${weekId}`;
     const cacheKey = cacheKeys.groceryItems(householdId, weekId);
-    let hasServerData = false;
+    let hasUsableData = false;
 
     // Hydratation depuis le disque : asynchrone par nature, donc écrite dans
-    // l'état plutôt que dérivée au rendu. La course avec le premier snapshot
-    // est tranchée par `hasServerData`.
+    // l'état plutôt que dérivée au rendu.
     void readCache(cacheKey, CachedItemsSchema).then((cached) => {
-      if (!cached || hasServerData) return;
+      if (!cached || hasUsableData) return;
       setState({ key: stateKey, items: cached, isStale: true, error: null });
     });
 
     const unsubscribe = onSnapshot(
       collection(db, paths.groceryItems(householdId, weekId)),
+      // Sans cette option, Firestore ne notifie pas un simple changement de
+      // connexion : `isStale` ne repasserait jamais à vrai en perdant le réseau.
+      { includeMetadataChanges: true },
       (snapshot) => {
-        hasServerData = true;
+        // Au démarrage hors ligne, le SDK émet aussitôt un snapshot vide depuis
+        // son cache mémoire. Le tenir pour une réponse ferait ignorer le cache
+        // disque, qui lui a les données.
+        hasUsableData = !snapshot.metadata.fromCache || snapshot.docs.length > 0;
 
         const items: GroceryItem[] = [];
         let unreadable = 0;
