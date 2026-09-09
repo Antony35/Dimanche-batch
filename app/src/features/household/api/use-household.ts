@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { addDoc, collection, doc, onSnapshot, query, updateDoc, where } from 'firebase/firestore';
 import {
   COLLECTIONS,
@@ -38,9 +38,12 @@ const INITIAL: SnapshotState = { uid: null, household: null, isLoading: true, er
 export function useHousehold(): HouseholdState {
   const { user } = useAuth();
   const [snapshotState, setSnapshotState] = useState<SnapshotState>(INITIAL);
+  /** Vrai dès qu'un snapshot serveur a livré le foyer. Voir la garde ci-dessous. */
+  const hasConfirmedHousehold = useRef(false);
 
   useEffect(() => {
     if (!user) return;
+    hasConfirmedHousehold.current = false;
 
     const householdsQuery = query(
       collection(db, COLLECTIONS.households),
@@ -55,6 +58,20 @@ export function useHousehold(): HouseholdState {
           setSnapshotState({ uid: user.uid, household: null, isLoading: false, error: null });
           return;
         }
+
+        // Un foyer jamais confirmé par le serveur n'est pas exposé.
+        //
+        // `addDoc` rend la main dès que l'écriture est appliquée localement :
+        // sans cette garde, le foyer apparaît aussitôt, les écrans montent
+        // leurs listeners sur ses sous-collections, et la règle `isMember`
+        // interroge un document que le serveur ignore encore. Elle refuse — et
+        // un `onSnapshot` refusé ne se rétablit jamais, laissant l'écran mort
+        // jusqu'au prochain montage.
+        //
+        // Une fois le foyer confirmé, les snapshots locaux repassent : c'est ce
+        // qui permet de continuer à travailler hors ligne.
+        if (snapshot.metadata.fromCache && !hasConfirmedHousehold.current) return;
+        if (!snapshot.metadata.fromCache) hasConfirmedHousehold.current = true;
 
         const parsed = HouseholdSchema.safeParse({ id: first.id, ...first.data() });
         if (!parsed.success) {
