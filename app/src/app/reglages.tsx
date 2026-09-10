@@ -2,19 +2,33 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useRouter } from 'expo-router';
 import { View } from 'react-native';
 import { splitByVerdict } from '@dimanche-batch/shared';
-import { Button, Card, Screen, Text } from '@/components/ui';
+import { Button, Card, Screen, SegmentedSwitch, Text } from '@/components/ui';
 import { useAuth } from '@/features/auth/auth-provider';
 import { refreshInviteCode, useHousehold } from '@/features/household/api/use-household';
 import { useRecipes } from '@/features/meal-plan/api/use-recipes';
-import { useTheme } from '@/theme';
+import { useTheme, useThemePreference, type ThemePreference } from '@/theme';
 
 /**
  * Réglages du foyer : qui en fait partie, comment y relier un second
  * téléphone, et comment en sortir. Hors des onglets à dessein — on y vient
  * rarement, et jamais au milieu des courses.
  */
+/** Ce que chaque choix promet, sous le sélecteur. */
+const THEME_HINTS: Record<ThemePreference, string> = {
+  system: 'L’app suit le réglage du téléphone, et bascule avec lui.',
+  light: 'Toujours en clair, quel que soit le réglage du téléphone.',
+  dark: 'Toujours en sombre, quel que soit le réglage du téléphone.',
+};
+
+const THEME_OPTIONS = [
+  { value: 'system', label: 'Système' },
+  { value: 'light', label: 'Clair' },
+  { value: 'dark', label: 'Sombre' },
+] as const;
+
 export default function SettingsScreen() {
   const theme = useTheme();
+  const { preference, setPreference } = useThemePreference();
   const router = useRouter();
   const { user, signOut } = useAuth();
   const { household } = useHousehold();
@@ -75,6 +89,16 @@ export default function SettingsScreen() {
           </Text>
           <Ionicons name="chevron-forward" size={18} color={theme.colors.inkFaint} />
         </View>
+      </Card>
+
+      <Card>
+        <Text variant="overline" tone="faint">
+          APPARENCE
+        </Text>
+        <SegmentedSwitch options={THEME_OPTIONS} value={preference} onChange={setPreference} />
+        <Text variant="caption" tone="faint">
+          {THEME_HINTS[preference]} Ce choix ne vaut que pour ce téléphone.
+        </Text>
       </Card>
 
       <Card>

@@ -9,10 +9,12 @@ interface SegmentedOption<T extends string> {
 
 export interface SegmentedSwitchProps<T extends string> {
   /**
-   * Deux positions, jamais plus : au-delà, les libellés ne tiennent plus sur la
-   * largeur d'un téléphone et il faudrait penser au débordement.
+   * Deux ou trois positions, jamais plus : au-delà, les libellés ne tiennent
+   * plus sur la largeur d'un téléphone et il faudrait penser au débordement.
    */
-  options: readonly [SegmentedOption<T>, SegmentedOption<T>];
+  options:
+    | readonly [SegmentedOption<T>, SegmentedOption<T>]
+    | readonly [SegmentedOption<T>, SegmentedOption<T>, SegmentedOption<T>];
   value: T;
   onChange: (value: T) => void;
 }

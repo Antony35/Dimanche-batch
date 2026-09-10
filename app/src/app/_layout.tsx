@@ -7,17 +7,19 @@ import { AuthProvider, useAuth } from '@/features/auth/auth-provider';
 import { useHousehold } from '@/features/household/api/use-household';
 import { queryClient } from '@/lib/query-client';
 import { LoadingState, Screen } from '@/components/ui';
-import { useTheme } from '@/theme';
+import { ThemePreferenceProvider, useTheme, useThemePreference } from '@/theme';
 
 export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <QueryClientProvider client={queryClient}>
-          <AuthProvider>
-            <RootNavigator />
-          </AuthProvider>
-        </QueryClientProvider>
+        <ThemePreferenceProvider>
+          <QueryClientProvider client={queryClient}>
+            <AuthProvider>
+              <RootNavigator />
+            </AuthProvider>
+          </QueryClientProvider>
+        </ThemePreferenceProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );
@@ -33,11 +35,14 @@ export default function RootLayout() {
 function RootNavigator() {
   const { user, isInitializing } = useAuth();
   const { household, isLoading } = useHousehold();
+  const { isReady: isThemeReady } = useThemePreference();
   const theme = useTheme();
 
   // Tant que la session persistée n'est pas restaurée, afficher l'écran de
-  // connexion ferait clignoter l'app à chaque démarrage.
-  if (isInitializing || (user && isLoading)) {
+  // connexion ferait clignoter l'app à chaque démarrage. Même raison pour le
+  // thème : rendre en clair une app réglée en sombre produirait un éclair
+  // blanc au lancement.
+  if (isInitializing || !isThemeReady || (user && isLoading)) {
     return (
       <Screen>
         <LoadingState label="Ouverture…" />
