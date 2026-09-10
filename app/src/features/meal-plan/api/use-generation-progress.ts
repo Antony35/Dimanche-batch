@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { doc, onSnapshot, type DocumentSnapshot } from 'firebase/firestore';
 import { GenerationLockSchema, paths, type GenerationLock } from '@dimanche-batch/shared';
 import { db } from '@/lib/firebase';
+import { subscribeWithRetry } from '@/lib/firestore-subscribe';
 
 interface SnapshotState {
   /** Semaine à laquelle correspond l'état, pour écarter un snapshot périmé. */
@@ -33,8 +34,9 @@ export function useGenerationProgress(
     if (!householdId) return;
     const stateKey = `${householdId}/${weekId}`;
 
-    return onSnapshot(
-      doc(db, paths.generationLock(householdId, weekId)),
+    return subscribeWithRetry<DocumentSnapshot>(
+      (onNext, onError) =>
+        onSnapshot(doc(db, paths.generationLock(householdId, weekId)), onNext, onError),
       (snapshot) => {
         if (!snapshot.exists()) {
           setState({ key: stateKey, lock: null });

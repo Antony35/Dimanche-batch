@@ -1,7 +1,15 @@
 import { useEffect, useState } from 'react';
-import { collection, limit, onSnapshot, orderBy, query } from 'firebase/firestore';
+import {
+  collection,
+  limit,
+  onSnapshot,
+  orderBy,
+  query,
+  type QuerySnapshot,
+} from 'firebase/firestore';
 import { WeeklyPlanSchema, paths, type WeeklyPlan } from '@dimanche-batch/shared';
 import { db } from '@/lib/firebase';
+import { subscribeWithRetry } from '@/lib/firestore-subscribe';
 
 /** Au-delà, on ne consulte plus un historique : on cherche une recette. */
 const MAX_WEEKS = 12;
@@ -38,8 +46,8 @@ export function useWeekHistory(householdId: string | null): WeekHistoryState {
       limit(MAX_WEEKS),
     );
 
-    return onSnapshot(
-      weeksQuery,
+    return subscribeWithRetry<QuerySnapshot>(
+      (onNext, onError) => onSnapshot(weeksQuery, onNext, onError),
       (snapshot) => {
         const weeks: WeeklyPlan[] = [];
         let unreadable = 0;

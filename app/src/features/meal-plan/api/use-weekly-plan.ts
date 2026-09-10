@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { doc, onSnapshot, type DocumentSnapshot } from 'firebase/firestore';
 import { WeeklyPlanSchema, paths, type WeeklyPlan } from '@dimanche-batch/shared';
 import { db } from '@/lib/firebase';
+import { subscribeWithRetry } from '@/lib/firestore-subscribe';
 import { cacheKeys, readCache, writeCache } from '@/lib/offline-cache';
 
 export interface WeeklyPlanState {
@@ -49,11 +50,16 @@ export function useWeeklyPlan(householdId: string | null, weekId: string): Weekl
       setState({ key: stateKey, plan: cached, isLoading: false, isStale: true, error: null });
     });
 
-    return onSnapshot(
-      doc(db, paths.weeklyPlan(householdId, weekId)),
-      // Sans cette option, Firestore ne notifie pas un simple changement de
-      // connexion : `isStale` ne repasserait jamais à vrai en perdant le réseau.
-      { includeMetadataChanges: true },
+    return subscribeWithRetry<DocumentSnapshot>(
+      (onNext, onError) =>
+        onSnapshot(
+          doc(db, paths.weeklyPlan(householdId, weekId)),
+          // Sans cette option, Firestore ne notifie pas un simple changement de
+          // connexion : `isStale` ne repasserait jamais à vrai en perdant le réseau.
+          { includeMetadataChanges: true },
+          onNext,
+          onError,
+        ),
       (snapshot) => {
         const isStale = snapshot.metadata.fromCache;
         // Un snapshot vide venu du cache mémoire, au démarrage hors ligne, n'est

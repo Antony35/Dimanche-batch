@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { collection, onSnapshot } from 'firebase/firestore';
+import { collection, onSnapshot, type QuerySnapshot } from 'firebase/firestore';
 import { z } from 'zod';
 import {
   GroceryItemSchema,
@@ -9,6 +9,7 @@ import {
   type GroceryItem,
 } from '@dimanche-batch/shared';
 import { db } from '@/lib/firebase';
+import { subscribeWithRetry } from '@/lib/firestore-subscribe';
 import { cacheKeys, readCache, writeCache } from '@/lib/offline-cache';
 
 const CachedItemsSchema = z.array(GroceryItemSchema);
@@ -64,11 +65,16 @@ export function useGroceryList(householdId: string | null, weekId: string): Groc
       setState({ key: stateKey, items: cached, isStale: true, error: null });
     });
 
-    const unsubscribe = onSnapshot(
-      collection(db, paths.groceryItems(householdId, weekId)),
-      // Sans cette option, Firestore ne notifie pas un simple changement de
-      // connexion : `isStale` ne repasserait jamais à vrai en perdant le réseau.
-      { includeMetadataChanges: true },
+    const unsubscribe = subscribeWithRetry<QuerySnapshot>(
+      (onNext, onError) =>
+        onSnapshot(
+          collection(db, paths.groceryItems(householdId, weekId)),
+          // Sans cette option, Firestore ne notifie pas un simple changement de
+          // connexion : `isStale` ne repasserait jamais à vrai en perdant le réseau.
+          { includeMetadataChanges: true },
+          onNext,
+          onError,
+        ),
       (snapshot) => {
         // Au démarrage hors ligne, le SDK émet aussitôt un snapshot vide depuis
         // son cache mémoire. Le tenir pour une réponse ferait ignorer le cache
