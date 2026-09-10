@@ -504,7 +504,8 @@ Ce qui est **délibérément** simple en v1, et où brancher la suite :
 | J5 | **fait** | Fiche recette, historique des 12 dernières semaines, favoris branchés sur le prompt, réglages sortis des onglets |
 | Batch | **fait** | Semaine du samedi au vendredi, `batchRecipeIds`, contraintes de portions et de congélation, callable `setMeal`, écran de préparation, sélecteurs de semaine, carte d'action sur l'accueil |
 | J6 | **fait** | Cache offline du plan, des recettes et des courses ; indicateur « hors ligne » ; verrou empêchant deux générations simultanées sur une même semaine |
-| Dislike | **fait** | Bannissement d'un plat par son nom : `isDisliked`, mémoire du foyer à trois listes, filet de validation, boutons sur la fiche recette et la feuille de choix, levée dans les réglages |
+| Dislike | **fait** | Bannissement d'un plat par son nom : `isDisliked`, mémoire du foyer à trois listes, filet de validation, boutons sur la fiche recette et la feuille de choix |
+| Goûts | **fait** | Favoris et plats bannis réunis sur un écran unique atteint des réglages — ce sont les deux valeurs d'un même champ, les séparer cachait le lien. `SegmentedSwitch` extrait de `WeekSwitch`, `splitByVerdict` dans le domaine |
 | J7 | à faire | Build EAS, installation, premier vrai dimanche |
 
 Ce qui reste à faire hors code, dans l'ordre :
