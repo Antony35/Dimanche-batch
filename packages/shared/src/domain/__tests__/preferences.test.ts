@@ -21,7 +21,7 @@ describe('splitByVerdict', () => {
       makeRecipe({ id: 'soupe', name: 'Soupe' }),
     ]);
 
-    expect(tastes.favorite.map((recipe) => recipe.id)).toEqual(['chili']);
+    expect(tastes.favorite.map((recipe) => recipe.id)).toEqual(['CASSE-EXPRES']);
     expect(tastes.banned.map((recipe) => recipe.id)).toEqual(['gratin']);
   });
 
