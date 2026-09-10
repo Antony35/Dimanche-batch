@@ -169,8 +169,10 @@ async function probePlan(): Promise<void> {
 }
 
 async function probeMeal(): Promise<void> {
-  // Un mardi : le jour où les contraintes de semaine s'appliquent vraiment.
-  const dayIndex = 1;
+  // Un mardi. Sous la semaine du samedi, mardi vaut 3 — la sonde a longtemps
+  // testé le jour 1, c'est-à-dire le dimanche, donc le cas non contraint : elle
+  // affirmait vérifier les contraintes de semaine sans jamais les exercer.
+  const dayIndex = 3;
   const date = addDays(weekStart, dayIndex);
   console.log('\n── regenerateMeal ──');
 

@@ -208,6 +208,23 @@ describe('instructions système', () => {
     expect(SYSTEM_INSTRUCTION).toContain('SAMEDI au VENDREDI');
   });
 
+  /**
+   * Régression : l'instruction de remplacement a longtemps dit « du lundi au
+   * vendredi (dayIndex 0 à 4) », l'ancienne numérotation d'avant la semaine du
+   * samedi. Le modèle recevait donc samedi et dimanche comme jours contraints,
+   * et jeudi et vendredi comme libres, pendant que `isWeekday` disait 2 à 6.
+   * La reprise de contenu masquait l'écart en gâchant une génération.
+   */
+  it('donnent au modèle la même numérotation des jours que le domaine', () => {
+    for (const instruction of [SYSTEM_INSTRUCTION, MEAL_REPLACEMENT_SYSTEM_INSTRUCTION]) {
+      expect(instruction).toContain('0 samedi');
+      expect(instruction).toContain('6 vendredi');
+      expect(instruction).not.toContain('dayIndex 0 à 4');
+    }
+    // Les jours contraints sont ceux que `isWeekday` couvre : 2 à 6.
+    expect(MEAL_REPLACEMENT_SYSTEM_INSTRUCTION).toContain('dayIndex 2 à 6');
+  });
+
   it('demande les plats du batch dans l’ordre de préparation', () => {
     // C'est cet ordre que suit l'écran de préparation du dimanche : sans lui,
     // il faudrait un champ de plus dans le contrat.

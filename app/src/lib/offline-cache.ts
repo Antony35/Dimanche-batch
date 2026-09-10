@@ -2,11 +2,14 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { z } from 'zod';
 
 /**
- * Cache offline explicite.
+ * Stockage local validé.
  *
- * Le SDK JS de Firestore n'a pas de persistance offline sur React Native : son
- * cache vit en mémoire et disparaît avec l'app. Sans ce qui suit, rouvrir
- * l'application dans un magasin sans réseau afficherait une liste vide.
+ * Deux usages, un seul mécanisme. Le premier est le cache hors ligne : le SDK
+ * JS de Firestore n'a pas de persistance sur React Native, son cache vit en
+ * mémoire et disparaît avec l'app — sans ce qui suit, rouvrir l'application
+ * dans un magasin sans réseau afficherait une liste vide. Le second est l'état
+ * propre à ce téléphone, que rien ne justifie de faire voyager jusqu'à
+ * Firestore : où l'on en est dans la préparation du dimanche.
  *
  * Ce qui est relu ici est une donnée externe comme une autre — écrite par une
  * version antérieure de l'app, peut-être avec un autre schéma. Elle traverse
@@ -17,6 +20,9 @@ export const cacheKeys = {
   weeklyPlan: (householdId: string, weekId: string) => `cache.plan.${householdId}.${weekId}`,
   groceryItems: (householdId: string, weekId: string) => `cache.grocery.${householdId}.${weekId}`,
   recipes: (householdId: string) => `cache.recipes.${householdId}`,
+  /** Étapes cochées pendant le batch. Local, jamais partagé — préfixe distinct. */
+  batchProgress: (householdId: string, weekId: string) =>
+    `progress.batch.${householdId}.${weekId}`,
 } as const;
 
 export async function readCache<T>(key: string, schema: z.ZodType<T>): Promise<T | null> {

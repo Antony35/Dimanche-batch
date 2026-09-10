@@ -400,6 +400,15 @@ refuserait des recettes légitimes, et chaque refus coûte une reprise.
   depuis le disque est asynchrone par nature et fait exception — elle s'écrit
   alors dans l'état, et la course avec le premier snapshot serveur se tranche
   par un drapeau, jamais en espérant un ordre d'arrivée.
+- **L'écran de préparation garde le téléphone allumé** (`useKeepAwake`), et
+  seulement lui. Trois heures de cuisine les mains prises ne se font pas en
+  rallumant l'écran toutes les trente secondes.
+- **L'avancement du batch est local au téléphone.** Les étapes n'ont aucune
+  identité stable — ni identifiant, ni durée : leur seule adresse est l'index
+  dans la recette. `stepCount` est donc stocké avec les cases cochées, et une
+  entrée dont le compte ne correspond plus est ignorée : un plat remplacé
+  repart de zéro plutôt que d'afficher des cases fausses au milieu d'une
+  session de cuisine.
 - **Tout abonnement Firestore passe par `subscribeWithRetry`.** Firestore
   **arrête définitivement** un listener qui échoue : après une erreur il ne
   reçoit plus rien, même si la cause a disparu. Le cas qui l'impose : à la
@@ -623,6 +632,7 @@ Ce qui est **délibérément** simple en v1, et où brancher la suite :
 | Goûts     | **fait** | Favoris et plats bannis réunis sur un écran unique atteint des réglages — ce sont les deux valeurs d'un même champ, les séparer cachait le lien. `SegmentedSwitch` extrait de `WeekSwitch`, `splitByVerdict` dans le domaine                                                                                                                                |
 | CI        | **fait** | GitHub Actions sur chaque push et chaque PR ; `.nvmrc` comme source unique de la version de Node ; Renovate en tableau de bord, les paquets du SDK Expo exclus au profit d'`expo install --check`                                                                                                                                                           |
 | Montées   | **fait** | `firebase-tools` 15, `firebase-admin` 14, Vitest 5 (par la v4), `@google/genai` 2. Seuil de couverture appliqué par la CI. Plus aucune faille critique ni élevée                                                                                                                                                                                            |
+| Dimanche  | **fait** | Écran maintenu allumé pendant le batch, étapes cochables et persistées localement. Et deux restes de la migration vers la semaine du samedi : le prompt de remplacement annonçait au modèle « dayIndex 0 à 4 » pour les jours de semaine, et la sonde exerçait le jour 1 en croyant tester un mardi                                                         |
 | Outillage | **fait** | knip contre le code mort (7 dépendances mortes trouvées d'emblée), sept paquets `expo-*` retirés de l'APK, TypeScript exclu du contrôle de version d'Expo pour que son alerte reste vraie                                                                                                                                                                   |
 | Audit     | **fait** | Le domaine déclarait trois règles que ses consommateurs réimplémentaient : `requiresFreezing` unifie deux copies de `[5, 6]`, `describeViolations` était morte pendant que le prompt de reprise recopiait son corps, `BATCH_DAY_INDEX` existait pendant que `batch.ts` codait `1` en dur. Lint et knip silencieux, faux positifs justifiés dans les configs |
 | Lint      | **fait** | oxlint remplace ESLint : les quatre workspaces couverts au lieu d'un seul, trois imports morts trouvés d'emblée, et TypeScript 7 débloqué — `@typescript-eslint` plafonnait le projet sous TS 6                                                                                                                                                             |
