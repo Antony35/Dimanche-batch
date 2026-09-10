@@ -1,0 +1,51 @@
+{
+  "$schema": "https://unpkg.com/knip@latest/schema.json",
+  "workspaces": {
+    ".": {
+      "entry": [],
+      "project": []
+    },
+    "app": {
+      "entry": [
+        "src/app/**/*.{ts,tsx}",
+        "app.json"
+      ],
+      "project": [
+        "src/**/*.{ts,tsx}"
+      ]
+    },
+    "functions": {
+      "entry": [
+        "src/index.ts",
+        "scripts/probe-gemini.ts"
+      ],
+      "project": [
+        "src/**/*.ts",
+        "scripts/**/*.ts"
+      ]
+    },
+    "packages/shared": {
+      "project": [
+        "src/**/*.ts"
+      ]
+    },
+    "packages/rules-tests": {
+      "entry": [
+        "src/**/*.test.ts"
+      ],
+      "project": [
+        "src/**/*.ts"
+      ]
+    }
+  },
+  "ignoreBinaries": [
+    "eas"
+  ],
+  "ignoreDependencies": [
+    "expo-updates"
+  ],
+  "vitest": true,
+  "rules": {
+    "duplicates": "off"
+  }
+}
