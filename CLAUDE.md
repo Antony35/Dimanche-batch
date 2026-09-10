@@ -49,22 +49,23 @@ une semaine, mais jamais au prix d'une dette qui bloquerait la v2.
 
 ## 2. Stack
 
-| Couche | Choix | Note |
-|---|---|---|
-| App | Expo (SDK récent) + React Native + TypeScript strict | Android uniquement en v1 |
-| Navigation | Expo Router (file-based) | Routes typées |
-| État serveur | TanStack Query + listeners Firestore | Pas de Redux |
-| État local | React Context minimal (session, foyer) | |
-| Données | Firebase Firestore | Temps réel entre les deux téléphones |
-| Auth | Firebase Auth — email + mot de passe | Importé depuis `@firebase/auth`, pas `firebase/auth` : voir §7 |
-| Cache offline | AsyncStorage, explicite (`lib/offline-cache.ts`) | Le SDK JS Firestore n'a pas de persistance offline sur React Native |
-| Backend | Cloud Functions for Firebase (Node 24, 2ᵉ gén., `firebase-functions` 7), région `europe-west1` | Plan Blaze, plafond de dépense à définir |
-| IA | Gemini API, appelée **uniquement** depuis les Cloud Functions | |
-| Validation | Zod, partagé client/serveur | |
-| Tests | Vitest : domaine pur, callables contre l'émulateur Firestore, Security Rules via `@firebase/rules-unit-testing` | L'émulateur exige un JRE installé — voir §7 |
-| CI | GitHub Actions, sur chaque push et chaque PR | Alerte, ne bloque pas. Aucun secret : le dépôt est public |
-| Lint | oxlint, config à la racine (`.oxlintrc.json`) | Couvre les quatre workspaces, pas seulement `app/` |
-| Code mort | knip (`knip.json`), lancé par la CI | Fichiers, exports et dépendances que plus personne n'utilise |
+| Couche        | Choix                                                                                                           | Note                                                                |
+| ------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| App           | Expo (SDK récent) + React Native + TypeScript strict                                                            | Android uniquement en v1                                            |
+| Navigation    | Expo Router (file-based)                                                                                        | Routes typées                                                       |
+| État serveur  | TanStack Query + listeners Firestore                                                                            | Pas de Redux                                                        |
+| État local    | React Context minimal (session, foyer)                                                                          |                                                                     |
+| Données       | Firebase Firestore                                                                                              | Temps réel entre les deux téléphones                                |
+| Auth          | Firebase Auth — email + mot de passe                                                                            | Importé depuis `@firebase/auth`, pas `firebase/auth` : voir §7      |
+| Cache offline | AsyncStorage, explicite (`lib/offline-cache.ts`)                                                                | Le SDK JS Firestore n'a pas de persistance offline sur React Native |
+| Backend       | Cloud Functions for Firebase (Node 24, 2ᵉ gén., `firebase-functions` 7), région `europe-west1`                  | Plan Blaze, plafond de dépense à définir                            |
+| IA            | Gemini API, appelée **uniquement** depuis les Cloud Functions                                                   |                                                                     |
+| Validation    | Zod, partagé client/serveur                                                                                     |                                                                     |
+| Tests         | Vitest : domaine pur, callables contre l'émulateur Firestore, Security Rules via `@firebase/rules-unit-testing` | L'émulateur exige un JRE installé — voir §7                         |
+| CI            | GitHub Actions, sur chaque push et chaque PR                                                                    | Alerte, ne bloque pas. Aucun secret : le dépôt est public           |
+| Lint          | oxlint, config à la racine (`.oxlintrc.json`)                                                                   | Couvre les quatre workspaces, pas seulement `app/`                  |
+| Code mort     | knip (`knip.json`), lancé par la CI                                                                             | Fichiers, exports et dépendances que plus personne n'utilise        |
+| Format        | oxfmt (`.oxfmtrc.json`)                                                                                         | `singleQuote`, `printWidth: 100`. **Encore en 0.x** — voir §9       |
 
 ---
 
@@ -206,6 +207,7 @@ households/{hid}/locks/{weekId}            # une génération à la fois par sem
 ```
 
 **Security Rules** — l'intention à implémenter :
+
 - Lecture/écriture sous `households/{hid}/**` uniquement si
   `request.auth.uid in get(/households/$(hid)).data.members`.
 - `weeklyPlans` et `recipes` : **lecture seule** pour le client. Seules les functions
@@ -235,14 +237,15 @@ règle sans ajouter son test n'est pas une modification terminée.
 
 Une responsabilité par function, nommage `verbeNom`.
 
-| Function | Rôle |
-|---|---|
+| Function             | Rôle                                                                                                                                                                                                                                                                |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `generateWeeklyPlan` | Génère le plan de la semaine. Vérifie l'appartenance au foyer et le rate limit, construit le prompt avec l'historique des 3 dernières semaines, appelle Gemini, valide via Zod, écrit `weeklyPlans` + `recipes` + `groceryLists` dans un batch, incrémente `usage`. |
-| `setMeal` | Pose un repas choisi par l'utilisateur : une portion d'un plat du batch, ou un repas à l'extérieur. **Aucun appel Gemini, donc aucun quota décompté** — mais le verrou de semaine est pris, car la liste de courses est intégralement recalculée. |
-| `regenerateMeal` | Remplace un seul repas d'un plan existant. Même chemin de validation, mais des contraintes **locales au jour visé** — voir §9. Passe par le même écrivain que la génération complète : la liste de courses est intégralement recalculée, jamais rapiécée. |
-| `joinHousehold` | Consomme un code d'invitation et ajoute l'uid aux `members`. Côté serveur pour que le code reste à usage unique. |
+| `setMeal`            | Pose un repas choisi par l'utilisateur : une portion d'un plat du batch, ou un repas à l'extérieur. **Aucun appel Gemini, donc aucun quota décompté** — mais le verrou de semaine est pris, car la liste de courses est intégralement recalculée.                   |
+| `regenerateMeal`     | Remplace un seul repas d'un plan existant. Même chemin de validation, mais des contraintes **locales au jour visé** — voir §9. Passe par le même écrivain que la génération complète : la liste de courses est intégralement recalculée, jamais rapiécée.           |
+| `joinHousehold`      | Consomme un code d'invitation et ajoute l'uid aux `members`. Côté serveur pour que le code reste à usage unique.                                                                                                                                                    |
 
 Contrat Gemini :
+
 - Réponse en **JSON structuré** (`responseMimeType: application/json` + `responseSchema`),
   pas de parsing de markdown.
 - Validation Zod après réception. En cas d'échec : **un seul** retry, puis erreur
@@ -252,10 +255,10 @@ Contrat Gemini :
 
 **Deux reprises de nature différente, à ne pas confondre :**
 
-| Reprise | Quand | Combien |
-|---|---|---|
-| Contenu | Le modèle a répondu, mais hors schéma ou hors contraintes | **1 seule**, en réinjectant les violations |
-| Transport | 429/500/502/503/504 — le modèle n'a rien produit | 3 essais, attente 1 s puis 3 s |
+| Reprise   | Quand                                                     | Combien                                    |
+| --------- | --------------------------------------------------------- | ------------------------------------------ |
+| Contenu   | Le modèle a répondu, mais hors schéma ou hors contraintes | **1 seule**, en réinjectant les violations |
+| Transport | 429/500/502/503/504 — le modèle n'a rien produit          | 3 essais, attente 1 s puis 3 s             |
 
 La seconde n'est pas la boucle que le projet s'interdit : rien n'a été généré,
 donc rien n'a été consommé côté modèle. Elle est portée par `gemini/client.ts`,
@@ -315,11 +318,11 @@ pu libérer le sien, et le foyer ne doit pas rester bloqué pour autant.
 **Mémoire du foyer.** Le prompt reçoit trois listes, composées ensemble dans
 `functions/src/lib/recipe-memory.ts` :
 
-| Liste | Sens | Portée |
-|---|---|---|
-| Recettes des 3 dernières semaines | à ne pas reproposer | s'oublie au bout de 3 semaines |
-| Favoris | le modèle peut en reprendre **un seul** au plus | tant que le cœur est coché |
-| Plats bannis (`isDisliked`) | interdits, sans réserve | définitif, jusqu'à levée dans les réglages |
+| Liste                             | Sens                                            | Portée                                     |
+| --------------------------------- | ----------------------------------------------- | ------------------------------------------ |
+| Recettes des 3 dernières semaines | à ne pas reproposer                             | s'oublie au bout de 3 semaines             |
+| Favoris                           | le modèle peut en reprendre **un seul** au plus | tant que le cœur est coché                 |
+| Plats bannis (`isDisliked`)       | interdits, sans réserve                         | définitif, jusqu'à levée dans les réglages |
 
 Les composer au même endroit est la seule façon de garantir qu'elles ne se
 contredisent pas : un favori servi récemment est retiré de la deuxième liste, et
@@ -352,13 +355,14 @@ refuserait des recettes légitimes, et chaque refus coûte une reprise.
   autre passe par une Cloud Function ; en ajouter une sixième demande d'abord
   sa règle et son test.
 
-  | Écriture | Pourquoi elle est sûre |
-  |---|---|
+  | Écriture                           | Pourquoi elle est sûre                                                                                                |
+  | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
   | `useToggleGroceryItem` → `checked` | La règle borne l'écriture à ce seul champ. Passer par une callable n'ajouterait qu'une latence au milieu d'un magasin |
-  | `useToggleFavorite` → `isFavorite` | Même mécanisme, même raison : le geste doit répondre à l'instant |
-  | `useToggleDislike` → `isDisliked` | Même règle, même fichier : les deux verdicts s'excluent et s'écrivent ensemble |
-  | `createHousehold` | La règle exige `members == [uid]` et `createdBy == uid` : on ne peut créer qu'un foyer dont on est le seul membre |
-  | `refreshInviteCode` | `onlyChanges(['name', 'inviteCode'])` : `members` reste inaccessible au client |
+  | `useToggleFavorite` → `isFavorite` | Même mécanisme, même raison : le geste doit répondre à l'instant                                                      |
+  | `useToggleDislike` → `isDisliked`  | Même règle, même fichier : les deux verdicts s'excluent et s'écrivent ensemble                                        |
+  | `createHousehold`                  | La règle exige `members == [uid]` et `createdBy == uid` : on ne peut créer qu'un foyer dont on est le seul membre     |
+  | `refreshInviteCode`                | `onlyChanges(['name', 'inviteCode'])` : `members` reste inaccessible au client                                        |
+
 - Pas d'état optimiste écrit à la main sur une donnée Firestore : le SDK
   applique l'écriture localement avant de la confirmer, et le listener la
   reflète aussitôt. Une case bascule immédiatement, même hors réseau.
@@ -397,11 +401,11 @@ refuserait des recettes légitimes, et chaque refus coûte une reprise.
 Trois suites, séparées par ce dont elles ont besoin pour tourner, pas par le
 dossier où vit le code.
 
-| Suite | Couvre | Coût |
-|---|---|---|
-| `npm run test` | `packages/shared` : domaine pur, schémas Zod, chemins Firestore | aucune dépendance, moins d'une seconde |
-| `npm run test:functions` | `functions/src` : guards, quota, écriture du plan, politique de reprise, classification des erreurs Gemini | démarre l'émulateur Firestore |
-| `npm run test:rules` | `firestore.rules` face à un client non privilégié | démarre l'émulateur Firestore |
+| Suite                    | Couvre                                                                                                     | Coût                                   |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| `npm run test`           | `packages/shared` : domaine pur, schémas Zod, chemins Firestore                                            | aucune dépendance, moins d'une seconde |
+| `npm run test:functions` | `functions/src` : guards, quota, écriture du plan, politique de reprise, classification des erreurs Gemini | démarre l'émulateur Firestore          |
+| `npm run test:rules`     | `firestore.rules` face à un client non privilégié                                                          | démarre l'émulateur Firestore          |
 
 ### Le lint
 
@@ -438,6 +442,15 @@ parce que `WeekIdSchema = IsoDateSchema` est un alias voulu, décrit au §5.
 
 La CI le fait échouer. Une dépendance inutilisée compile parfaitement et se
 déploie sans un mot : c'est le genre de chose qu'il faut une machine pour voir.
+
+### Le format
+
+`oxfmt`, réglé sur `singleQuote` et `printWidth: 100` — les deux valeurs qui
+collent à ce que le code était déjà. Mesuré avant de basculer : à 110 le diff
+grossit, parce que le formateur recolle alors des lignes coupées à dessein.
+
+Il est **encore en 0.x**, et c'est un choix assumé (§9). `format:check` tourne en
+CI pour que ce pari reste tenable.
 
 ### La CI
 
@@ -504,6 +517,8 @@ GEMINI_API_KEY=… npm run gemini:probe   # chaîne de génération, sans déplo
 npm run typecheck                # tsc --noEmit sur tous les workspaces
 npm run lint                     # oxlint, les quatre workspaces
 npm run knip                     # code mort : fichiers, exports, dépendances
+npm run format                   # oxfmt sur tout le dépôt
+npm run format:check             # échoue si un fichier n'est pas formaté
 npm run test:coverage           # couverture du domaine partagé
 npm run deploy:rules
 npm run deploy:functions
@@ -532,21 +547,22 @@ défaut `10.0.2.2` ne vaut que pour l'émulateur Android.
 
 Ce qui est **délibérément** simple en v1, et où brancher la suite :
 
-| Raccourci v1 | Pourquoi | Extension v2 |
-|---|---|---|
-| Un seul foyer par utilisateur | Usage à deux, pas de cas multi-foyer | `members` est déjà un tableau ; ajouter un sélecteur de foyer |
-| Auth email + mot de passe | Zéro dépendance native, build simple | Ajouter Google Sign-In (provider Firebase, pas de migration de données) |
-| Partage Listonic via le share sheet texte | Vérifié le 2026-09-09 sur le téléphone : Listonic n'apparaît pas comme cible de partage, mais son import par suggestion accepte le texte collé et en tire chaque article — en-têtes de rayon compris. Aucune intégration à écrire | Le formatage est isolé dans `shared/domain/grocery-export.ts` : une vraie API s'y brancherait sans toucher à l'écran |
-| Pas de saisie manuelle de recette | L'IA couvre le besoin initial | Les `recipes` sont déjà une collection à part entière ; il suffit d'un écran d'édition |
-| Pas de gestion des restes du frigo | Hors périmètre | Nouveau champ d'entrée du prompt, pas de changement de schéma |
-| App Check désactivé | L'auth suffit pour deux utilisateurs | Activer et exiger le token dans les callables |
-| Foyer de deux personnes en dur (`SERVINGS_PER_MEAL`) | La v1 sert un seul foyer connu | Un champ `size` sur `Household`, lu par les contraintes de portions et par le prompt |
-| Étapes du batch affichées à la suite, sans entrelacement | Mélanger les gestes de quatre plats produit une liste qu'on ne rattache plus à un plat quand on s'y perd | Demander au modèle un déroulé unique, dans une callable séparée pour ne pas alourdir le `responseSchema` |
-| Les règles propres à Expo ne sont plus appliquées | `eslint-plugin-expo` apportait `no-dynamic-env-var`, `no-env-var-destructuring` et `use-dom-exports`, sans équivalent oxlint. Les deux premières gardaient un seul fichier, `app/src/lib/env.ts`, qui lit ses variables statiquement et ne bouge jamais | Relire `env.ts` à la main si on y touche : Expo **inline** les `EXPO_PUBLIC_*` à la construction, donc un accès destructuré ou dynamique vaudrait `undefined` dans l'APK, en silence |
-| Renovate ne suit pas les paquets du SDK Expo | Leur version est dictée par le SDK, pas par le semver npm : une montée faite hors d'`expo install` casse le build de façon pénible à diagnostiquer | La CI lance `npx expo install --check` à chaque exécution et signale la dérive. Au changement de SDK, `npx expo install --fix` réaligne tout le bloc d'un coup |
-| 200 plats bannis lus au plus (`BANNED_READ_LIMIT`) | Un foyer en bannit quelques-uns par an ; la borne protège le coût de lecture avant d'être une limite réelle | Paginer la lecture, ou porter un `dislikedAt` pour ne garder que les plus récents dans le prompt |
-| `regenerateMeal` ne vérifie que les contraintes du jour visé | Réappliquer les contraintes d'ensemble ferait refuser un remplacement légitime : la recette écartée pouvait être l'une des deux congelables | Recomposer le plan après remplacement et signaler — sans bloquer — les contraintes globales devenues fausses |
-| Android uniquement | Les deux téléphones sont Android | Expo est cross-platform : ne jamais écrire de code Android-spécifique sans garde `Platform` |
+| Raccourci v1                                                 | Pourquoi                                                                                                                                                                                                                                                | Extension v2                                                                                                                                                                                                                                                 |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Un seul foyer par utilisateur                                | Usage à deux, pas de cas multi-foyer                                                                                                                                                                                                                    | `members` est déjà un tableau ; ajouter un sélecteur de foyer                                                                                                                                                                                                |
+| Auth email + mot de passe                                    | Zéro dépendance native, build simple                                                                                                                                                                                                                    | Ajouter Google Sign-In (provider Firebase, pas de migration de données)                                                                                                                                                                                      |
+| Partage Listonic via le share sheet texte                    | Vérifié le 2026-09-09 sur le téléphone : Listonic n'apparaît pas comme cible de partage, mais son import par suggestion accepte le texte collé et en tire chaque article — en-têtes de rayon compris. Aucune intégration à écrire                       | Le formatage est isolé dans `shared/domain/grocery-export.ts` : une vraie API s'y brancherait sans toucher à l'écran                                                                                                                                         |
+| Pas de saisie manuelle de recette                            | L'IA couvre le besoin initial                                                                                                                                                                                                                           | Les `recipes` sont déjà une collection à part entière ; il suffit d'un écran d'édition                                                                                                                                                                       |
+| Pas de gestion des restes du frigo                           | Hors périmètre                                                                                                                                                                                                                                          | Nouveau champ d'entrée du prompt, pas de changement de schéma                                                                                                                                                                                                |
+| App Check désactivé                                          | L'auth suffit pour deux utilisateurs                                                                                                                                                                                                                    | Activer et exiger le token dans les callables                                                                                                                                                                                                                |
+| Foyer de deux personnes en dur (`SERVINGS_PER_MEAL`)         | La v1 sert un seul foyer connu                                                                                                                                                                                                                          | Un champ `size` sur `Household`, lu par les contraintes de portions et par le prompt                                                                                                                                                                         |
+| Étapes du batch affichées à la suite, sans entrelacement     | Mélanger les gestes de quatre plats produit une liste qu'on ne rattache plus à un plat quand on s'y perd                                                                                                                                                | Demander au modèle un déroulé unique, dans une callable séparée pour ne pas alourdir le `responseSchema`                                                                                                                                                     |
+| Les règles propres à Expo ne sont plus appliquées            | `eslint-plugin-expo` apportait `no-dynamic-env-var`, `no-env-var-destructuring` et `use-dom-exports`, sans équivalent oxlint. Les deux premières gardaient un seul fichier, `app/src/lib/env.ts`, qui lit ses variables statiquement et ne bouge jamais | Relire `env.ts` à la main si on y touche : Expo **inline** les `EXPO_PUBLIC_*` à la construction, donc un accès destructuré ou dynamique vaudrait `undefined` dans l'APK, en silence                                                                         |
+| oxfmt est en 0.x                                             | Choisi en connaissance de cause : petit projet, enjeu faible, et l'occasion d'essayer l'outil pendant qu'il se construit. Même famille qu'oxlint                                                                                                        | `npm run format:check` en CI est ce qui rend le pari tenable : si une version change ses règles, la CI le dit d'un coup au lieu de laisser le formatage dériver fichier par fichier. En secours, `oxfmt --migrate` sait convertir depuis une config Prettier |
+| Renovate ne suit pas les paquets du SDK Expo                 | Leur version est dictée par le SDK, pas par le semver npm : une montée faite hors d'`expo install` casse le build de façon pénible à diagnostiquer                                                                                                      | La CI lance `npx expo install --check` à chaque exécution et signale la dérive. Au changement de SDK, `npx expo install --fix` réaligne tout le bloc d'un coup                                                                                               |
+| 200 plats bannis lus au plus (`BANNED_READ_LIMIT`)           | Un foyer en bannit quelques-uns par an ; la borne protège le coût de lecture avant d'être une limite réelle                                                                                                                                             | Paginer la lecture, ou porter un `dislikedAt` pour ne garder que les plus récents dans le prompt                                                                                                                                                             |
+| `regenerateMeal` ne vérifie que les contraintes du jour visé | Réappliquer les contraintes d'ensemble ferait refuser un remplacement légitime : la recette écartée pouvait être l'une des deux congelables                                                                                                             | Recomposer le plan après remplacement et signaler — sans bloquer — les contraintes globales devenues fausses                                                                                                                                                 |
+| Android uniquement                                           | Les deux téléphones sont Android                                                                                                                                                                                                                        | Expo est cross-platform : ne jamais écrire de code Android-spécifique sans garde `Platform`                                                                                                                                                                  |
 
 ---
 
@@ -565,22 +581,22 @@ Ce qui est **délibérément** simple en v1, et où brancher la suite :
 
 ## 11. Avancement
 
-| Jour | État | Contenu |
-|---|---|---|
-| J1 | **fait** | Monorepo, domaine partagé (30 tests), Security Rules + leurs tests, `joinHousehold`, auth e-mail, écran de foyer partagé, navigation des 6 écrans, thème clair/sombre |
-| J2 | **fait** | `generateWeeklyPlan` déployée : prompt versionné, `responseSchema`, validation Zod puis contraintes métier, unique retry, écriture Firestore en batch, écran d'accueil avec repas du jour |
-| J3 | **fait** | Écran planning des 7 jours, `regenerateMeal` : contraintes locales au jour, recalcul complet des courses, `MealCard` partagé entre accueil et planning |
-| J4 | **fait** | Liste de courses : rendu dans l'ordre de parcours du magasin, cases à cocher synchronisées entre les deux téléphones, partage par le share sheet — lisible par un humain comme par l'import de Listonic |
-| J5 | **fait** | Fiche recette, historique des 12 dernières semaines, favoris branchés sur le prompt, réglages sortis des onglets |
-| Batch | **fait** | Semaine du samedi au vendredi, `batchRecipeIds`, contraintes de portions et de congélation, callable `setMeal`, écran de préparation, sélecteurs de semaine, carte d'action sur l'accueil |
-| J6 | **fait** | Cache offline du plan, des recettes et des courses ; indicateur « hors ligne » ; verrou empêchant deux générations simultanées sur une même semaine |
-| Dislike | **fait** | Bannissement d'un plat par son nom : `isDisliked`, mémoire du foyer à trois listes, filet de validation, boutons sur la fiche recette et la feuille de choix |
-| Goûts | **fait** | Favoris et plats bannis réunis sur un écran unique atteint des réglages — ce sont les deux valeurs d'un même champ, les séparer cachait le lien. `SegmentedSwitch` extrait de `WeekSwitch`, `splitByVerdict` dans le domaine |
-| CI | **fait** | GitHub Actions sur chaque push et chaque PR ; `.nvmrc` comme source unique de la version de Node ; Renovate en tableau de bord, les paquets du SDK Expo exclus au profit d'`expo install --check` |
-| Montées | **fait** | `firebase-tools` 15, `firebase-admin` 14, Vitest 5 (par la v4), `@google/genai` 2. Seuil de couverture appliqué par la CI. Plus aucune faille critique ni élevée |
-| Outillage | **fait** | knip contre le code mort (7 dépendances mortes trouvées d'emblée), sept paquets `expo-*` retirés de l'APK, TypeScript exclu du contrôle de version d'Expo pour que son alerte reste vraie |
-| Lint | **fait** | oxlint remplace ESLint : les quatre workspaces couverts au lieu d'un seul, trois imports morts trouvés d'emblée, et TypeScript 7 débloqué — `@typescript-eslint` plafonnait le projet sous TS 6 |
-| J7 | à faire | Build EAS, installation, premier vrai dimanche |
+| Jour      | État     | Contenu                                                                                                                                                                                                                      |
+| --------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| J1        | **fait** | Monorepo, domaine partagé (30 tests), Security Rules + leurs tests, `joinHousehold`, auth e-mail, écran de foyer partagé, navigation des 6 écrans, thème clair/sombre                                                        |
+| J2        | **fait** | `generateWeeklyPlan` déployée : prompt versionné, `responseSchema`, validation Zod puis contraintes métier, unique retry, écriture Firestore en batch, écran d'accueil avec repas du jour                                    |
+| J3        | **fait** | Écran planning des 7 jours, `regenerateMeal` : contraintes locales au jour, recalcul complet des courses, `MealCard` partagé entre accueil et planning                                                                       |
+| J4        | **fait** | Liste de courses : rendu dans l'ordre de parcours du magasin, cases à cocher synchronisées entre les deux téléphones, partage par le share sheet — lisible par un humain comme par l'import de Listonic                      |
+| J5        | **fait** | Fiche recette, historique des 12 dernières semaines, favoris branchés sur le prompt, réglages sortis des onglets                                                                                                             |
+| Batch     | **fait** | Semaine du samedi au vendredi, `batchRecipeIds`, contraintes de portions et de congélation, callable `setMeal`, écran de préparation, sélecteurs de semaine, carte d'action sur l'accueil                                    |
+| J6        | **fait** | Cache offline du plan, des recettes et des courses ; indicateur « hors ligne » ; verrou empêchant deux générations simultanées sur une même semaine                                                                          |
+| Dislike   | **fait** | Bannissement d'un plat par son nom : `isDisliked`, mémoire du foyer à trois listes, filet de validation, boutons sur la fiche recette et la feuille de choix                                                                 |
+| Goûts     | **fait** | Favoris et plats bannis réunis sur un écran unique atteint des réglages — ce sont les deux valeurs d'un même champ, les séparer cachait le lien. `SegmentedSwitch` extrait de `WeekSwitch`, `splitByVerdict` dans le domaine |
+| CI        | **fait** | GitHub Actions sur chaque push et chaque PR ; `.nvmrc` comme source unique de la version de Node ; Renovate en tableau de bord, les paquets du SDK Expo exclus au profit d'`expo install --check`                            |
+| Montées   | **fait** | `firebase-tools` 15, `firebase-admin` 14, Vitest 5 (par la v4), `@google/genai` 2. Seuil de couverture appliqué par la CI. Plus aucune faille critique ni élevée                                                             |
+| Outillage | **fait** | knip contre le code mort (7 dépendances mortes trouvées d'emblée), sept paquets `expo-*` retirés de l'APK, TypeScript exclu du contrôle de version d'Expo pour que son alerte reste vraie                                    |
+| Lint      | **fait** | oxlint remplace ESLint : les quatre workspaces couverts au lieu d'un seul, trois imports morts trouvés d'emblée, et TypeScript 7 débloqué — `@typescript-eslint` plafonnait le projet sous TS 6                              |
+| J7        | à faire  | Build EAS, installation, premier vrai dimanche                                                                                                                                                                               |
 
 Ce qui reste à faire hors code, dans l'ordre :
 
@@ -598,9 +614,9 @@ Ce qui reste à faire hors code, dans l'ordre :
 Le compte de service `<numéro>-compute@developer.gserviceaccount.com` doit porter
 **deux rôles** que Google n'accorde plus par défaut sur les projets récents :
 
-| Rôle | Sans lui |
-|---|---|
-| Cloud Build Service Account | Le déploiement échoue à la construction, sans nommer le rôle manquant |
+| Rôle                        | Sans lui                                                                           |
+| --------------------------- | ---------------------------------------------------------------------------------- |
+| Cloud Build Service Account | Le déploiement échoue à la construction, sans nommer le rôle manquant              |
 | Utilisateur Cloud Datastore | Les functions se déploient mais tout accès Firestore renvoie `7 PERMISSION_DENIED` |
 
 Ce refus-là ne vient jamais des Security Rules : l'admin SDK n'y est pas soumis.

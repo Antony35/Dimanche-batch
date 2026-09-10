@@ -12,8 +12,6 @@ import { MealGenerationError, generateMealRecipeFromGemini } from '../regenerate
 const generateJson = vi.hoisted(() => vi.fn());
 vi.mock('../client', () => ({ generateJson }));
 
-
-
 const validPlan = makeValidGeneratedPlan;
 
 /** Plan refusé : un plat du batch qui ne produit pas assez de portions. */

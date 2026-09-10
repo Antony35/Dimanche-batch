@@ -177,7 +177,6 @@ async function replaceOneMeal(
   }
 }
 
-
 /** Noms des recettes du plan, pour que le modèle ne repropose pas un doublon. */
 async function readRecipeNames(
   householdId: string,

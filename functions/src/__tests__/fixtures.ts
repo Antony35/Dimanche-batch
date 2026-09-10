@@ -59,8 +59,18 @@ export function makeGeneratedPlan(recipes: GeneratedRecipe[]): GeneratedPlan {
 export function makeValidGeneratedPlan(): GeneratedPlan {
   const recipes = [
     makeGeneratedRecipe({ slug: 'batch-curry', tags: ['batch'], servings: 8, prepMinutes: 50 }),
-    makeGeneratedRecipe({ slug: 'chili-sin-carne', tags: ['congelable'], servings: 8, prepMinutes: 50 }),
-    makeGeneratedRecipe({ slug: 'soupe-poireaux', tags: ['congelable'], servings: 4, prepMinutes: 30 }),
+    makeGeneratedRecipe({
+      slug: 'chili-sin-carne',
+      tags: ['congelable'],
+      servings: 8,
+      prepMinutes: 50,
+    }),
+    makeGeneratedRecipe({
+      slug: 'soupe-poireaux',
+      tags: ['congelable'],
+      servings: 4,
+      prepMinutes: 30,
+    }),
   ];
 
   const slugFor = (dayIndex: number): string => {

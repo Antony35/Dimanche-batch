@@ -87,9 +87,7 @@ export default function TastesScreen() {
         </Text>
       </View>
 
-      {favorite.error || dislike.error ? (
-        <ErrorState message={VERDICT_WRITE_ERROR} />
-      ) : null}
+      {favorite.error || dislike.error ? <ErrorState message={VERDICT_WRITE_ERROR} /> : null}
 
       {isLoading ? (
         <LoadingState />

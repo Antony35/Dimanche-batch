@@ -25,14 +25,22 @@ describe('buildPlanPrompt', () => {
   });
 
   it('nomme la semaine visée, du samedi au vendredi', () => {
-    const prompt = buildPlanPrompt({ weekStart: '2026-09-12', batchRecipeCount: 3, recentRecipeNames: [] });
+    const prompt = buildPlanPrompt({
+      weekStart: '2026-09-12',
+      batchRecipeCount: 3,
+      recentRecipeNames: [],
+    });
     expect(prompt).toContain('2026-09-12');
     expect(prompt).toContain('2026-09-18');
     expect(prompt).toContain('samedi');
   });
 
   it('n’encombre pas le prompt de sections vides', () => {
-    const prompt = buildPlanPrompt({ weekStart: '2026-09-12', batchRecipeCount: 3, recentRecipeNames: [] });
+    const prompt = buildPlanPrompt({
+      weekStart: '2026-09-12',
+      batchRecipeCount: 3,
+      recentRecipeNames: [],
+    });
     expect(prompt).not.toContain('favori');
     expect(prompt).not.toContain('n’en veut plus');
     expect(prompt).not.toContain('Contraintes particulières');

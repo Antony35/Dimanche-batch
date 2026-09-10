@@ -114,7 +114,14 @@ export function useGroceryList(householdId: string | null, weekId: string): Groc
   }, [householdId, weekId]);
 
   if (!householdId) {
-    return { items: [], groups: [], checkedCount: 0, isLoading: false, isStale: false, error: null };
+    return {
+      items: [],
+      groups: [],
+      checkedCount: 0,
+      isLoading: false,
+      isStale: false,
+      error: null,
+    };
   }
   if (state.key !== key) {
     return { items: [], groups: [], checkedCount: 0, isLoading: true, isStale: false, error: null };

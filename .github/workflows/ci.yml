@@ -78,6 +78,12 @@ jobs:
 
       - run: npm run lint
 
+      # oxfmt est en 0.x : on l'a choisi en connaissance de cause, sur un projet
+      # où le risque est faible. C'est `--check` qui rend ce choix tenable — si
+      # une version change ses règles, la CI le dit au lieu de laisser le
+      # formatage dériver fichier par fichier.
+      - run: npm run format:check
+
       - run: npm run test:all
 
       # Le seuil de couverture est une garantie, pas une statistique : les

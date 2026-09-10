@@ -80,7 +80,8 @@ const mealSchema: Schema = {
     recipeSlug: {
       type: Type.STRING,
       nullable: true,
-      description: 'Slug d’une recette déclarée dans `recipes`, ou null si le repas est pris dehors.',
+      description:
+        'Slug d’une recette déclarée dans `recipes`, ou null si le repas est pris dehors.',
     },
     kind: { type: Type.STRING, enum: [...MEAL_KINDS] },
     withStarter: { type: Type.BOOLEAN, description: 'Entrée légère servie avant le plat.' },
@@ -95,7 +96,8 @@ const daySchema: Schema = {
   properties: {
     dayIndex: {
       type: Type.INTEGER,
-      description: 'La semaine va du samedi au vendredi : 0 = samedi, 1 = dimanche, 2 = lundi, 6 = vendredi.',
+      description:
+        'La semaine va du samedi au vendredi : 0 = samedi, 1 = dimanche, 2 = lundi, 6 = vendredi.',
     },
     lunch: mealSchema,
     dinner: mealSchema,

@@ -163,10 +163,7 @@ export function validateGeneratedPlan(
  * validateur approximatif refuserait des recettes légitimes, et chaque refus
  * coûte une reprise au foyer.
  */
-function bannedViolations(
-  recipe: GeneratedRecipe,
-  banned: Set<string>,
-): ConstraintViolation[] {
+function bannedViolations(recipe: GeneratedRecipe, banned: Set<string>): ConstraintViolation[] {
   if (!banned.has(normalizeName(recipe.name))) return [];
 
   return [
@@ -344,7 +341,8 @@ export function validateMealReplacement(
 
   violations.push(...bannedViolations(recipe, bannedIndex(options.bannedNames)));
 
-  const mustBeQuick = options.style === undefined ? isWeekday(dayIndex) : options.style === 'one-pot';
+  const mustBeQuick =
+    options.style === undefined ? isWeekday(dayIndex) : options.style === 'one-pot';
   if (!mustBeQuick) return violations;
 
   violations.push(...quickMealViolations(recipe, `jour ${dayIndex}`));

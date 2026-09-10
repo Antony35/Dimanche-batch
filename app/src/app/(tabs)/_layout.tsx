@@ -24,7 +24,9 @@ export default function TabsLayout() {
         name="index"
         options={{
           title: "Aujourd'hui",
-          tabBarIcon: ({ color, size }) => <Ionicons name="today-outline" color={color} size={size} />,
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="today-outline" color={color} size={size} />
+          ),
         }}
       />
       <Tabs.Screen
@@ -40,14 +42,18 @@ export default function TabsLayout() {
         name="courses"
         options={{
           title: 'Courses',
-          tabBarIcon: ({ color, size }) => <Ionicons name="cart-outline" color={color} size={size} />,
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="cart-outline" color={color} size={size} />
+          ),
         }}
       />
       <Tabs.Screen
         name="historique"
         options={{
           title: 'Historique',
-          tabBarIcon: ({ color, size }) => <Ionicons name="time-outline" color={color} size={size} />,
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="time-outline" color={color} size={size} />
+          ),
         }}
       />
     </Tabs>

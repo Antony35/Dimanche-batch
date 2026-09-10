@@ -5,7 +5,12 @@ import {
   type ConstraintViolation,
   type GeneratedPlan,
 } from '@dimanche-batch/shared';
-import { SYSTEM_INSTRUCTION, buildPlanPrompt, buildRetryPrompt, type PlanPromptInput } from './prompt';
+import {
+  SYSTEM_INSTRUCTION,
+  buildPlanPrompt,
+  buildRetryPrompt,
+  type PlanPromptInput,
+} from './prompt';
 import { WEEKLY_PLAN_RESPONSE_SCHEMA } from './response-schema';
 import { generateJson } from './client';
 

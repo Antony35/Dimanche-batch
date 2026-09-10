@@ -1,10 +1,6 @@
 import { useEffect, useState } from 'react';
 import { doc, onSnapshot } from 'firebase/firestore';
-import {
-  WeeklyPlanSchema,
-  paths,
-  type WeeklyPlan,
-} from '@dimanche-batch/shared';
+import { WeeklyPlanSchema, paths, type WeeklyPlan } from '@dimanche-batch/shared';
 import { db } from '@/lib/firebase';
 import { cacheKeys, readCache, writeCache } from '@/lib/offline-cache';
 
@@ -80,8 +76,7 @@ export function useWeeklyPlan(householdId: string | null, weekId: string): Weekl
 
         if (parsed.success && !isStale) void writeCache(cacheKey, parsed.data);
       },
-      (error) =>
-        setState({ key: stateKey, plan: null, isLoading: false, isStale: false, error }),
+      (error) => setState({ key: stateKey, plan: null, isLoading: false, isStale: false, error }),
     );
   }, [householdId, weekId]);
 

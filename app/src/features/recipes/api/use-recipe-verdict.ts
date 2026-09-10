@@ -7,8 +7,7 @@ import { db } from '@/lib/firebase';
  * Message unique des deux verdicts : ils échouent pour la même raison, et deux
  * écrans les affichent. Deux copies finiraient par diverger.
  */
-export const VERDICT_WRITE_ERROR =
-  'Ton choix n’a pas pu être enregistré. Vérifie ta connexion.';
+export const VERDICT_WRITE_ERROR = 'Ton choix n’a pas pu être enregistré. Vérifie ta connexion.';
 
 export interface RecipeVerdictInput {
   householdId: string;

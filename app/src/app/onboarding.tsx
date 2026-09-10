@@ -34,7 +34,11 @@ export default function OnboardingScreen() {
       {mode === 'choose' ? (
         <View style={{ gap: theme.spacing.md }}>
           <Button label="Créer un foyer" onPress={() => setMode('create')} />
-          <Button label="Rejoindre avec un code" variant="secondary" onPress={() => setMode('join')} />
+          <Button
+            label="Rejoindre avec un code"
+            variant="secondary"
+            onPress={() => setMode('join')}
+          />
         </View>
       ) : mode === 'create' ? (
         <CreateHouseholdForm uid={user?.uid ?? ''} onBack={() => setMode('choose')} />
@@ -60,7 +64,7 @@ function CreateHouseholdForm({ uid, onBack }: { uid: string; onBack: () => void 
       await createHousehold(uid, name);
       // Le listener temps réel du foyer débloque la navigation tout seul.
     } catch {
-      setError("Impossible de créer le foyer. Vérifie ta connexion et réessaie.");
+      setError('Impossible de créer le foyer. Vérifie ta connexion et réessaie.');
     } finally {
       setIsSubmitting(false);
     }

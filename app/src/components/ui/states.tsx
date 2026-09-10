@@ -6,7 +6,9 @@ import { Text } from './text';
 export function LoadingState({ label = 'Chargement…' }: { label?: string }) {
   const theme = useTheme();
   return (
-    <View style={{ alignItems: 'center', gap: theme.spacing.md, paddingVertical: theme.spacing.xxl }}>
+    <View
+      style={{ alignItems: 'center', gap: theme.spacing.md, paddingVertical: theme.spacing.xxl }}
+    >
       <ActivityIndicator color={theme.colors.accent} />
       <Text tone="faint">{label}</Text>
     </View>
@@ -45,7 +47,9 @@ export function EmptyState({
 }) {
   const theme = useTheme();
   return (
-    <View style={{ gap: theme.spacing.md, alignItems: 'center', paddingVertical: theme.spacing.xxl }}>
+    <View
+      style={{ gap: theme.spacing.md, alignItems: 'center', paddingVertical: theme.spacing.xxl }}
+    >
       <Text variant="heading">{title}</Text>
       {description ? (
         <Text tone="soft" style={{ textAlign: 'center' }}>
@@ -65,7 +69,11 @@ export function EmptyState({
  * bout du magasin sans qu'on le sache encore. Le dire évite de faire douter
  * l'utilisateur de l'application quand c'est le réseau qui manque.
  */
-export function StaleNotice({ label = 'Hors ligne — dernière version connue' }: { label?: string }) {
+export function StaleNotice({
+  label = 'Hors ligne — dernière version connue',
+}: {
+  label?: string;
+}) {
   const theme = useTheme();
   return (
     <View
