@@ -4,6 +4,14 @@
     "noEmit": false,
     "module": "CommonJS",
     "moduleResolution": "node",
+    // Seul tsconfig du dépôt qui émette vraiment, et le seul à rester en
+    // résolution `node10`. Ce n'est pas un oubli : `bundler` est interdit avec
+    // une émission CommonJS, et `node16` exigerait des extensions explicites
+    // sur tous les imports internes du package — or leur absence est un choix
+    // documenté (§3), la seule forme que Metro, tsc et esbuild résolvent
+    // pareil. TypeScript 7 supprimera `node10` et forcera ce choix ; d'ici là
+    // on assume la dépréciation plutôt que de la subir en silence.
+    "ignoreDeprecations": "6.0",
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
