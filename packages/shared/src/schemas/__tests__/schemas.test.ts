@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { GeneratedPlanSchema, GeneratedRecipeSchema } from '../gemini';
+import { GenerationLockSchema } from '../generation';
 import { GroceryItemSchema, GroceryListSchema } from '../grocery-list';
 import { HouseholdSchema, InviteCodeSchema } from '../household';
 import { RecipeSchema } from '../recipe';
@@ -348,5 +349,62 @@ describe('GenerateWeeklyPlanInputSchema', () => {
     for (const batchRecipeCount of [2, 7, 4.5]) {
       expectRejected(GenerateWeeklyPlanInputSchema, { ...base, batchRecipeCount });
     }
+  });
+});
+
+/**
+ * Ce document est le seul que la function écrit et que les deux téléphones
+ * lisent pendant qu'elle tourne. Le contrat n'est pas qu'il se relise — la
+ * suite `functions` le vérifie déjà — mais qu'il **refuse** tout ce qui n'est
+ * pas un code d'étape énuméré : c'est ce qui empêche un message d'erreur brut
+ * ou un extrait de la réponse du modèle d'atteindre l'écran.
+ */
+describe('GenerationLockSchema', () => {
+  const lock = { startedAt: 1_757_500_000_000, by: 'uid-alice', step: 'generating', attempt: 1 };
+
+  it('accepte un verrou tel que la function l’écrit', () => {
+    expect(GenerationLockSchema.safeParse(lock).success).toBe(true);
+  });
+
+  it('accepte les quatre étapes, et elles seules', () => {
+    for (const step of ['preparing', 'generating', 'retrying', 'writing']) {
+      expect(GenerationLockSchema.safeParse({ ...lock, step }).success).toBe(true);
+    }
+    expectRejected(GenerationLockSchema, { ...lock, step: 'terminé' });
+    expectRejected(GenerationLockSchema, { ...lock, step: '' });
+  });
+
+  // La vraie raison d'être de l'énumération : sans elle, n'importe quelle
+  // chaîne écrite dans ce champ s'afficherait telle quelle sur les deux
+  // téléphones.
+  it('refuse un message technique déposé à la place de l’étape', () => {
+    expectRejected(GenerationLockSchema, {
+      ...lock,
+      step: 'Error: 503 Service Unavailable — models/gemini-3.6-flash',
+    });
+  });
+
+  it('borne la tentative à 1 ou 2, puisqu’il n’y a qu’une reprise', () => {
+    expect(GenerationLockSchema.safeParse({ ...lock, attempt: 2 }).success).toBe(true);
+    expectRejected(GenerationLockSchema, { ...lock, attempt: 0 });
+    expectRejected(GenerationLockSchema, { ...lock, attempt: 3 });
+  });
+
+  it('refuse un verrou incomplet', () => {
+    for (const missing of ['startedAt', 'by', 'step', 'attempt']) {
+      const { [missing]: _omis, ...partiel } = lock as Record<string, unknown>;
+      expectRejected(GenerationLockSchema, partiel);
+    }
+  });
+
+  // Zod ignore les clés inconnues : un champ parasite n'est pas refusé, il est
+  // retiré. C'est la garantie réelle — la sortie ne porte que ce que le schéma
+  // décrit — et elle vaut d'être écrite, faute de quoi on lui en prêterait une
+  // plus forte.
+  it('écarte de sa sortie toute clé qu’il ne décrit pas', () => {
+    const parsed = GenerationLockSchema.safeParse({ ...lock, error: 'clé Gemini invalide' });
+
+    expect(parsed.success).toBe(true);
+    expect(parsed.success && 'error' in parsed.data).toBe(false);
   });
 });

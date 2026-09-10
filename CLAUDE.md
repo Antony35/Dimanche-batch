@@ -15,7 +15,7 @@ dernier jour aurait attendu huit jours au frigo.
 **Statut : v1 en cours — J1 à J6 livrés, modèle du batch refondu.** Le monorepo, le domaine partagé, les
 Security Rules, l'authentification, le foyer partagé, la génération Gemini, le
 planning des 7 jours, la régénération d'un repas isolé, la liste de courses, la
-fiche recette, l'historique et le fonctionnement hors ligne ; 268 tests couvrent
+fiche recette, l'historique et le fonctionnement hors ligne ; 279 tests couvrent
 le domaine, les schémas, les callables et les règles. Reste le build (J7). Ce
 document fait autorité sur l'architecture ; il est mis à jour en même temps que
 le code, jamais après.
@@ -401,8 +401,9 @@ dossier où vit le code.
 | `npm run test:functions` | `functions/src` : guards, quota, écriture du plan, politique de reprise, classification des erreurs Gemini | démarre l'émulateur Firestore |
 | `npm run test:rules` | `firestore.rules` face à un client non privilégié | démarre l'émulateur Firestore |
 
-`npm run test:coverage` mesure le domaine partagé. Le seuil implicite est
-simple : **les schémas restent à 100 %**. Ce sont eux qui gardent les
+`npm run test:coverage` mesure le domaine partagé, hors `index.ts` — un baril
+de ré-exports n'a rien à couvrir, et l'y inclure rendait le total illisible. Le
+seuil implicite est simple : **les schémas restent à 100 %**. Ce sont eux qui gardent les
 frontières, et un schéma trop permissif ne se voit nulle part — il laisse
 passer, et la donnée fausse ressort trois écrans plus loin.
 
