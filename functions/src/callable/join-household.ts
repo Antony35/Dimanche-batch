@@ -46,7 +46,7 @@ export const joinHousehold = onCall(
       .get();
 
     const doc = matches.docs[0];
-    if (!doc) throw notFound("Ce code d'invitation n'existe pas ou a déjà été utilisé.");
+    if (!doc) throw notFound('Ce code d’invitation n’existe pas ou a déjà été utilisé.');
 
     return db.runTransaction(async (transaction) => {
       const snapshot = await transaction.get(doc.ref);
@@ -55,7 +55,7 @@ export const joinHousehold = onCall(
 
       const household = parsed.data;
       if (household.inviteCode !== inviteCode) {
-        throw notFound("Ce code d'invitation vient d'être utilisé.");
+        throw notFound('Ce code d’invitation vient d’être utilisé.');
       }
       if (household.members.includes(uid)) {
         return { householdId: household.id, name: household.name };
