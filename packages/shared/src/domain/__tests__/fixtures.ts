@@ -13,6 +13,7 @@ export function makeRecipe(overrides: Partial<Recipe> & Pick<Recipe, 'id'>): Rec
     steps: ['Tout mettre dans la cocotte.'],
     lastUsedAt: null,
     isFavorite: false,
+    isDisliked: false,
     createdAt: 0,
     ...overrides,
   };

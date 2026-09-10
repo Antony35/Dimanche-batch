@@ -114,6 +114,18 @@ describe('RecipeSchema', () => {
     const { isFavorite: _omis, ...sansFavori } = makeRecipe({ id: 'curry' });
     expectRejected(RecipeSchema, sansFavori);
   });
+
+  // Les recettes écrites avant le bannissement n'ont pas ce champ. Un document
+  // qui ne passe pas son schéma est écarté partout où on le relit : le rendre
+  // requis effacerait de l'app tout l'historique du foyer.
+  it('accepte une recette antérieure au bannissement et la rend non bannie', () => {
+    const { isDisliked: _omis, ...ancienne } = makeRecipe({ id: 'curry' });
+
+    const parsed = RecipeSchema.safeParse(ancienne);
+
+    expect(parsed.success).toBe(true);
+    expect(parsed.success && parsed.data.isDisliked).toBe(false);
+  });
 });
 
 describe('WeeklyPlanSchema', () => {

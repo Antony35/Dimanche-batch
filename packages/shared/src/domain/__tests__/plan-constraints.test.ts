@@ -7,8 +7,8 @@ import {
 } from '../plan-constraints';
 import { makeGeneratedRecipe, makeValidGeneratedPlan } from './fixtures';
 
-function codes(plan: ReturnType<typeof makeValidGeneratedPlan>, expected?: number): string[] {
-  return validateGeneratedPlan(plan, expected).map((violation) => violation.code);
+function codes(plan: ReturnType<typeof makeValidGeneratedPlan>, expectedBatchCount?: number): string[] {
+  return validateGeneratedPlan(plan, { expectedBatchCount }).map((violation) => violation.code);
 }
 
 describe('validateGeneratedPlan', () => {
@@ -55,7 +55,7 @@ describe('validateGeneratedPlan', () => {
 
   it('exige exactement le nombre de plats demandé par le foyer', () => {
     const plan = makeValidGeneratedPlan();
-    const violations = validateGeneratedPlan(plan, 5);
+    const violations = validateGeneratedPlan(plan, { expectedBatchCount: 5 });
 
     expect(violations.map((v) => v.code)).toContain('batch-size');
     expect(violations[0]?.message).toContain('3 plats');
@@ -232,19 +232,73 @@ describe('validateMealReplacement, style demandé', () => {
   it('impose la rapidité quand l’utilisateur demande un one-pot, même le week-end', () => {
     // Le style prime sur le jour : demander un plat rapide un samedi est
     // légitime, et doit être tenu.
-    expect(validateMealReplacement(longue, 0, 'one-pot').map((v) => v.code)).toContain(
+    expect(validateMealReplacement(longue, 0, { style: 'one-pot' }).map((v) => v.code)).toContain(
       'weekday-not-one-pot',
     );
-    expect(validateMealReplacement(rapide, 0, 'one-pot')).toEqual([]);
+    expect(validateMealReplacement(rapide, 0, { style: 'one-pot' })).toEqual([]);
   });
 
   it('laisse le champ libre quand l’utilisateur demande un plat élaboré', () => {
     // Y compris en semaine : c'est son foyer, il sait s'il a le temps.
-    expect(validateMealReplacement(longue, 3, 'elaborate')).toEqual([]);
+    expect(validateMealReplacement(longue, 3, { style: 'elaborate' })).toEqual([]);
   });
 
   it('se déduit du jour quand aucun style n’est demandé', () => {
     expect(validateMealReplacement(longue, 3)).not.toEqual([]);
     expect(validateMealReplacement(longue, 0)).toEqual([]);
+  });
+
+  it('refuse un plat banni, quel que soit le jour et le style', () => {
+    const rejete = makeGeneratedRecipe({ slug: 'gratin-courgettes', name: 'Gratin de courgettes' });
+
+    expect(
+      validateMealReplacement(rejete, 0, { bannedNames: ['Gratin de courgettes'] }).map(
+        (v) => v.code,
+      ),
+    ).toContain('banned-recipe');
+  });
+});
+
+/**
+ * Le bannissement est la seule contrainte que le foyer écrit lui-même. Un faux
+ * positif refuserait une recette légitime et coûterait une reprise ; un faux
+ * négatif servirait à l'utilisateur le plat qu'il vient de rejeter.
+ */
+describe('bannissement', () => {
+  function bannedCodes(bannedNames: string[]): string[] {
+    const plan = makeValidGeneratedPlan();
+    plan.recipes[0]!.name = 'Curry de lentilles corail';
+    return validateGeneratedPlan(plan, { bannedNames })
+      .map((violation) => violation.code)
+      .filter((code) => code === 'banned-recipe');
+  }
+
+  it('refuse un plat dont le nom est banni', () => {
+    expect(bannedCodes(['Curry de lentilles corail'])).toEqual(['banned-recipe']);
+  });
+
+  it('ignore la casse, les accents et les espaces en trop', () => {
+    expect(bannedCodes(['  CURRY  DE LENTILLES CORAÎL '])).toEqual(['banned-recipe']);
+  });
+
+  it('laisse passer un plat au nom seulement voisin', () => {
+    expect(bannedCodes(['Curry de pois chiches'])).toEqual([]);
+    expect(bannedCodes(['Curry'])).toEqual([]);
+  });
+
+  it('ne refuse rien quand le foyer n’a rien banni', () => {
+    expect(bannedCodes([])).toEqual([]);
+    expect(validateGeneratedPlan(makeValidGeneratedPlan())).toEqual([]);
+  });
+
+  it('nomme le plat fautif, puisque le message repart dans la reprise', () => {
+    const plan = makeValidGeneratedPlan();
+    plan.recipes[0]!.name = 'Curry de lentilles corail';
+
+    const violation = validateGeneratedPlan(plan, {
+      bannedNames: ['curry de lentilles corail'],
+    }).find((v) => v.code === 'banned-recipe');
+
+    expect(violation?.message).toContain('Curry de lentilles corail');
   });
 });

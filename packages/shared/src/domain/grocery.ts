@@ -3,20 +3,12 @@ import { AISLES } from '../schemas/common';
 import type { GroceryItem } from '../schemas/grocery-list';
 import type { Recipe } from '../schemas/recipe';
 import type { WeeklyPlan } from '../schemas/weekly-plan';
+import { normalizeName } from './text';
 import { dimensionOf, toBaseQuantity } from './units';
 
-/**
- * Normalise un nom d'ingrédient pour servir de clé d'agrégation : minuscules,
- * accents retirés, espaces compactés. « Oignon Rouge » et « oignon rouge »
- * doivent tomber sur la même ligne de courses.
- */
+/** Nom d'ingrédient ramené à sa clé d'agrégation. */
 export function normalizeIngredientName(name: string): string {
-  return name
-    .trim()
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/\s+/g, ' ');
+  return normalizeName(name);
 }
 
 function itemKey(name: string, unit: string): string {

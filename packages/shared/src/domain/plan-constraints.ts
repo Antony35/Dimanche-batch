@@ -1,5 +1,6 @@
 import type { GeneratedPlan, GeneratedRecipe } from '../schemas/gemini';
 import type { MealStyle } from '../schemas/weekly-plan';
+import { normalizeName } from './text';
 import { isWeekday } from './week';
 
 /**
@@ -28,9 +29,16 @@ export const MAX_BATCH_TOTAL_MINUTES = 240;
 /** Au-delà, une recette cuisinée un soir de semaine n'est plus tenable. */
 export const MAX_WEEKDAY_PREP_MINUTES = 45;
 
+export interface PlanValidationOptions {
+  /** Nombre de plats demandé par le foyer avant la génération. */
+  expectedBatchCount?: number | undefined;
+  /** Noms des plats que le foyer a bannis. Voir `bannedViolations`. */
+  bannedNames?: readonly string[] | undefined;
+}
+
 export function validateGeneratedPlan(
   plan: GeneratedPlan,
-  expectedBatchCount?: number,
+  options: PlanValidationOptions = {},
 ): ConstraintViolation[] {
   const violations: ConstraintViolation[] = [];
   const recipesBySlug = new Map(plan.recipes.map((recipe) => [recipe.slug, recipe]));
@@ -51,7 +59,7 @@ export function validateGeneratedPlan(
     });
   }
 
-  violations.push(...batchSizeViolations(plan, batchSlugs, expectedBatchCount));
+  violations.push(...batchSizeViolations(plan, batchSlugs, options.expectedBatchCount));
 
   for (const slug of batchSlugs) {
     if (!recipesBySlug.has(slug)) {
@@ -129,6 +137,7 @@ export function validateGeneratedPlan(
   violations.push(...freezableViolations(recipesBySlug, servedDays));
   violations.push(...batchDurationViolations(recipesBySlug, batchSlugs));
 
+  const banned = bannedIndex(options.bannedNames);
   for (const recipe of plan.recipes) {
     if (!referencedSlugs.has(recipe.slug)) {
       violations.push({
@@ -136,9 +145,40 @@ export function validateGeneratedPlan(
         message: `La recette « ${recipe.name} » n'est utilisée aucun jour.`,
       });
     }
+    violations.push(...bannedViolations(recipe, banned));
   }
 
   return violations;
+}
+
+/**
+ * Le foyer a explicitement rejeté ce plat, et le modèle le repropose quand même.
+ *
+ * Le filet est nécessaire parce qu'un modèle ignore parfois une contrainte
+ * négative : sans lui, l'utilisateur se verrait servir le plat qu'il vient de
+ * refuser, et la fonctionnalité perdrait tout crédit au premier ratage. La
+ * violation part dans l'unique reprise de contenu, qui rappelle le nom fautif.
+ *
+ * La comparaison est une égalité normalisée, jamais un rapprochement flou : un
+ * validateur approximatif refuserait des recettes légitimes, et chaque refus
+ * coûte une reprise au foyer.
+ */
+function bannedViolations(
+  recipe: GeneratedRecipe,
+  banned: Set<string>,
+): ConstraintViolation[] {
+  if (!banned.has(normalizeName(recipe.name))) return [];
+
+  return [
+    {
+      code: 'banned-recipe',
+      message: `Le foyer a rejeté « ${recipe.name} » : ne propose ni ce plat ni une variante proche.`,
+    },
+  ];
+}
+
+function bannedIndex(names: readonly string[] | undefined): Set<string> {
+  return new Set((names ?? []).map(normalizeName));
 }
 
 function batchSizeViolations(
@@ -278,11 +318,19 @@ function quickMealViolations(recipe: GeneratedRecipe, label: string): Constraint
  *
  * Le `style` demandé prime sur le jour. Sans lui, la contrainte s'applique en
  * semaine et pas le week-end — ce qui reste le comportement par défaut.
+ *
+ * Le bannissement fait exception à la limitation au jour visé, et c'est
+ * cohérent : il est local à la recette, pas à la composition de la semaine.
  */
+export interface MealReplacementValidationOptions {
+  style?: MealStyle | undefined;
+  bannedNames?: readonly string[] | undefined;
+}
+
 export function validateMealReplacement(
   recipe: GeneratedRecipe,
   dayIndex: number,
-  style?: MealStyle,
+  options: MealReplacementValidationOptions = {},
 ): ConstraintViolation[] {
   const violations: ConstraintViolation[] = [];
 
@@ -294,7 +342,9 @@ export function validateMealReplacement(
     return violations;
   }
 
-  const mustBeQuick = style === undefined ? isWeekday(dayIndex) : style === 'one-pot';
+  violations.push(...bannedViolations(recipe, bannedIndex(options.bannedNames)));
+
+  const mustBeQuick = options.style === undefined ? isWeekday(dayIndex) : options.style === 'one-pot';
   if (!mustBeQuick) return violations;
 
   violations.push(...quickMealViolations(recipe, `jour ${dayIndex}`));
