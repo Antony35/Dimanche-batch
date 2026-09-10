@@ -1,5 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
-import { addDoc, collection, doc, onSnapshot, query, updateDoc, where } from 'firebase/firestore';
+import {
+  addDoc,
+  collection,
+  doc,
+  onSnapshot,
+  query,
+  updateDoc,
+  where,
+  type QuerySnapshot,
+} from 'firebase/firestore';
 import {
   COLLECTIONS,
   HouseholdSchema,
@@ -8,6 +17,7 @@ import {
   type Household,
 } from '@dimanche-batch/shared';
 import { db } from '@/lib/firebase';
+import { subscribeWithRetry } from '@/lib/firestore-subscribe';
 import { useAuth } from '@/features/auth/auth-provider';
 
 export interface HouseholdState {
@@ -50,8 +60,8 @@ export function useHousehold(): HouseholdState {
       where('members', 'array-contains', user.uid),
     );
 
-    return onSnapshot(
-      householdsQuery,
+    return subscribeWithRetry<QuerySnapshot>(
+      (onNext, onError) => onSnapshot(householdsQuery, onNext, onError),
       (snapshot) => {
         const first = snapshot.docs[0];
         if (!first) {

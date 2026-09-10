@@ -394,6 +394,15 @@ refuserait des recettes légitimes, et chaque refus coûte une reprise.
   depuis le disque est asynchrone par nature et fait exception — elle s'écrit
   alors dans l'état, et la course avec le premier snapshot serveur se tranche
   par un drapeau, jamais en espérant un ordre d'arrivée.
+- **Tout abonnement Firestore passe par `subscribeWithRetry`.** Firestore
+  **arrête définitivement** un listener qui échoue : après une erreur il ne
+  reçoit plus rien, même si la cause a disparu. Le cas qui l'impose : à la
+  création du foyer, les écrans montent leurs listeners avant que la règle
+  `isMember` — qui fait un `get()` sur le document du foyer — ne voie ce
+  document. Elle refuse, et sans reprise le planning, la progression de
+  génération et les courses restent morts jusqu'au prochain montage, alors que
+  tout est en ordre une seconde plus tard. Un `onSnapshot` posé en direct est
+  donc une erreur ; il y en a six, tous enveloppés.
 - **Ce qui vient du cache local n'est jamais persisté.** `metadata.fromCache`
   distingue un snapshot confirmé par le serveur d'un snapshot qui reflète nos
   propres écritures en attente. Persister le second figerait une vue partielle
