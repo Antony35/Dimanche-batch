@@ -15,7 +15,7 @@ dernier jour aurait attendu huit jours au frigo.
 **Statut : v1 en cours — J1 à J6 livrés, modèle du batch refondu.** Le monorepo, le domaine partagé, les
 Security Rules, l'authentification, le foyer partagé, la génération Gemini, le
 planning des 7 jours, la régénération d'un repas isolé, la liste de courses, la
-fiche recette, l'historique et le fonctionnement hors ligne ; 247 tests couvrent
+fiche recette, l'historique et le fonctionnement hors ligne ; 268 tests couvrent
 le domaine, les schémas, les callables et les règles. Reste le build (J7). Ce
 document fait autorité sur l'architecture ; il est mis à jour en même temps que
 le code, jamais après.
@@ -186,6 +186,7 @@ households/{hid}/recipes/{recipeId}
   name, servings, prepMinutes, tags[], ingredients[], steps[]
   lastUsedAt: string | null
   isFavorite: boolean
+  isDisliked: boolean          # plat rejeté, jamais reproposé par le modèle
 
 households/{hid}/groceryLists/{weekId}
   itemCount: number            # métadonnées seulement
@@ -212,7 +213,10 @@ households/{hid}/locks/{weekId}            # une génération à la fois par sem
   de la sous-collection : sur un tableau d'items, cocher une case imposerait de
   réécrire tout le document et la règle ne garantirait plus rien. Bénéfice
   secondaire, deux personnes cochent en même temps sans s'écraser.
-- `recipes` : même mécanisme, limité à `isFavorite`.
+- `recipes` : même mécanisme, limité à `isFavorite` et `isDisliked`. Les deux
+  partent ensemble parce qu'ils s'excluent — mettre en favori lève le
+  bannissement — et la règle ne peut borner que les champs, jamais leur
+  cohérence : celle-ci s'écrit une seule fois, dans `use-recipe-verdict.ts`.
 - `households` : `members` est immuable côté client — on ne s'ajoute pas à un
   foyer, et on n'en exclut pas l'autre personne. Seule `joinHousehold` y touche.
 - `usage` et `locks` : lecture seule côté client. Voir un verrou permet
@@ -306,12 +310,31 @@ paierait deux fois pour un seul résultat. Un verrou plus vieux que
 `GENERATION_LOCK_TTL_MS` est repris — une function tuée par son timeout n'a pas
 pu libérer le sien, et le foyer ne doit pas rester bloqué pour autant.
 
-**Mémoire du foyer.** Le prompt reçoit deux listes de sens opposé : les recettes
-servies lors des 3 dernières semaines, à ne pas reproposer, et les favoris, dont
-le modèle peut reprendre **un seul** au plus. Un favori servi récemment est
-retiré de la seconde liste — sans quoi on demanderait au modèle une chose et son
-contraire. C'est ce qui donne un effet au bouton favori ; sans cela il ne
-servirait qu'à faire une liste.
+**Mémoire du foyer.** Le prompt reçoit trois listes, composées ensemble dans
+`functions/src/lib/recipe-memory.ts` :
+
+| Liste | Sens | Portée |
+|---|---|---|
+| Recettes des 3 dernières semaines | à ne pas reproposer | s'oublie au bout de 3 semaines |
+| Favoris | le modèle peut en reprendre **un seul** au plus | tant que le cœur est coché |
+| Plats bannis (`isDisliked`) | interdits, sans réserve | définitif, jusqu'à levée dans les réglages |
+
+Les composer au même endroit est la seule façon de garantir qu'elles ne se
+contredisent pas : un favori servi récemment est retiré de la deuxième liste, et
+un plat à la fois favori et banni en est retiré aussi — le rejet l'emporte. Sans
+cela on demanderait au modèle une chose et son contraire. C'est ce qui donne un
+effet aux boutons favori et « je n'aime pas » ; sans cela ils ne serviraient
+qu'à faire des listes.
+
+**Le bannissement porte sur le nom, pas sur l'identifiant.** `recipeId` est le
+slug produit par Gemini, et rien ne l'oblige à réémettre le même slug pour le
+même plat : bannir un id se contournerait tout seul. Le nom part donc dans le
+prompt comme interdiction, et `validateGeneratedPlan` double la consigne d'un
+filet — un modèle ignore parfois une contrainte négative, et servir à
+l'utilisateur le plat qu'il vient de rejeter tuerait la fonctionnalité au
+premier ratage. La comparaison du filet est une **égalité normalisée**
+(`normalizeName`), jamais un rapprochement flou : un validateur approximatif
+refuserait des recettes légitimes, et chaque refus coûte une reprise.
 
 ---
 
@@ -323,14 +346,15 @@ servirait qu'à faire une liste.
 - Composants fonctionnels, un composant par fichier, nommage `PascalCase.tsx`.
 - Les hooks de données vivent dans `features/<x>/api/`, préfixés `use` — un composant
   ne consomme jamais le SDK Firestore en direct.
-- **Quatre écritures Firestore partent du client, et quatre seulement.** Toute
-  autre passe par une Cloud Function ; en ajouter une cinquième demande d'abord
+- **Cinq écritures Firestore partent du client, et cinq seulement.** Toute
+  autre passe par une Cloud Function ; en ajouter une sixième demande d'abord
   sa règle et son test.
 
   | Écriture | Pourquoi elle est sûre |
   |---|---|
   | `useToggleGroceryItem` → `checked` | La règle borne l'écriture à ce seul champ. Passer par une callable n'ajouterait qu'une latence au milieu d'un magasin |
   | `useToggleFavorite` → `isFavorite` | Même mécanisme, même raison : le geste doit répondre à l'instant |
+  | `useToggleDislike` → `isDisliked` | Même règle, même fichier : les deux verdicts s'excluent et s'écrivent ensemble |
   | `createHousehold` | La règle exige `members == [uid]` et `createdBy == uid` : on ne peut créer qu'un foyer dont on est le seul membre |
   | `refreshInviteCode` | `onlyChanges(['name', 'inviteCode'])` : `members` reste inaccessible au client |
 - Pas d'état optimiste écrit à la main sur une donnée Firestore : le SDK
@@ -450,6 +474,7 @@ Ce qui est **délibérément** simple en v1, et où brancher la suite :
 | App Check désactivé | L'auth suffit pour deux utilisateurs | Activer et exiger le token dans les callables |
 | Foyer de deux personnes en dur (`SERVINGS_PER_MEAL`) | La v1 sert un seul foyer connu | Un champ `size` sur `Household`, lu par les contraintes de portions et par le prompt |
 | Étapes du batch affichées à la suite, sans entrelacement | Mélanger les gestes de quatre plats produit une liste qu'on ne rattache plus à un plat quand on s'y perd | Demander au modèle un déroulé unique, dans une callable séparée pour ne pas alourdir le `responseSchema` |
+| 200 plats bannis lus au plus (`BANNED_READ_LIMIT`) | Un foyer en bannit quelques-uns par an ; la borne protège le coût de lecture avant d'être une limite réelle | Paginer la lecture, ou porter un `dislikedAt` pour ne garder que les plus récents dans le prompt |
 | `regenerateMeal` ne vérifie que les contraintes du jour visé | Réappliquer les contraintes d'ensemble ferait refuser un remplacement légitime : la recette écartée pouvait être l'une des deux congelables | Recomposer le plan après remplacement et signaler — sans bloquer — les contraintes globales devenues fausses |
 | Android uniquement | Les deux téléphones sont Android | Expo est cross-platform : ne jamais écrire de code Android-spécifique sans garde `Platform` |
 
@@ -479,6 +504,7 @@ Ce qui est **délibérément** simple en v1, et où brancher la suite :
 | J5 | **fait** | Fiche recette, historique des 12 dernières semaines, favoris branchés sur le prompt, réglages sortis des onglets |
 | Batch | **fait** | Semaine du samedi au vendredi, `batchRecipeIds`, contraintes de portions et de congélation, callable `setMeal`, écran de préparation, sélecteurs de semaine, carte d'action sur l'accueil |
 | J6 | **fait** | Cache offline du plan, des recettes et des courses ; indicateur « hors ligne » ; verrou empêchant deux générations simultanées sur une même semaine |
+| Dislike | **fait** | Bannissement d'un plat par son nom : `isDisliked`, mémoire du foyer à trois listes, filet de validation, boutons sur la fiche recette et la feuille de choix, levée dans les réglages |
 | J7 | à faire | Build EAS, installation, premier vrai dimanche |
 
 Ce qui reste à faire hors code, dans l'ordre :
