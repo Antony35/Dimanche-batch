@@ -382,6 +382,12 @@ refuserait des recettes légitimes, et chaque refus coûte une reprise.
   reflète aussitôt. Une case bascule immédiatement, même hors réseau.
 - Pas de valeurs magiques dans le style : tout passe par `theme/`. L'app supporte le
   mode sombre dès la v1 — définir chaque couleur dans les deux thèmes, jamais en dur.
+  Le thème suit le téléphone par défaut, et se force en clair ou en sombre depuis
+  les réglages. Trois états et non deux : « système » est un choix, pas une
+  absence de choix. La préférence est locale au téléphone — les deux personnes
+  n'ont pas à voir la même chose — et l'app la pousse aussi à
+  `Appearance.setColorScheme`, faute de quoi le clavier et les éléments système
+  continueraient de suivre le téléphone.
 - Textes d'interface en français, code et identifiants en anglais. Apostrophe
   typographique (’) dans le texte affiché, jamais l'apostrophe droite.
 - **Auth : importer depuis `@firebase/auth`, pas `firebase/auth`.** Le package
