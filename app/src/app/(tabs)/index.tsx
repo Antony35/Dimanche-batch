@@ -4,8 +4,10 @@ import { View } from 'react-native';
 import {
   getCurrentWeekId,
   getDayNameForDate,
+  getThawReminders,
   getUpcomingWeekId,
   toIsoDate,
+  type Recipe,
   type WeeklyPlan,
 } from '@dimanche-batch/shared';
 import {
@@ -43,6 +45,7 @@ export default function TodayScreen() {
   const { recipesById } = useRecipes(householdId);
 
   const day = current.plan?.days.find((entry) => entry.date === today) ?? null;
+  const toThaw = current.plan ? getThawReminders(current.plan, recipesById, today) : [];
 
   return (
     <Screen>
@@ -55,6 +58,8 @@ export default function TodayScreen() {
 
       {current.isStale && current.plan !== null ? <StaleNotice /> : null}
       {current.error ? <ErrorState message={current.error.message} /> : null}
+
+      {toThaw.length > 0 ? <ThawReminder recipes={toThaw} /> : null}
 
       {current.isLoading ? (
         <LoadingState />
@@ -89,6 +94,35 @@ export default function TodayScreen() {
  * cours restée vide — typiquement un samedi matin où l'on a oublié la veille —
  * puis on compose la suivante, puis on cuisine.
  */
+/**
+ * Ce qu'il faut sortir du congélateur ce soir.
+ *
+ * En tête d'écran, avant même le repas du jour : c'est la seule chose ici qui
+ * ait une heure limite, et la manquer se paie le lendemain midi. L'écran de
+ * préparation le disait déjà, mais le dimanche — trois jours trop tôt.
+ */
+function ThawReminder({ recipes }: { recipes: Recipe[] }) {
+  const theme = useTheme();
+  const plural = recipes.length > 1;
+
+  return (
+    <Card style={{ borderColor: theme.colors.spice, borderWidth: 1 }}>
+      <Text variant="overline" style={{ color: theme.colors.spice }}>
+        À SORTIR DU CONGÉLATEUR CE SOIR
+      </Text>
+      {recipes.map((recipe) => (
+        <Text key={recipe.id} variant="bodyStrong">
+          {recipe.name}
+        </Text>
+      ))}
+      <Text variant="caption" tone="soft">
+        {plural ? 'Ils se mangent' : 'Il se mange'} demain : une nuit au frigo suffit à
+        {plural ? ' les' : ' le'} décongeler.
+      </Text>
+    </Card>
+  );
+}
+
 function NextStep({
   currentWeekId,
   upcomingWeekId,
