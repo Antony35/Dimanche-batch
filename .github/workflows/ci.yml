@@ -80,6 +80,11 @@ jobs:
 
       - run: npm run test:all
 
+      # Le seuil de couverture est une garantie, pas une statistique : les
+      # schémas gardent les frontières du système, et Vitest 4 ne les affiche
+      # plus quand ils sont complets. La commande échoue s'ils redescendent.
+      - run: npm run test:coverage
+
       # La matrice de versions d'Expo est dictée par le SDK, pas par le semver
       # npm : c'est ici qu'on surveille sa dérive, et pas dans Renovate, qui
       # proposerait des montées qu'Expo ne supporte pas.
