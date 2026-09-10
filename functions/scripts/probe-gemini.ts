@@ -25,12 +25,15 @@ import {
   addDays,
   getUpcomingWeekId,
   validateGeneratedPlan,
+  validateBatchRecipeReplacement,
   validateMealReplacement,
 } from '@dimanche-batch/shared';
 import { GEMINI_MODEL } from '../src/config';
 import {
   MEAL_REPLACEMENT_SYSTEM_INSTRUCTION,
   SYSTEM_INSTRUCTION,
+  BATCH_RECIPE_SYSTEM_INSTRUCTION,
+  buildBatchRecipePrompt,
   buildMealReplacementPrompt,
   buildPlanPrompt,
 } from '../src/gemini/prompt';
@@ -40,8 +43,8 @@ import {
 } from '../src/gemini/response-schema';
 
 const args = process.argv.slice(2);
-const targets = args.filter((arg) => arg === 'plan' || arg === 'meal');
-const model = args.find((arg) => arg !== 'plan' && arg !== 'meal') ?? GEMINI_MODEL;
+const targets = args.filter((arg) => arg === 'plan' || arg === 'meal' || arg === 'batch');
+const model = args.find((arg) => !['plan', 'meal', 'batch'].includes(arg)) ?? GEMINI_MODEL;
 const weekStart = getUpcomingWeekId();
 /** Ce que demanderait un foyer par défaut. */
 const BATCH_RECIPE_COUNT = 4;
@@ -235,5 +238,72 @@ function reportSchemaFailure(issues: Array<{ path: PropertyKey[]; message: strin
   }
 }
 
+/**
+ * Remplacement d'un plat du batch : les contraintes les plus dures du projet —
+ * portions pour quatre repas, congélation, et le temps qu'il reste dans
+ * l'après-midi. C'est la chaîne la plus susceptible d'avoir besoin d'une
+ * reprise, donc celle qu'il vaut le mieux exercer avant de déployer.
+ */
+async function probeBatchRecipe(): Promise<void> {
+  console.log('\n── replaceBatchRecipe ──');
+
+  const context = {
+    servedMeals: 4,
+    servedDayIndexes: [5, 6],
+    otherBatchMinutes: 120,
+    bannedNames: BANNED_RECIPE_NAMES,
+  };
+
+  const data = await callGemini({
+    contents: [
+      {
+        parts: [
+          {
+            text: buildBatchRecipePrompt({
+              currentRecipeName: 'Curry de lentilles corail',
+              servedMeals: context.servedMeals,
+              needsFreezing: true,
+              otherBatchMinutes: context.otherBatchMinutes,
+              otherRecipeNames: ['Chili sin carne'],
+              bannedRecipeNames: BANNED_RECIPE_NAMES,
+            }),
+          },
+        ],
+      },
+    ],
+    systemInstruction: { parts: [{ text: BATCH_RECIPE_SYSTEM_INSTRUCTION }] },
+    generationConfig: {
+      responseMimeType: 'application/json',
+      responseSchema: SINGLE_RECIPE_RESPONSE_SCHEMA,
+      temperature: 0.7,
+    },
+  });
+
+  const parsed = GeneratedMealReplacementSchema.safeParse(data);
+  if (!parsed.success) {
+    reportSchemaFailure(parsed.error.issues);
+    process.exit(1);
+  }
+
+  const recipe = parsed.data.recipe;
+  console.log(`✅ Schéma : « ${recipe.name} », ${recipe.servings} portions`);
+
+  const violations = validateBatchRecipeReplacement(recipe, context);
+  if (violations.length > 0) {
+    console.error(
+      `⚠️  Contraintes : ${violations.length} violation(s) — la reprise serait déclenchée`,
+    );
+    for (const violation of violations)
+      console.error(`   [${violation.code}] ${violation.message}`);
+    process.exit(1);
+  }
+
+  console.log('✅ Contraintes du batch respectées');
+  console.log(
+    `   ${recipe.name} — ${recipe.servings} portions, ${recipe.prepMinutes} min [${recipe.tags.join(', ')}]`,
+  );
+}
+
 if (targets.length === 0 || targets.includes('plan')) await probePlan();
 if (targets.length === 0 || targets.includes('meal')) await probeMeal();
+if (targets.length === 0 || targets.includes('batch')) await probeBatchRecipe();

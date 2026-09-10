@@ -15,7 +15,7 @@ dernier jour aurait attendu huit jours au frigo.
 **Statut : v1 en cours — J1 à J6 livrés, modèle du batch refondu.** Le monorepo, le domaine partagé, les
 Security Rules, l'authentification, le foyer partagé, la génération Gemini, le
 planning des 7 jours, la régénération d'un repas isolé, la liste de courses, la
-fiche recette, l'historique et le fonctionnement hors ligne ; 311 tests couvrent
+fiche recette, l'historique et le fonctionnement hors ligne ; 332 tests couvrent
 le domaine, les schémas, les callables et les règles. Reste le build (J7). Ce
 document fait autorité sur l'architecture ; il est mis à jour en même temps que
 le code, jamais après.
@@ -245,12 +245,13 @@ règle sans ajouter son test n'est pas une modification terminée.
 
 Une responsabilité par function, nommage `verbeNom`.
 
-| Function             | Rôle                                                                                                                                                                                                                                                                |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `generateWeeklyPlan` | Génère le plan de la semaine. Vérifie l'appartenance au foyer et le rate limit, construit le prompt avec l'historique des 3 dernières semaines, appelle Gemini, valide via Zod, écrit `weeklyPlans` + `recipes` + `groceryLists` dans un batch, incrémente `usage`. |
-| `setMeal`            | Pose un repas choisi par l'utilisateur : une portion d'un plat du batch, ou un repas à l'extérieur. **Aucun appel Gemini, donc aucun quota décompté** — mais le verrou de semaine est pris, car la liste de courses est intégralement recalculée.                   |
-| `regenerateMeal`     | Remplace un seul repas d'un plan existant. Même chemin de validation, mais des contraintes **locales au jour visé** — voir §9. Passe par le même écrivain que la génération complète : la liste de courses est intégralement recalculée, jamais rapiécée.           |
-| `joinHousehold`      | Consomme un code d'invitation et ajoute l'uid aux `members`. Côté serveur pour que le code reste à usage unique.                                                                                                                                                    |
+| Function             | Rôle                                                                                                                                                                                                                                                                                                                                                                                                        |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `generateWeeklyPlan` | Génère le plan de la semaine. Vérifie l'appartenance au foyer et le rate limit, construit le prompt avec l'historique des 3 dernières semaines, appelle Gemini, valide via Zod, écrit `weeklyPlans` + `recipes` + `groceryLists` dans un batch, incrémente `usage`.                                                                                                                                         |
+| `setMeal`            | Pose un repas choisi par l'utilisateur : une portion d'un plat du batch, ou un repas à l'extérieur. **Aucun appel Gemini, donc aucun quota décompté** — mais le verrou de semaine est pris, car la liste de courses est intégralement recalculée.                                                                                                                                                           |
+| `regenerateMeal`     | Remplace un seul repas d'un plan existant. Même chemin de validation, mais des contraintes **locales au jour visé** — voir §9. Passe par le même écrivain que la génération complète : la liste de courses est intégralement recalculée, jamais rapiécée.                                                                                                                                                   |
+| `replaceBatchRecipe` | Remplace un plat du batch, et avec lui **tous les repas qu'il servait**. Callable à part et non un paramètre de `regenerateMeal` : un plat du batch n'occupe pas un créneau mais plusieurs, et le remplacer repas par repas coûterait autant de générations qu'il sert de repas, en laissant la semaine incohérente entre deux appels. Seul écrivain du dépôt à muter `batchRecipeIds` sur un plan existant |
+| `joinHousehold`      | Consomme un code d'invitation et ajoute l'uid aux `members`. Côté serveur pour que le code reste à usage unique.                                                                                                                                                                                                                                                                                            |
 
 Contrat Gemini :
 
@@ -302,6 +303,22 @@ plats servis **demain**, et seulement si demain impose la congélation : un plat
 servi mercredi sortait du frigo, même s'il porte l'étiquette parce qu'il est
 aussi servi vendredi. L'écran de préparation, lui, dit de congeler en portions —
 c'est une consigne de cuisine, pas un rappel.
+
+**Remplacer un plat du batch, et l'ordre qui compte.**
+`replaceBatchRecipeInPlan` réécrit `batchRecipeIds` **avant** de recalculer
+`recipeIds`, et ce n'est pas un détail de style : `recipeIds` réunit les plats du
+batch, donc laisser l'ancien slug dedans le maintiendrait dans la liste, et
+`buildGroceryList` continuerait d'acheter ses ingrédients pour un plat que plus
+personne ne cuisine. La position dans `batchRecipeIds` est conservée — c'est elle
+qui donne son ordre à la session du dimanche.
+
+`validateBatchRecipeReplacement` rejoue les trois contraintes que
+`validateMealReplacement` exclut à dessein : portions pour tous les repas
+servis, congélation si le plat tombe en fin de semaine, et temps restant dans
+l'après-midi une fois les autres plats comptés. Elles sont nécessaires parce que
+`buildGroceryList` n'achète un plat du batch **qu'une fois, aux portions
+déclarées** : un remplaçant qui en produit trop peu et le foyer sous-achète, sans
+un mot.
 
 **Une règle, un seul endroit.** `requiresFreezing(dayIndex)` dit qu'un plat servi
 jeudi ou vendredi doit se congeler — cuisiné le dimanche, il aurait attendu cinq
@@ -567,7 +584,8 @@ npm run test:app                 # logique de l'app, sans rendu ni émulateur
 npm run test:functions           # Guards et écritures Firestore, sur émulateur
 npm run test:rules               # Security Rules sur émulateur
 npm run test:all                 # les trois, dans cet ordre
-GEMINI_API_KEY=… npm run gemini:probe   # chaîne de génération, sans déployer
+GEMINI_API_KEY=… npm run gemini:probe   # chaînes de génération, sans déployer
+#   -- plan | meal | batch pour n'en tester qu'une
 npm run typecheck                # tsc --noEmit sur tous les workspaces
 npm run lint                     # oxlint, les quatre workspaces
 npm run knip                     # code mort : fichiers, exports, dépendances
@@ -649,6 +667,7 @@ Ce qui est **délibérément** simple en v1, et où brancher la suite :
 | Goûts         | **fait** | Favoris et plats bannis réunis sur un écran unique atteint des réglages — ce sont les deux valeurs d'un même champ, les séparer cachait le lien. `SegmentedSwitch` extrait de `WeekSwitch`, `splitByVerdict` dans le domaine                                                                                                                                |
 | CI            | **fait** | GitHub Actions sur chaque push et chaque PR ; `.nvmrc` comme source unique de la version de Node ; Renovate en tableau de bord, les paquets du SDK Expo exclus au profit d'`expo install --check`                                                                                                                                                           |
 | Montées       | **fait** | `firebase-tools` 15, `firebase-admin` 14, Vitest 5 (par la v4), `@google/genai` 2. Seuil de couverture appliqué par la CI. Plus aucune faille critique ni élevée                                                                                                                                                                                            |
+| Plat du batch | **fait** | Remplacer un plat met à jour tous les repas qu'il servait, depuis l'écran de préparation. Callable, prompt et validation dédiés                                                                                                                                                                                                                             |
 | Décongélation | **fait** | Rappel sur l'accueil le soir où il sert, plutôt que sur l'écran de préparation trois jours trop tôt                                                                                                                                                                                                                                                         |
 | Tests app     | **fait** | Première suite sur `app/` : reprise des abonnements, stockage local, contrat des callables. Ce qu'elle ne couvre pas est écrit au §9 plutôt que passé sous silence                                                                                                                                                                                          |
 | Dimanche      | **fait** | Écran maintenu allumé pendant le batch, étapes cochables et persistées localement. Et deux restes de la migration vers la semaine du samedi : le prompt de remplacement annonçait au modèle « dayIndex 0 à 4 » pour les jours de semaine, et la sonde exerçait le jour 1 en croyant tester un mardi                                                         |

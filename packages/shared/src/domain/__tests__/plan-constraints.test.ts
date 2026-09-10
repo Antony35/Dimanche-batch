@@ -3,7 +3,9 @@ import {
   MAX_BATCH_TOTAL_MINUTES,
   describeViolations,
   validateGeneratedPlan,
+  validateBatchRecipeReplacement,
   validateMealReplacement,
+  type BatchReplacementContext,
 } from '../plan-constraints';
 import { makeGeneratedRecipe, makeValidGeneratedPlan } from './fixtures';
 
@@ -303,5 +305,69 @@ describe('bannissement', () => {
     }).find((v) => v.code === 'banned-recipe');
 
     expect(violation?.message).toContain('Curry de lentilles corail');
+  });
+});
+
+/**
+ * Un plat du batch n'occupe pas un créneau mais plusieurs, et
+ * `buildGroceryList` ne l'achète qu'une fois, aux portions déclarées. Ces
+ * contraintes sont donc les seules à protéger le foyer d'un sous-achat
+ * silencieux — le validateur du remplacement d'un repas les exclut à dessein.
+ */
+describe('validateBatchRecipeReplacement', () => {
+  const base: BatchReplacementContext = {
+    servedMeals: 4,
+    servedDayIndexes: [2, 3],
+    otherBatchMinutes: 100,
+  };
+
+  const batchCodes = (
+    recipe: Parameters<typeof validateBatchRecipeReplacement>[0],
+    context = base,
+  ) => validateBatchRecipeReplacement(recipe, context).map((violation) => violation.code);
+
+  it('accepte un plat qui couvre ses repas et tient dans l’après-midi', () => {
+    const recipe = makeGeneratedRecipe({ slug: 'tajine', servings: 8, prepMinutes: 60 });
+    expect(batchCodes(recipe)).toEqual([]);
+  });
+
+  it('refuse un plat qui ne produit pas assez de portions', () => {
+    // Quatre repas pour deux personnes, donc huit portions.
+    const recipe = makeGeneratedRecipe({ slug: 'tajine', servings: 6, prepMinutes: 60 });
+    expect(batchCodes(recipe)).toContain('batch-servings-short');
+  });
+
+  it('exige la congélation quand le plat est servi en fin de semaine', () => {
+    const recipe = makeGeneratedRecipe({ slug: 'tajine', servings: 8, prepMinutes: 60 });
+    expect(batchCodes(recipe, { ...base, servedDayIndexes: [5, 6] })).toContain(
+      'batch-not-freezable',
+    );
+
+    const congelable = makeGeneratedRecipe({
+      slug: 'tajine',
+      servings: 8,
+      prepMinutes: 60,
+      tags: ['congelable'],
+    });
+    expect(batchCodes(congelable, { ...base, servedDayIndexes: [5, 6] })).toEqual([]);
+  });
+
+  // Le plafond porte sur le batch entier : les autres plats restent en place.
+  it('compte le temps des autres plats, pas seulement celui du remplaçant', () => {
+    const recipe = makeGeneratedRecipe({ slug: 'tajine', servings: 8, prepMinutes: 60 });
+    expect(batchCodes(recipe, { ...base, otherBatchMinutes: 100 })).toEqual([]);
+    expect(batchCodes(recipe, { ...base, otherBatchMinutes: 200 })).toContain('batch-too-long');
+  });
+
+  it('refuse un plat banni', () => {
+    const recipe = makeGeneratedRecipe({
+      slug: 'tajine',
+      name: 'Tajine d’agneau',
+      servings: 8,
+      prepMinutes: 60,
+    });
+    expect(batchCodes(recipe, { ...base, bannedNames: ['tajine d’agneau'] })).toContain(
+      'banned-recipe',
+    );
   });
 });
