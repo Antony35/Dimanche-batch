@@ -97,3 +97,18 @@ export function isWeekday(dayIndex: number): boolean {
 
 /** Index du jour où le batch est cuisiné : le dimanche. */
 export const BATCH_DAY_INDEX = 1;
+
+/**
+ * Vrai pour jeudi et vendredi.
+ *
+ * Un plat du batch servi ces jours-là a été cuisiné le dimanche : il aurait
+ * attendu cinq ou six jours au frigo, ce qui est trop. Il doit donc se congeler.
+ *
+ * La règle est ici, et nulle part ailleurs : elle gouverne à la fois la
+ * contrainte de génération et ce que l'écran du batch marque « à congeler ».
+ * L'écrire deux fois, c'est accepter qu'elles divergent en silence le jour où
+ * le découpage de la semaine change.
+ */
+export function requiresFreezing(dayIndex: number): boolean {
+  return dayIndex >= 5;
+}

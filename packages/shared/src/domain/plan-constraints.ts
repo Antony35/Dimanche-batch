@@ -1,7 +1,7 @@
 import type { GeneratedPlan, GeneratedRecipe } from '../schemas/gemini';
 import type { MealStyle } from '../schemas/weekly-plan';
 import { normalizeName } from './text';
-import { isWeekday } from './week';
+import { isWeekday, requiresFreezing } from './week';
 
 /**
  * Règles de la semaine type. Un JSON syntaxiquement valide peut décrire un plan
@@ -245,13 +245,12 @@ function freezableViolations(
   servedDays: Map<string, number[]>,
 ): ConstraintViolation[] {
   const violations: ConstraintViolation[] = [];
-  const LATE_DAYS = [5, 6]; // jeudi et vendredi
 
   for (const [slug, days] of servedDays) {
     const recipe = recipesBySlug.get(slug);
     if (!recipe || recipe.tags.includes('congelable')) continue;
 
-    if (days.some((day) => LATE_DAYS.includes(day))) {
+    if (days.some(requiresFreezing)) {
       violations.push({
         code: 'batch-not-freezable',
         message: `« ${recipe.name} » est servi en fin de semaine : il doit porter l'étiquette « congelable ».`,

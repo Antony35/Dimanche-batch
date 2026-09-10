@@ -8,10 +8,17 @@
   },
   "rules": {
     "react/react-in-jsx-scope": "off",
-    "react/no-unstable-nested-components": ["error", { "allowAsProps": true }],
+    "react/no-unstable-nested-components": [
+      "error",
+      {
+        "allowAsProps": true
+      }
+    ],
     "eslint/no-await-in-loop": "off",
     "unicorn/no-array-sort": "off",
-    "unicorn/consistent-function-scoping": "off"
+    "unicorn/consistent-function-scoping": "off",
+    "react/no-array-index-key": "off",
+    "oxc/no-map-spread": "off"
   },
   "ignorePatterns": ["**/node_modules/**", "**/dist/**", "**/lib/**", "**/.expo/**", "**/.probe/**"]
 }
