@@ -9,8 +9,9 @@
   "devDependencies": {
     "@dimanche-batch/shared": "*",
     "@firebase/rules-unit-testing": "^5.0.0",
+    "@types/node": "^26.4.1",
     "firebase": "^12.3.0",
     "typescript": "~5.9.2",
-    "vitest": "^3.2.4"
+    "vitest": "^4.1.11"
   }
 }

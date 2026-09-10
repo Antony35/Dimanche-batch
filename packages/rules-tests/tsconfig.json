@@ -2,7 +2,10 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "noEmit": true,
-    "types": []
+    // `setup.ts` lit `firestore.rules` sur le disque : il lui faut les types
+    // Node. Les nommer explicitement plutôt que de compter sur ceux qu'une
+    // dépendance tirait au passage — Vitest 4 ne les tire plus.
+    "types": ["node"]
   },
   "include": ["src/**/*.ts"]
 }
