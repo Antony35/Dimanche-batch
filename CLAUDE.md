@@ -62,6 +62,7 @@ une semaine, mais jamais au prix d'une dette qui bloquerait la v2.
 | IA | Gemini API, appelée **uniquement** depuis les Cloud Functions | |
 | Validation | Zod, partagé client/serveur | |
 | Tests | Vitest : domaine pur, callables contre l'émulateur Firestore, Security Rules via `@firebase/rules-unit-testing` | L'émulateur exige un JRE installé — voir §7 |
+| CI | GitHub Actions, sur chaque push et chaque PR | Alerte, ne bloque pas. Aucun secret : le dépôt est public |
 | Lint | ESLint (`eslint-config-expo`), config dans `app/` | |
 
 ---
@@ -401,6 +402,34 @@ dossier où vit le code.
 | `npm run test:functions` | `functions/src` : guards, quota, écriture du plan, politique de reprise, classification des erreurs Gemini | démarre l'émulateur Firestore |
 | `npm run test:rules` | `firestore.rules` face à un client non privilégié | démarre l'émulateur Firestore |
 
+### La CI
+
+`.github/workflows/ci.yml` lance sur chaque push et chaque PR ce que `test:all`
+lance en local, sur une machine qui n'a rien d'installé : Node lu dans `.nvmrc`
+(**24**, celui du runtime déployé — l'`engines` racine et `firebase.json`
+disaient deux choses différentes), Java 21 pour l'émulateur, puis typage, lint et
+les trois suites.
+
+Elle **alerte sans bloquer** : `main` n'est pas protégée, on y pousse
+directement, et une CI rouge se voit. La protéger reste une case à cocher.
+
+Elle ne porte **aucun secret**, et ne doit jamais en porter : le dépôt est
+public. Le déploiement et `gemini:probe` restent des gestes manuels — mettre une
+clé de service account dans les secrets d'un dépôt public créerait une surface
+d'attaque permanente pour économiser une commande tapée une fois par semaine.
+
+Un pas mérite son explication : **la CI démarre `expo start` le temps qu'il
+écrive `app/.expo/types/router.d.ts`**. Ce fichier est généré et gitignoré, donc
+absent d'un clone frais, et c'est lui qui restreint le type `Href` aux routes
+réelles. Sans lui, `router.push('/route-inexistante')` compile sans broncher —
+vérifié — et la CI serait moins stricte que la machine locale. Aucune
+sous-commande de génération n'existe dans le CLI d'Expo SDK 57 ; seul `start`
+produit ce fichier.
+
+Le lint ne couvre que `app/` : c'est le seul workspace à porter une
+configuration ESLint. Sur les trois autres, le typage strict fait l'essentiel du
+travail.
+
 `npm run test:coverage` mesure le domaine partagé, hors `index.ts` — un baril
 de ré-exports n'a rien à couvrir, et l'y inclure rendait le total illisible. Le
 seuil implicite est simple : **les schémas restent à 100 %**. Ce sont eux qui gardent les
@@ -438,6 +467,7 @@ npm run test:all                 # les trois, dans cet ordre
 GEMINI_API_KEY=… npm run gemini:probe   # chaîne de génération, sans déployer
 npm run typecheck                # tsc --noEmit sur tous les workspaces
 npm run lint
+npm run test:coverage           # couverture du domaine partagé
 npm run deploy:rules
 npm run deploy:functions
 npm run build:android            # eas build -p android --profile preview (APK)
@@ -475,6 +505,7 @@ Ce qui est **délibérément** simple en v1, et où brancher la suite :
 | App Check désactivé | L'auth suffit pour deux utilisateurs | Activer et exiger le token dans les callables |
 | Foyer de deux personnes en dur (`SERVINGS_PER_MEAL`) | La v1 sert un seul foyer connu | Un champ `size` sur `Household`, lu par les contraintes de portions et par le prompt |
 | Étapes du batch affichées à la suite, sans entrelacement | Mélanger les gestes de quatre plats produit une liste qu'on ne rattache plus à un plat quand on s'y perd | Demander au modèle un déroulé unique, dans une callable séparée pour ne pas alourdir le `responseSchema` |
+| Renovate ne suit pas les paquets du SDK Expo | Leur version est dictée par le SDK, pas par le semver npm : une montée faite hors d'`expo install` casse le build de façon pénible à diagnostiquer | La CI lance `npx expo install --check` à chaque exécution et signale la dérive. Au changement de SDK, `npx expo install --fix` réaligne tout le bloc d'un coup |
 | 200 plats bannis lus au plus (`BANNED_READ_LIMIT`) | Un foyer en bannit quelques-uns par an ; la borne protège le coût de lecture avant d'être une limite réelle | Paginer la lecture, ou porter un `dislikedAt` pour ne garder que les plus récents dans le prompt |
 | `regenerateMeal` ne vérifie que les contraintes du jour visé | Réappliquer les contraintes d'ensemble ferait refuser un remplacement légitime : la recette écartée pouvait être l'une des deux congelables | Recomposer le plan après remplacement et signaler — sans bloquer — les contraintes globales devenues fausses |
 | Android uniquement | Les deux téléphones sont Android | Expo est cross-platform : ne jamais écrire de code Android-spécifique sans garde `Platform` |
@@ -507,6 +538,7 @@ Ce qui est **délibérément** simple en v1, et où brancher la suite :
 | J6 | **fait** | Cache offline du plan, des recettes et des courses ; indicateur « hors ligne » ; verrou empêchant deux générations simultanées sur une même semaine |
 | Dislike | **fait** | Bannissement d'un plat par son nom : `isDisliked`, mémoire du foyer à trois listes, filet de validation, boutons sur la fiche recette et la feuille de choix |
 | Goûts | **fait** | Favoris et plats bannis réunis sur un écran unique atteint des réglages — ce sont les deux valeurs d'un même champ, les séparer cachait le lien. `SegmentedSwitch` extrait de `WeekSwitch`, `splitByVerdict` dans le domaine |
+| CI | **fait** | GitHub Actions sur chaque push et chaque PR ; `.nvmrc` comme source unique de la version de Node ; Renovate en tableau de bord, les paquets du SDK Expo exclus au profit d'`expo install --check` |
 | J7 | à faire | Build EAS, installation, premier vrai dimanche |
 
 Ce qui reste à faire hors code, dans l'ordre :

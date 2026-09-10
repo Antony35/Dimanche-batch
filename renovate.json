@@ -1,0 +1,31 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "timezone": "Europe/Paris",
+  "dependencyDashboard": true,
+  "dependencyDashboardTitle": "Dépendances : ce qui a une nouvelle version",
+  "dependencyDashboardApproval": true,
+  "vulnerabilityAlerts": {
+    "dependencyDashboardApproval": false,
+    "labels": ["sécurité"]
+  },
+  "packageRules": [
+    {
+      "description": "Les paquets du SDK Expo : leur version est dictée par le SDK, jamais par le semver npm. L'autorité est `npx expo install --check`, que la CI lance à chaque exécution. Une montée faite ici casserait le build de façon pénible à diagnostiquer.",
+      "matchFileNames": ["app/package.json"],
+      "matchPackageNames": [
+        "react",
+        "react-dom",
+        "react-native",
+        "/^expo$/",
+        "/^expo-/",
+        "/^@expo\\//",
+        "/^react-native-/",
+        "/^@react-native-/",
+        "/^@types\\/react$/",
+        "eslint-config-expo"
+      ],
+      "enabled": false
+    }
+  ]
+}

@@ -1,0 +1,90 @@
+# Vérifie ce que `npm run test:all` vérifie en local, sur une machine qui n'a
+# rien d'installé. C'est le seul garde-fou entre une régression et deux
+# téléphones qui ne génèrent plus rien un dimanche matin : un APK installé parle
+# aux mêmes Cloud Functions de production, et un déploiement cassé les casse
+# dans la seconde.
+#
+# Aucun secret n'est requis, et c'est délibéré : le dépôt est public. Le
+# déploiement et `gemini:probe` restent des gestes manuels.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Deux poussées rapprochées n'occupent pas deux runners pour un résultat qu'on
+# ne lira pas.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Typage, lint et les trois suites
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      # L'émulateur Firestore tourne sur la JVM. Sans JRE il ne démarre pas, et
+      # son message d'erreur ne le dit pas clairement — c'est ce qui nous avait
+      # bloqués en local.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      # Le JAR de l'émulateur pèse plusieurs dizaines de Mo et se
+      # retéléchargerait à chaque exécution.
+      - name: Cache des émulateurs Firebase
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/firebase/emulators
+          key: firebase-emulators-${{ runner.os }}
+
+      - run: npm ci
+
+      # `app/.expo/types/router.d.ts` est généré et gitignoré : un clone frais ne
+      # l'a pas. Sans lui, `router.push('/route-inexistante')` compile sans
+      # broncher — vérifié — et la CI serait moins stricte que la machine
+      # locale. Seul `expo start` le produit ; il n'existe pas de sous-commande
+      # de génération. On le démarre donc le temps qu'il écrive le fichier.
+      - name: Générer les types de routes Expo
+        working-directory: app
+        run: |
+          npx expo start --port 8099 > /tmp/expo-typegen.log 2>&1 &
+          for _ in $(seq 1 90); do
+            [ -f .expo/types/router.d.ts ] && break
+            sleep 1
+          done
+          pkill -f 'expo start --port 8099' || true
+          if [ ! -f .expo/types/router.d.ts ]; then
+            echo "::error::Types de routes non générés — le typage des routes ne serait pas vérifié."
+            tail -30 /tmp/expo-typegen.log
+            exit 1
+          fi
+
+      - run: npm run typecheck
+
+      - run: npm run lint
+
+      - run: npm run test:all
+
+      # La matrice de versions d'Expo est dictée par le SDK, pas par le semver
+      # npm : c'est ici qu'on surveille sa dérive, et pas dans Renovate, qui
+      # proposerait des montées qu'Expo ne supporte pas. Informatif : une
+      # montante Expo ne doit pas rendre la CI rouge.
+      - name: Dérive de la matrice Expo
+        working-directory: app
+        continue-on-error: true
+        run: npx expo install --check
