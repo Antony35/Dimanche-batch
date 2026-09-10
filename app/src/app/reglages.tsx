@@ -1,10 +1,11 @@
+import Ionicons from '@expo/vector-icons/Ionicons';
+import { useRouter } from 'expo-router';
 import { View } from 'react-native';
-import type { Recipe } from '@dimanche-batch/shared';
-import { Button, Card, ErrorState, Screen, Text } from '@/components/ui';
+import { splitByVerdict } from '@dimanche-batch/shared';
+import { Button, Card, Screen, Text } from '@/components/ui';
 import { useAuth } from '@/features/auth/auth-provider';
 import { refreshInviteCode, useHousehold } from '@/features/household/api/use-household';
 import { useRecipes } from '@/features/meal-plan/api/use-recipes';
-import { useToggleDislike } from '@/features/recipes/api/use-recipe-verdict';
 import { useTheme } from '@/theme';
 
 /**
@@ -14,15 +15,14 @@ import { useTheme } from '@/theme';
  */
 export default function SettingsScreen() {
   const theme = useTheme();
+  const router = useRouter();
   const { user, signOut } = useAuth();
   const { household } = useHousehold();
-  const householdId = household?.id ?? null;
-  const { recipesById } = useRecipes(householdId);
-  const dislike = useToggleDislike();
 
-  const banned = [...recipesById.values()]
-    .filter((recipe) => recipe.isDisliked)
-    .sort((a, b) => a.name.localeCompare(b.name, 'fr'));
+  // Le seul usage des recettes ici : dire s'il vaut la peine d'ouvrir l'écran
+  // des goûts. Deux nombres valent mieux qu'une ligne muette.
+  const { recipesById } = useRecipes(household?.id ?? null);
+  const { favorites, banned } = splitByVerdict(recipesById.values());
 
   return (
     <Screen>
@@ -64,36 +64,17 @@ export default function SettingsScreen() {
         )}
       </Card>
 
-      <Card>
+      <Card onPress={() => router.push('/gouts')}>
         <Text variant="overline" tone="faint">
-          PLATS BANNIS
+          GOÛTS DU FOYER
         </Text>
-        {dislike.error ? (
-          <ErrorState message="Le changement n’a pas pu être enregistré. Vérifie ta connexion." />
-        ) : null}
-        {banned.length === 0 ? (
-          <Text tone="soft">
-            Aucun plat banni. Depuis une fiche recette ou le planning, un plat qui ne vous plaît
-            pas sort définitivement des propositions.
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md }}>
+          <Text tone="soft" style={{ flex: 1 }}>
+            {favorites.length} favori{favorites.length > 1 ? 's' : ''} · {banned.length} banni
+            {banned.length > 1 ? 's' : ''}
           </Text>
-        ) : (
-          <>
-            <Text variant="caption" tone="faint">
-              Ces plats ne seront plus jamais proposés par l’IA.
-            </Text>
-            {banned.map((recipe) => (
-              <BannedRow
-                key={recipe.id}
-                recipe={recipe}
-                onRestore={() => {
-                  if (householdId) {
-                    dislike.mutate({ householdId, recipeId: recipe.id, isDisliked: false });
-                  }
-                }}
-              />
-            ))}
-          </>
-        )}
+          <Ionicons name="chevron-forward" size={18} color={theme.colors.inkFaint} />
+        </View>
       </Card>
 
       <Card>
@@ -104,24 +85,5 @@ export default function SettingsScreen() {
         <Button label="Se déconnecter" variant="ghost" onPress={() => void signOut()} />
       </Card>
     </Screen>
-  );
-}
-
-/** Un plat banni, et de quoi revenir sur ce jugement. */
-function BannedRow({ recipe, onRestore }: { recipe: Recipe; onRestore: () => void }) {
-  const theme = useTheme();
-
-  return (
-    <View
-      style={{
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: theme.spacing.md,
-        marginTop: theme.spacing.sm,
-      }}
-    >
-      <Text style={{ flex: 1 }}>{recipe.name}</Text>
-      <Button label="Rétablir" variant="ghost" onPress={onRestore} />
-    </View>
   );
 }

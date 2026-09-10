@@ -2,15 +2,17 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { Link, useRouter } from 'expo-router';
 import { Pressable, View } from 'react-native';
 import { type Recipe, type WeeklyPlan } from '@dimanche-batch/shared';
-import { Card, EmptyState, ErrorState, LoadingState, Screen, Tag, Text } from '@/components/ui';
+import { Card, EmptyState, ErrorState, LoadingState, Screen, Text } from '@/components/ui';
 import { useWeekHistory } from '@/features/history/api/use-week-history';
 import { useHousehold } from '@/features/household/api/use-household';
 import { useRecipes } from '@/features/meal-plan/api/use-recipes';
 import { useTheme } from '@/theme';
 
 /**
- * Mémoire du foyer : les semaines déjà composées, et les recettes qu'on veut
- * revoir. C'est ce que le prompt consulte pour ne pas se répéter.
+ * Les semaines déjà composées, et rien d'autre.
+ *
+ * Ce que le foyer aime ou refuse vit dans « Goûts du foyer », atteint par le
+ * rouage : ce sont des préférences durables, pas un journal.
  */
 export default function HistoryScreen() {
   const theme = useTheme();
@@ -18,11 +20,8 @@ export default function HistoryScreen() {
 
   const householdId = household?.id ?? null;
   const { weeks, isLoading, error } = useWeekHistory(householdId);
+  // `WeekCard` en a besoin pour résoudre les noms des recettes de chaque semaine.
   const { recipesById } = useRecipes(householdId);
-
-  const favorites = [...recipesById.values()]
-    .filter((recipe) => recipe.isFavorite)
-    .sort((a, b) => a.name.localeCompare(b.name, 'fr'));
 
   return (
     <Screen>
@@ -34,17 +33,6 @@ export default function HistoryScreen() {
       </View>
 
       {error ? <ErrorState message={error.message} /> : null}
-
-      {favorites.length > 0 ? (
-        <View style={{ gap: theme.spacing.sm }}>
-          <Text variant="overline" tone="faint">
-            FAVORIS
-          </Text>
-          {favorites.map((recipe) => (
-            <FavoriteCard key={recipe.id} recipe={recipe} />
-          ))}
-        </View>
-      ) : null}
 
       <View style={{ gap: theme.spacing.sm }}>
         <Text variant="overline" tone="faint">
@@ -81,32 +69,6 @@ function SettingsButton() {
     >
       <Ionicons name="settings-outline" size={24} color={theme.colors.inkSoft} />
     </Pressable>
-  );
-}
-
-function FavoriteCard({ recipe }: { recipe: Recipe }) {
-  const theme = useTheme();
-  const router = useRouter();
-
-  return (
-    <Card onPress={() => router.push(`/recette/${recipe.id}`)}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm }}>
-        <Ionicons name="heart" size={16} color={theme.colors.spice} />
-        <Text variant="heading" style={{ flex: 1 }}>
-          {recipe.name}
-        </Text>
-      </View>
-      <Text variant="caption" tone="soft">
-        {recipe.prepMinutes} min · {recipe.servings} portions
-      </Text>
-      {recipe.tags.length > 0 ? (
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.xs }}>
-          {recipe.tags.map((tag) => (
-            <Tag key={tag} tag={tag} />
-          ))}
-        </View>
-      ) : null}
-    </Card>
   );
 }
 

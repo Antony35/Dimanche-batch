@@ -71,6 +71,7 @@ function RootNavigator() {
             options={{ title: 'Recette', presentation: 'card' }}
           />
           <Stack.Screen name="reglages" options={{ title: 'Réglages' }} />
+          <Stack.Screen name="gouts" options={{ title: 'Goûts du foyer' }} />
           <Stack.Screen name="batch" options={{ title: 'Batch du dimanche' }} />
         </Stack.Protected>
       </Stack>
