@@ -15,7 +15,7 @@ dernier jour aurait attendu huit jours au frigo.
 **Statut : v1 en cours — J1 à J6 livrés, modèle du batch refondu.** Le monorepo, le domaine partagé, les
 Security Rules, l'authentification, le foyer partagé, la génération Gemini, le
 planning des 7 jours, la régénération d'un repas isolé, la liste de courses, la
-fiche recette, l'historique et le fonctionnement hors ligne ; 282 tests couvrent
+fiche recette, l'historique et le fonctionnement hors ligne ; 305 tests couvrent
 le domaine, les schémas, les callables et les règles. Reste le build (J7). Ce
 document fait autorité sur l'architecture ; il est mis à jour en même temps que
 le code, jamais après.
@@ -442,6 +442,7 @@ dossier où vit le code.
 | Suite                    | Couvre                                                                                                     | Coût                                   |
 | ------------------------ | ---------------------------------------------------------------------------------------------------------- | -------------------------------------- |
 | `npm run test`           | `packages/shared` : domaine pur, schémas Zod, chemins Firestore                                            | aucune dépendance, moins d'une seconde |
+| `npm run test:app`       | `app/src` : reprise des abonnements Firestore, stockage local, contrat des callables                       | aucune dépendance                      |
 | `npm run test:functions` | `functions/src` : guards, quota, écriture du plan, politique de reprise, classification des erreurs Gemini | démarre l'émulateur Firestore          |
 | `npm run test:rules`     | `firestore.rules` face à un client non privilégié                                                          | démarre l'émulateur Firestore          |
 
@@ -528,6 +529,14 @@ function : c'est plus rapide et le diagnostic est direct. Ce qui se teste dans
 `functions` est ce que Zod ne peut pas garantir — l'atomicité d'un batch, la
 justesse d'une transaction sous contention, ce qu'une réécriture doit épargner.
 
+La suite `app` ne couvre que ce qui ne rend rien. Monter un composant
+demanderait un renderer React, un environnement DOM et une transformation des
+modules React Native — écrits en Flow — dont le dépôt n'a rien aujourd'hui ;
+s'y ajouterait un écart réel, `reactCompiler` étant actif en production et pas
+sous test. C'est un chantier en soi, listé au §9. **Ce qui est couvert l'est
+vraiment ; le reste ne l'est pas, et le document le dit** plutôt que de laisser
+croire à une couche testée.
+
 Les tests des functions parlent à l'admin SDK, qui ignore les Security Rules :
 ils ne prouvent jamais qu'un accès est refusé au client. C'est le rôle exclusif
 de `test:rules`, et la raison pour laquelle les deux suites existent.
@@ -548,6 +557,7 @@ npm run build:shared             # requis avant tout déploiement de functions
 npm run dev                      # Expo dev server
 npm run emulators                # Firestore + Auth + Functions en local
 npm run test                     # Vitest sur le domaine partagé, sans émulateur
+npm run test:app                 # logique de l'app, sans rendu ni émulateur
 npm run test:functions           # Guards et écritures Firestore, sur émulateur
 npm run test:rules               # Security Rules sur émulateur
 npm run test:all                 # les trois, dans cet ordre
@@ -597,6 +607,7 @@ Ce qui est **délibérément** simple en v1, et où brancher la suite :
 | Étapes du batch affichées à la suite, sans entrelacement     | Mélanger les gestes de quatre plats produit une liste qu'on ne rattache plus à un plat quand on s'y perd                                                                                                                                                | Demander au modèle un déroulé unique, dans une callable séparée pour ne pas alourdir le `responseSchema`                                                                                                                                                     |
 | Les règles propres à Expo ne sont plus appliquées            | `eslint-plugin-expo` apportait `no-dynamic-env-var`, `no-env-var-destructuring` et `use-dom-exports`, sans équivalent oxlint. Les deux premières gardaient un seul fichier, `app/src/lib/env.ts`, qui lit ses variables statiquement et ne bouge jamais | Relire `env.ts` à la main si on y touche : Expo **inline** les `EXPO_PUBLIC_*` à la construction, donc un accès destructuré ou dynamique vaudrait `undefined` dans l'APK, en silence                                                                         |
 | oxfmt est en 0.x                                             | Choisi en connaissance de cause : petit projet, enjeu faible, et l'occasion d'essayer l'outil pendant qu'il se construit. Même famille qu'oxlint                                                                                                        | `npm run format:check` en CI est ce qui rend le pari tenable : si une version change ses règles, la CI le dit d'un coup au lieu de laisser le formatage dériver fichier par fichier. En secours, `oxfmt --migrate` sait convertir depuis une config Prettier |
+| Les composants de `app/` ne sont pas testés                  | Aucun renderer React ni environnement DOM installé, pas de configuration Babel dans `app/`, et les modules React Native sont en Flow — inconsommables tels quels par Vitest. La logique sans rendu, elle, est couverte                                  | Ajouter un environnement DOM et un renderer, en acceptant que `reactCompiler` ne s'applique pas sous test : ce qu'on mesurerait ne serait pas tout à fait ce qui tourne                                                                                      |
 | Renovate ne suit pas les paquets du SDK Expo                 | Leur version est dictée par le SDK, pas par le semver npm : une montée faite hors d'`expo install` casse le build de façon pénible à diagnostiquer                                                                                                      | La CI lance `npx expo install --check` à chaque exécution et signale la dérive. Au changement de SDK, `npx expo install --fix` réaligne tout le bloc d'un coup                                                                                               |
 | 200 plats bannis lus au plus (`BANNED_READ_LIMIT`)           | Un foyer en bannit quelques-uns par an ; la borne protège le coût de lecture avant d'être une limite réelle                                                                                                                                             | Paginer la lecture, ou porter un `dislikedAt` pour ne garder que les plus récents dans le prompt                                                                                                                                                             |
 | `regenerateMeal` ne vérifie que les contraintes du jour visé | Réappliquer les contraintes d'ensemble ferait refuser un remplacement légitime : la recette écartée pouvait être l'une des deux congelables                                                                                                             | Recomposer le plan après remplacement et signaler — sans bloquer — les contraintes globales devenues fausses                                                                                                                                                 |
@@ -632,6 +643,7 @@ Ce qui est **délibérément** simple en v1, et où brancher la suite :
 | Goûts     | **fait** | Favoris et plats bannis réunis sur un écran unique atteint des réglages — ce sont les deux valeurs d'un même champ, les séparer cachait le lien. `SegmentedSwitch` extrait de `WeekSwitch`, `splitByVerdict` dans le domaine                                                                                                                                |
 | CI        | **fait** | GitHub Actions sur chaque push et chaque PR ; `.nvmrc` comme source unique de la version de Node ; Renovate en tableau de bord, les paquets du SDK Expo exclus au profit d'`expo install --check`                                                                                                                                                           |
 | Montées   | **fait** | `firebase-tools` 15, `firebase-admin` 14, Vitest 5 (par la v4), `@google/genai` 2. Seuil de couverture appliqué par la CI. Plus aucune faille critique ni élevée                                                                                                                                                                                            |
+| Tests app | **fait** | Première suite sur `app/` : reprise des abonnements, stockage local, contrat des callables. Ce qu'elle ne couvre pas est écrit au §9 plutôt que passé sous silence                                                                                                                                                                                          |
 | Dimanche  | **fait** | Écran maintenu allumé pendant le batch, étapes cochables et persistées localement. Et deux restes de la migration vers la semaine du samedi : le prompt de remplacement annonçait au modèle « dayIndex 0 à 4 » pour les jours de semaine, et la sonde exerçait le jour 1 en croyant tester un mardi                                                         |
 | Outillage | **fait** | knip contre le code mort (7 dépendances mortes trouvées d'emblée), sept paquets `expo-*` retirés de l'APK, TypeScript exclu du contrôle de version d'Expo pour que son alerte reste vraie                                                                                                                                                                   |
 | Audit     | **fait** | Le domaine déclarait trois règles que ses consommateurs réimplémentaient : `requiresFreezing` unifie deux copies de `[5, 6]`, `describeViolations` était morte pendant que le prompt de reprise recopiait son corps, `BATCH_DAY_INDEX` existait pendant que `batch.ts` codait `1` en dur. Lint et knip silencieux, faux positifs justifiés dans les configs |

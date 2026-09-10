@@ -6,7 +6,7 @@
       "project": []
     },
     "app": {
-      "entry": ["src/app/**/*.{ts,tsx}", "app.json"],
+      "entry": ["src/app/**/*.{ts,tsx}", "app.json", "src/**/__tests__/*.test.ts"],
       "project": ["src/**/*.{ts,tsx}"]
     },
     "functions": {

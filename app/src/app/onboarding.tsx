@@ -112,7 +112,7 @@ function JoinHouseholdForm({ onBack }: { onBack: () => void }) {
   return (
     <Card style={{ gap: theme.spacing.lg }}>
       <TextField
-        label="Code d'invitation"
+        label="Code d’invitation"
         value={code}
         onChangeText={setCode}
         autoCapitalize="characters"

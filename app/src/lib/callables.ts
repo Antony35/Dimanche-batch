@@ -38,7 +38,7 @@ async function call<TInput, TOutput>(
 
   const parsed = schema.safeParse(result.data);
   if (!parsed.success) {
-    throw new Error(`Réponse inattendue de ${name}. Mets l'application à jour.`);
+    throw new Error(`Réponse inattendue de ${name}. Mets l’application à jour.`);
   }
   return parsed.data;
 }

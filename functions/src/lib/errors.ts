@@ -13,7 +13,7 @@ export function invalidArgument(message: string, details?: unknown): HttpsError 
   return new HttpsError('invalid-argument', message);
 }
 
-export function permissionDenied(message = "Tu n'as pas accès à ce foyer."): HttpsError {
+export function permissionDenied(message = 'Tu n’as pas accès à ce foyer.'): HttpsError {
   return new HttpsError('permission-denied', message);
 }
 
