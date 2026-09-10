@@ -1,7 +1,7 @@
 import type { Recipe } from '../schemas/recipe';
 import type { IsoDate } from '../schemas/common';
 import type { WeeklyPlan } from '../schemas/weekly-plan';
-import { addDays, getWeekDates } from './week';
+import { addDays, getWeekDates, requiresFreezing, BATCH_DAY_INDEX } from './week';
 
 /**
  * Session de préparation du dimanche.
@@ -10,9 +10,6 @@ import { addDays, getWeekDates } from './week';
  * logique vit donc ici, pas dans le composant. Elle répond à trois questions —
  * quels plats, dans quel ordre, et lesquels partent au congélateur.
  */
-
-/** Jours où un plat cuisiné dimanche aurait trop attendu au frigo. */
-const LATE_DAY_INDEXES = [5, 6];
 
 export interface BatchRecipe {
   recipe: Recipe;
@@ -62,12 +59,12 @@ export function getBatchSession(plan: WeeklyPlan, recipesById: Map<string, Recip
     recipes.push({
       recipe,
       servedDayIndexes,
-      needsFreezing: servedDayIndexes.some((day) => LATE_DAY_INDEXES.includes(day)),
+      needsFreezing: servedDayIndexes.some(requiresFreezing),
     });
   }
 
   return {
-    cookDate: addDays(plan.weekStart, 1),
+    cookDate: addDays(plan.weekStart, BATCH_DAY_INDEX),
     totalMinutes: recipes.reduce((total, entry) => total + entry.recipe.prepMinutes, 0),
     recipes,
   };

@@ -10,6 +10,7 @@ import {
   getWeekId,
   isWeekday,
   parseIsoDate,
+  requiresFreezing,
   toIsoDate,
 } from '../week';
 
@@ -117,6 +118,29 @@ describe('isWeekday', () => {
   it('exclut le week-end, seul moment où l’on cuisine le jour même', () => {
     expect(isWeekday(0)).toBe(false); // samedi
     expect(isWeekday(1)).toBe(false); // dimanche, le batch
+  });
+});
+
+/**
+ * Cette règle gouverne deux choses à la fois : la contrainte qui refuse un plan,
+ * et la mention « à congeler » de l'écran du batch. Elle était écrite deux fois
+ * avant d'atterrir ici — d'où ces tests, qui fixent la frontière exacte.
+ */
+describe('requiresFreezing', () => {
+  it('vaut pour jeudi et vendredi, cinq et six jours après le batch', () => {
+    expect(requiresFreezing(5)).toBe(true); // jeudi
+    expect(requiresFreezing(6)).toBe(true); // vendredi
+  });
+
+  it('ne vaut pas jusqu’au mercredi, où le frigo suffit', () => {
+    expect(requiresFreezing(2)).toBe(false); // lundi
+    expect(requiresFreezing(3)).toBe(false); // mardi
+    expect(requiresFreezing(4)).toBe(false); // mercredi
+  });
+
+  it('ne vaut pas non plus le week-end, cuisiné le jour même', () => {
+    expect(requiresFreezing(0)).toBe(false); // samedi
+    expect(requiresFreezing(1)).toBe(false); // dimanche
   });
 });
 

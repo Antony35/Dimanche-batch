@@ -15,7 +15,7 @@ dernier jour aurait attendu huit jours au frigo.
 **Statut : v1 en cours — J1 à J6 livrés, modèle du batch refondu.** Le monorepo, le domaine partagé, les
 Security Rules, l'authentification, le foyer partagé, la génération Gemini, le
 planning des 7 jours, la régénération d'un repas isolé, la liste de courses, la
-fiche recette, l'historique et le fonctionnement hors ligne ; 279 tests couvrent
+fiche recette, l'historique et le fonctionnement hors ligne ; 282 tests couvrent
 le domaine, les schémas, les callables et les règles. Reste le build (J7). Ce
 document fait autorité sur l'architecture ; il est mis à jour en même temps que
 le code, jamais après.
@@ -78,16 +78,24 @@ mettre ce document à jour.
 dimanche-batch/
 ├─ CLAUDE.md
 ├─ package.json               # workspaces: app, functions, packages/*
+├─ .nvmrc                     # Node 24, source unique lue par la CI
 ├─ firebase.json              # emulators, rules, functions
 ├─ firestore.rules
 ├─ firestore.indexes.json
+│
+├─ .github/workflows/ci.yml   # typage, lint, format, code mort, les 3 suites
+├─ .oxlintrc.json             # lint des quatre workspaces
+├─ .oxfmtrc.json              # format
+├─ knip.json                  # code mort
+├─ renovate.json              # veille des versions, en tableau de bord
 │
 ├─ packages/shared/           # aucun import de firebase, react-native ni node
 │  └─ src/
 │     ├─ schemas/             # Zod : common, household, recipe, weeklyPlan,
 │     │                       #       groceryList, gemini (contrat du modèle)
-│     ├─ domain/              # logique pure : unités, semaine, agrégation
-│     │                       #   courses, export Listonic, contraintes de plan
+│     ├─ domain/              # logique pure : semaine, unités, agrégation des
+│     │                       #   courses, export Listonic, contraintes de plan,
+│     │                       #   édition d'un repas, batch, goûts, texte
 │     └─ firestore-paths.ts   # chemins Firestore, définis une seule fois
 │
 ├─ packages/rules-tests/       # Security Rules testées contre l'émulateur
@@ -288,6 +296,12 @@ dimanche. Compter chaque repas qui sert un plat du batch achèterait la semaine
 dix fois. Un repas `cooked` citant un plat du batch est ignoré : la contrainte
 de génération l'interdit, mais un plan édité repas par repas peut produire ce
 cas, et il ne doit pas coûter le double.
+
+**Une règle, un seul endroit.** `requiresFreezing(dayIndex)` dit qu'un plat servi
+jeudi ou vendredi doit se congeler — cuisiné le dimanche, il aurait attendu cinq
+ou six jours au frigo. Elle gouverne deux choses à la fois : la contrainte qui
+refuse un plan, et la mention « à congeler » de l'écran du batch. Elle vit dans
+`domain/week.ts`, et nulle part ailleurs — elle était écrite deux fois avant.
 
 Corollaire non évident, protégé par un test : **un plat du batch ne quitte
 jamais `recipeIds`**, même si plus aucun repas ne le sert. Il est cuisiné donc
@@ -581,22 +595,23 @@ Ce qui est **délibérément** simple en v1, et où brancher la suite :
 
 ## 11. Avancement
 
-| Jour      | État     | Contenu                                                                                                                                                                                                                      |
-| --------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| J1        | **fait** | Monorepo, domaine partagé (30 tests), Security Rules + leurs tests, `joinHousehold`, auth e-mail, écran de foyer partagé, navigation des 6 écrans, thème clair/sombre                                                        |
-| J2        | **fait** | `generateWeeklyPlan` déployée : prompt versionné, `responseSchema`, validation Zod puis contraintes métier, unique retry, écriture Firestore en batch, écran d'accueil avec repas du jour                                    |
-| J3        | **fait** | Écran planning des 7 jours, `regenerateMeal` : contraintes locales au jour, recalcul complet des courses, `MealCard` partagé entre accueil et planning                                                                       |
-| J4        | **fait** | Liste de courses : rendu dans l'ordre de parcours du magasin, cases à cocher synchronisées entre les deux téléphones, partage par le share sheet — lisible par un humain comme par l'import de Listonic                      |
-| J5        | **fait** | Fiche recette, historique des 12 dernières semaines, favoris branchés sur le prompt, réglages sortis des onglets                                                                                                             |
-| Batch     | **fait** | Semaine du samedi au vendredi, `batchRecipeIds`, contraintes de portions et de congélation, callable `setMeal`, écran de préparation, sélecteurs de semaine, carte d'action sur l'accueil                                    |
-| J6        | **fait** | Cache offline du plan, des recettes et des courses ; indicateur « hors ligne » ; verrou empêchant deux générations simultanées sur une même semaine                                                                          |
-| Dislike   | **fait** | Bannissement d'un plat par son nom : `isDisliked`, mémoire du foyer à trois listes, filet de validation, boutons sur la fiche recette et la feuille de choix                                                                 |
-| Goûts     | **fait** | Favoris et plats bannis réunis sur un écran unique atteint des réglages — ce sont les deux valeurs d'un même champ, les séparer cachait le lien. `SegmentedSwitch` extrait de `WeekSwitch`, `splitByVerdict` dans le domaine |
-| CI        | **fait** | GitHub Actions sur chaque push et chaque PR ; `.nvmrc` comme source unique de la version de Node ; Renovate en tableau de bord, les paquets du SDK Expo exclus au profit d'`expo install --check`                            |
-| Montées   | **fait** | `firebase-tools` 15, `firebase-admin` 14, Vitest 5 (par la v4), `@google/genai` 2. Seuil de couverture appliqué par la CI. Plus aucune faille critique ni élevée                                                             |
-| Outillage | **fait** | knip contre le code mort (7 dépendances mortes trouvées d'emblée), sept paquets `expo-*` retirés de l'APK, TypeScript exclu du contrôle de version d'Expo pour que son alerte reste vraie                                    |
-| Lint      | **fait** | oxlint remplace ESLint : les quatre workspaces couverts au lieu d'un seul, trois imports morts trouvés d'emblée, et TypeScript 7 débloqué — `@typescript-eslint` plafonnait le projet sous TS 6                              |
-| J7        | à faire  | Build EAS, installation, premier vrai dimanche                                                                                                                                                                               |
+| Jour      | État     | Contenu                                                                                                                                                                                                                                                                                                                                                     |
+| --------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| J1        | **fait** | Monorepo, domaine partagé (30 tests), Security Rules + leurs tests, `joinHousehold`, auth e-mail, écran de foyer partagé, navigation des 6 écrans, thème clair/sombre                                                                                                                                                                                       |
+| J2        | **fait** | `generateWeeklyPlan` déployée : prompt versionné, `responseSchema`, validation Zod puis contraintes métier, unique retry, écriture Firestore en batch, écran d'accueil avec repas du jour                                                                                                                                                                   |
+| J3        | **fait** | Écran planning des 7 jours, `regenerateMeal` : contraintes locales au jour, recalcul complet des courses, `MealCard` partagé entre accueil et planning                                                                                                                                                                                                      |
+| J4        | **fait** | Liste de courses : rendu dans l'ordre de parcours du magasin, cases à cocher synchronisées entre les deux téléphones, partage par le share sheet — lisible par un humain comme par l'import de Listonic                                                                                                                                                     |
+| J5        | **fait** | Fiche recette, historique des 12 dernières semaines, favoris branchés sur le prompt, réglages sortis des onglets                                                                                                                                                                                                                                            |
+| Batch     | **fait** | Semaine du samedi au vendredi, `batchRecipeIds`, contraintes de portions et de congélation, callable `setMeal`, écran de préparation, sélecteurs de semaine, carte d'action sur l'accueil                                                                                                                                                                   |
+| J6        | **fait** | Cache offline du plan, des recettes et des courses ; indicateur « hors ligne » ; verrou empêchant deux générations simultanées sur une même semaine                                                                                                                                                                                                         |
+| Dislike   | **fait** | Bannissement d'un plat par son nom : `isDisliked`, mémoire du foyer à trois listes, filet de validation, boutons sur la fiche recette et la feuille de choix                                                                                                                                                                                                |
+| Goûts     | **fait** | Favoris et plats bannis réunis sur un écran unique atteint des réglages — ce sont les deux valeurs d'un même champ, les séparer cachait le lien. `SegmentedSwitch` extrait de `WeekSwitch`, `splitByVerdict` dans le domaine                                                                                                                                |
+| CI        | **fait** | GitHub Actions sur chaque push et chaque PR ; `.nvmrc` comme source unique de la version de Node ; Renovate en tableau de bord, les paquets du SDK Expo exclus au profit d'`expo install --check`                                                                                                                                                           |
+| Montées   | **fait** | `firebase-tools` 15, `firebase-admin` 14, Vitest 5 (par la v4), `@google/genai` 2. Seuil de couverture appliqué par la CI. Plus aucune faille critique ni élevée                                                                                                                                                                                            |
+| Outillage | **fait** | knip contre le code mort (7 dépendances mortes trouvées d'emblée), sept paquets `expo-*` retirés de l'APK, TypeScript exclu du contrôle de version d'Expo pour que son alerte reste vraie                                                                                                                                                                   |
+| Audit     | **fait** | Le domaine déclarait trois règles que ses consommateurs réimplémentaient : `requiresFreezing` unifie deux copies de `[5, 6]`, `describeViolations` était morte pendant que le prompt de reprise recopiait son corps, `BATCH_DAY_INDEX` existait pendant que `batch.ts` codait `1` en dur. Lint et knip silencieux, faux positifs justifiés dans les configs |
+| Lint      | **fait** | oxlint remplace ESLint : les quatre workspaces couverts au lieu d'un seul, trois imports morts trouvés d'emblée, et TypeScript 7 débloqué — `@typescript-eslint` plafonnait le projet sous TS 6                                                                                                                                                             |
+| J7        | à faire  | Build EAS, installation, premier vrai dimanche                                                                                                                                                                                                                                                                                                              |
 
 Ce qui reste à faire hors code, dans l'ordre :
 

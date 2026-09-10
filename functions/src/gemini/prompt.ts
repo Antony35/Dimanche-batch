@@ -4,6 +4,7 @@ import {
   SERVINGS_PER_MEAL,
   addDays,
   getDayName,
+  describeViolations,
   type ConstraintViolation,
   type MealSlot,
   type MealStyle,
@@ -156,7 +157,7 @@ export function buildRetryPrompt(
   return [
     original,
     'Ta proposition précédente a été refusée pour les raisons suivantes :',
-    violations.map((violation) => `- ${violation.message}`).join('\n'),
+    describeViolations(violations),
     'Voici cette proposition, à corriger sans tout réécrire :',
     JSON.stringify(rejectedPlan),
     'Produis un plan complet qui corrige ces points en respectant toutes les contraintes.',
