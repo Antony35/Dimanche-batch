@@ -2,7 +2,6 @@ import { onCall } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions';
 import {
   GenerateWeeklyPlanInputSchema,
-  addDays,
   paths,
   type GenerateWeeklyPlanInput,
   type GenerateWeeklyPlanResult,
@@ -26,11 +25,9 @@ import {
   requireHouseholdMember,
 } from '../lib/guards';
 import { writeWeeklyPlan } from '../lib/plan-writer';
+import { readHouseholdMemory } from '../lib/recipe-memory';
 import { GeminiUnavailableError } from '../gemini/client';
 import { PlanGenerationError, generateWeeklyPlanFromGemini } from '../gemini/generate-plan';
-
-/** Nombre de semaines passées consultées pour éviter les répétitions. */
-const HISTORY_WEEKS = 3;
 
 /**
  * Génère le plan de la semaine.
@@ -86,16 +83,14 @@ async function composePlan(
 ): Promise<GenerateWeeklyPlanResult> {
   await consumeGenerationQuota(input.householdId);
 
-  const recentRecipeNames = await readRecentRecipeNames(input.householdId, input.weekStart);
-  const favoriteRecipeNames = await readFavoriteRecipeNames(input.householdId, recentRecipeNames);
+  const memory = await readHouseholdMemory(input.householdId, input.weekStart);
 
   let generated;
   try {
     generated = await generateWeeklyPlanFromGemini({
       weekStart: input.weekStart,
       batchRecipeCount: input.batchRecipeCount,
-      recentRecipeNames,
-      favoriteRecipeNames,
+      ...memory,
       notes: input.notes,
     });
   } catch (error) {
@@ -149,64 +144,4 @@ async function composePlan(
       error,
     );
   }
-}
-
-/**
- * Noms des recettes servies lors des semaines précédentes.
- *
- * On lit les plans plutôt que la collection `recipes` : une recette peut
- * exister dans le foyer sans avoir été servie récemment, et c'est bien la
- * répétition rapprochée qu'on cherche à éviter, pas la réutilisation.
- */
-async function readRecentRecipeNames(householdId: string, weekStart: string): Promise<string[]> {
-  const weekIds = Array.from({ length: HISTORY_WEEKS }, (_, index) =>
-    addDays(weekStart, -7 * (index + 1)),
-  );
-
-  const plans = await Promise.all(
-    weekIds.map((weekId) => db.doc(paths.weeklyPlan(householdId, weekId)).get()),
-  );
-
-  const recipeIds = new Set<string>();
-  for (const plan of plans) {
-    if (!plan.exists) continue;
-    const ids = plan.get('recipeIds');
-    if (Array.isArray(ids)) ids.forEach((id) => typeof id === 'string' && recipeIds.add(id));
-  }
-  if (recipeIds.size === 0) return [];
-
-  const recipes = await Promise.all(
-    [...recipeIds].map((id) => db.doc(paths.recipe(householdId, id)).get()),
-  );
-
-  return recipes
-    .map((recipe) => recipe.get('name'))
-    .filter((name): name is string => typeof name === 'string');
-}
-
-/** Au-delà, la liste noierait le reste du prompt. */
-const MAX_FAVORITES_IN_PROMPT = 8;
-
-/**
- * Favoris du foyer, hors de ceux déjà servis récemment.
- *
- * Un favori mangé la semaine dernière n'a pas à revenir tout de suite : le
- * retirer ici évite de demander au modèle une chose et son contraire.
- */
-async function readFavoriteRecipeNames(
-  householdId: string,
-  recentRecipeNames: string[],
-): Promise<string[]> {
-  const recent = new Set(recentRecipeNames);
-
-  const snapshot = await db
-    .collection(paths.recipes(householdId))
-    .where('isFavorite', '==', true)
-    .limit(MAX_FAVORITES_IN_PROMPT * 2)
-    .get();
-
-  return snapshot.docs
-    .map((doc) => doc.get('name'))
-    .filter((name): name is string => typeof name === 'string' && !recent.has(name))
-    .slice(0, MAX_FAVORITES_IN_PROMPT);
 }

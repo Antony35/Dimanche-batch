@@ -135,11 +135,11 @@ describe('écriture initiale', () => {
 });
 
 describe('régénération sur une semaine déjà écrite', () => {
-  it('préserve `isFavorite` et `createdAt` d’une recette connue', async () => {
+  it('préserve `isFavorite`, `isDisliked` et `createdAt` d’une recette connue', async () => {
     await write(makeGeneratedPlan([curry, soupe]));
 
     const ref = db.doc(paths.recipe(HOUSEHOLD_ID, 'batch-curry'));
-    await ref.update({ isFavorite: true });
+    await ref.update({ isFavorite: true, isDisliked: true });
     const createdAt = (await ref.get()).get('createdAt');
 
     // Le modèle repropose la même recette, avec un contenu retouché.
@@ -149,6 +149,8 @@ describe('régénération sur une semaine déjà écrite', () => {
     const after = await ref.get();
     expect(after.get('name')).toBe('Curry de lentilles corail');
     expect(after.get('isFavorite')).toBe(true);
+    // Un plat banni le reste : c'est le foyer qui l'a écrit, pas le modèle.
+    expect(after.get('isDisliked')).toBe(true);
     expect(after.get('createdAt')).toBe(createdAt);
   });
 

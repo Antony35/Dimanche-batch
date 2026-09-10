@@ -246,9 +246,11 @@ describe('replaceMeal', () => {
     expect(after.get('lastUsedAt')).toBe('2026-01-05');
   });
 
-  it('préserve `isFavorite` si la recette proposée est déjà connue du foyer', async () => {
+  it('préserve `isFavorite` et `isDisliked` si la recette proposée est déjà connue du foyer', async () => {
     await seedPlan();
-    await db.doc(paths.recipe(HOUSEHOLD_ID, 'soupe-poireaux')).update({ isFavorite: true });
+    await db
+      .doc(paths.recipe(HOUSEHOLD_ID, 'soupe-poireaux'))
+      .update({ isFavorite: true, isDisliked: true });
 
     // Le modèle repropose la soupe sur un autre créneau.
     await replaceMeal({
@@ -261,6 +263,7 @@ describe('replaceMeal', () => {
 
     const after = await db.doc(paths.recipe(HOUSEHOLD_ID, 'soupe-poireaux')).get();
     expect(after.get('isFavorite')).toBe(true);
+    expect(after.get('isDisliked')).toBe(true);
   });
 
   it('refuse une semaine sans plan enregistré', async () => {

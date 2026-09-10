@@ -28,6 +28,7 @@ import {
   requireHouseholdMember,
 } from '../lib/guards';
 import { PlanNotFoundError, readPlanForEdit, replaceMeal } from '../lib/plan-writer';
+import { readBannedRecipeNames } from '../lib/recipe-memory';
 import { GeminiUnavailableError } from '../gemini/client';
 import { MealGenerationError, generateMealRecipeFromGemini } from '../gemini/regenerate-meal';
 
@@ -86,6 +87,9 @@ async function replaceOneMeal(
 
   const current = findMeal(plan, input.date, input.slot);
   const names = await readRecipeNames(input.householdId, plan.recipeIds);
+  // Le remplacement est le chemin le plus courant après un bannissement : on
+  // rejette un plat depuis le planning, puis on le remplace dans la foulée.
+  const bannedRecipeNames = await readBannedRecipeNames(input.householdId);
 
   let generated;
   try {
@@ -99,6 +103,7 @@ async function replaceOneMeal(
         otherRecipeNames: [...names.entries()]
           .filter(([id]) => id !== current?.recipeId)
           .map(([, name]) => name),
+        bannedRecipeNames,
         notes: input.notes,
       },
       (attempt) => {

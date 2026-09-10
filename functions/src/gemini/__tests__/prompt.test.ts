@@ -34,7 +34,20 @@ describe('buildPlanPrompt', () => {
   it('n’encombre pas le prompt de sections vides', () => {
     const prompt = buildPlanPrompt({ weekStart: '2026-09-12', batchRecipeCount: 3, recentRecipeNames: [] });
     expect(prompt).not.toContain('favori');
+    expect(prompt).not.toContain('n’en veut plus');
     expect(prompt).not.toContain('Contraintes particulières');
+  });
+
+  it('interdit les plats bannis sans réserve, contrairement aux plats récents', () => {
+    const prompt = buildPlanPrompt({
+      weekStart: '2026-09-12',
+      batchRecipeCount: 3,
+      recentRecipeNames: [],
+      bannedRecipeNames: ['Gratin de courgettes', 'Bœuf carottes'],
+    });
+    expect(prompt).toContain('sous aucun prétexte');
+    expect(prompt).toContain('- Gratin de courgettes');
+    expect(prompt).toContain('- Bœuf carottes');
   });
 
   it('liste les plats récents comme interdits', () => {
@@ -96,6 +109,22 @@ describe('buildMealReplacementPrompt', () => {
     expect(prompt).toContain('soir');
     expect(prompt).toContain('mardi');
     expect(prompt).toContain('dayIndex 3');
+  });
+
+  it('interdit aussi les plats bannis lors d’un remplacement', () => {
+    // Le geste courant : bannir un plat depuis le planning, puis le remplacer.
+    // Sans cette section, le modèle pourrait le reproposer aussitôt.
+    const prompt = buildMealReplacementPrompt({
+      dayIndex: 3,
+      slot: 'lunch',
+      date: '2026-09-15',
+      currentRecipeName: 'Gratin de courgettes',
+      otherRecipeNames: [],
+      bannedRecipeNames: ['Gratin de courgettes'],
+    });
+
+    expect(prompt).toContain('sous aucun prétexte');
+    expect(prompt).toContain('- Gratin de courgettes');
   });
 
   it('exclut le plat en place et ceux du reste de la semaine', () => {

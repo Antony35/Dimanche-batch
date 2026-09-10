@@ -332,8 +332,10 @@ function toRecipe(
     ingredients: generated.ingredients,
     steps: generated.steps,
     lastUsedAt: weekStart,
-    // Un favori le reste, et la date de découverte ne se réécrit pas.
+    // Un favori le reste, un plat banni aussi, et la date de découverte ne se
+    // réécrit pas.
     isFavorite: previous?.isFavorite ?? false,
+    isDisliked: previous?.isDisliked ?? false,
     createdAt: previous?.createdAt ?? Date.now(),
   };
 }

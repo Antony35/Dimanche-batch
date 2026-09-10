@@ -68,7 +68,10 @@ export async function generateMealRecipeFromGemini(
       continue;
     }
 
-    const violations = validateMealReplacement(parsed.data.recipe, input.dayIndex, input.style);
+    const violations = validateMealReplacement(parsed.data.recipe, input.dayIndex, {
+      style: input.style,
+      bannedNames: input.bannedRecipeNames,
+    });
     if (violations.length === 0) {
       logger.info('recette acceptée', { attempt, model, slug: parsed.data.recipe.slug });
       return { recipe: parsed.data.recipe, model, attempts: attempt };

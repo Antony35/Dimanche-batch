@@ -19,7 +19,7 @@ import {
  * stockée avec le plan, ce qui permet de savoir quelle formulation a produit
  * quel résultat.
  */
-export const PROMPT_VERSION = 4;
+export const PROMPT_VERSION = 5;
 
 /**
  * Exigences portant sur une recette, indépendamment du contexte qui la demande.
@@ -91,6 +91,13 @@ export interface PlanPromptInput {
    * une liste : c'est ici qu'il agit.
    */
   favoriteRecipeNames?: string[] | undefined;
+  /**
+   * Plats que le foyer a explicitement rejetés. Liste de sens opposé aux deux
+   * autres : les récentes s'oublieront dans trois semaines, un plat banni ne
+   * revient jamais. C'est la consigne la plus ferme du prompt, et un filet la
+   * double côté validation.
+   */
+  bannedRecipeNames?: string[] | undefined;
   /** Contraintes ponctuelles saisies dans l'app. */
   notes?: string | undefined;
 }
@@ -114,6 +121,14 @@ export function buildPlanPrompt(input: PlanPromptInput): string {
     // chose toutes les semaines. La variété reste la contrainte dominante.
     parts.push(
       `Le foyer a mis ces plats en favori. Tu peux en reprendre un, au maximum, et seulement s'il s'intègre naturellement à la semaine :\n${input.favoriteRecipeNames
+        .map((name) => `- ${name}`)
+        .join('\n')}`,
+    );
+  }
+
+  if (input.bannedRecipeNames && input.bannedRecipeNames.length > 0) {
+    parts.push(
+      `Le foyer a goûté ces plats et n'en veut plus. Ne les propose sous aucun prétexte, ni eux ni une variante proche :\n${input.bannedRecipeNames
         .map((name) => `- ${name}`)
         .join('\n')}`,
     );
@@ -159,6 +174,13 @@ export interface MealReplacementPromptInput {
   currentRecipeName: string | null;
   /** Autres recettes de la semaine, pour ne pas créer de doublon. */
   otherRecipeNames: string[];
+  /**
+   * Plats que le foyer a explicitement rejetés. Liste de sens opposé aux deux
+   * autres : les récentes s'oublieront dans trois semaines, un plat banni ne
+   * revient jamais. C'est la consigne la plus ferme du prompt, et un filet la
+   * double côté validation.
+   */
+  bannedRecipeNames?: string[] | undefined;
   notes?: string | undefined;
 }
 
@@ -189,6 +211,14 @@ export function buildMealReplacementPrompt(input: MealReplacementPromptInput): s
   if (input.otherRecipeNames.length > 0) {
     parts.push(
       `Le reste de la semaine sert déjà ces plats, n'en produis pas de doublon :\n${input.otherRecipeNames
+        .map((name) => `- ${name}`)
+        .join('\n')}`,
+    );
+  }
+
+  if (input.bannedRecipeNames && input.bannedRecipeNames.length > 0) {
+    parts.push(
+      `Le foyer a goûté ces plats et n'en veut plus. Ne les propose sous aucun prétexte, ni eux ni une variante proche :\n${input.bannedRecipeNames
         .map((name) => `- ${name}`)
         .join('\n')}`,
     );

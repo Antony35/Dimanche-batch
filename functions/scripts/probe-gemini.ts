@@ -45,6 +45,12 @@ const model = args.find((arg) => arg !== 'plan' && arg !== 'meal') ?? GEMINI_MOD
 const weekStart = getUpcomingWeekId();
 /** Ce que demanderait un foyer par défaut. */
 const BATCH_RECIPE_COUNT = 4;
+/**
+ * Plats bannis envoyés au modèle. La sonde ne peut pas prouver qu'il les
+ * respectera toujours, mais elle prouve que la section part, et un retour qui
+ * les contiendrait quand même se verrait ici plutôt qu'en production.
+ */
+const BANNED_RECIPE_NAMES = ['Gratin de chou-fleur', 'Bœuf carottes'];
 
 // Affiché avant le contrôle de la clé : si un argument n'est pas passé comme
 // prévu, ça se voit tout de suite plutôt qu'après un appel API inutile.
@@ -100,13 +106,15 @@ async function callGemini(body: unknown): Promise<unknown> {
 async function probePlan(): Promise<void> {
   console.log('\n── generateWeeklyPlan ──');
 
-  // La sonde exerce les deux listes de la mémoire du foyer : sans elles, la
-  // section des favoris ne serait jamais envoyée au modèle avant la production.
+  // La sonde exerce les trois listes de la mémoire du foyer : sans elles, ni la
+  // section des favoris ni celle des plats bannis ne seraient envoyées au modèle
+  // avant la production.
   const prompt = buildPlanPrompt({
     weekStart,
     batchRecipeCount: BATCH_RECIPE_COUNT,
     recentRecipeNames: ['Gratin de courgettes', 'Blanquette de veau'],
     favoriteRecipeNames: ['Chili sin carne'],
+    bannedRecipeNames: BANNED_RECIPE_NAMES,
   });
 
   const data = await callGemini({
@@ -128,7 +136,10 @@ async function probePlan(): Promise<void> {
     `✅ Schéma : ${parsed.data.recipes.length} recettes, ${parsed.data.batchRecipeSlugs.length} plats au batch, ${parsed.data.days.length} jours`,
   );
 
-  const violations = validateGeneratedPlan(parsed.data, BATCH_RECIPE_COUNT);
+  const violations = validateGeneratedPlan(parsed.data, {
+    expectedBatchCount: BATCH_RECIPE_COUNT,
+    bannedNames: BANNED_RECIPE_NAMES,
+  });
   if (violations.length > 0) {
     console.error(`⚠️  Contraintes : ${violations.length} violation(s) — la reprise serait déclenchée`);
     for (const violation of violations) console.error(`   [${violation.code}] ${violation.message}`);
@@ -171,6 +182,7 @@ async function probeMeal(): Promise<void> {
               date,
               currentRecipeName: 'Soupe de poireaux',
               otherRecipeNames: ['Curry de lentilles corail', 'Chili sin carne'],
+              bannedRecipeNames: BANNED_RECIPE_NAMES,
             }),
           },
         ],
@@ -193,7 +205,9 @@ async function probeMeal(): Promise<void> {
   const recipe = parsed.data.recipe;
   console.log(`✅ Schéma : « ${recipe.name} », ${recipe.ingredients.length} ingrédients`);
 
-  const violations = validateMealReplacement(recipe, dayIndex);
+  const violations = validateMealReplacement(recipe, dayIndex, {
+    bannedNames: BANNED_RECIPE_NAMES,
+  });
   if (violations.length > 0) {
     console.error(`⚠️  Contraintes : ${violations.length} violation(s) — la reprise serait déclenchée`);
     for (const violation of violations) console.error(`   [${violation.code}] ${violation.message}`);
