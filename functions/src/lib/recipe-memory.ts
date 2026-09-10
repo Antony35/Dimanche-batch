@@ -56,7 +56,7 @@ export async function readHouseholdMemory(
  * exister dans le foyer sans avoir été servie récemment, et c'est bien la
  * répétition rapprochée qu'on cherche à éviter, pas la réutilisation.
  */
-export async function readRecentRecipeNames(
+async function readRecentRecipeNames(
   householdId: string,
   weekStart: string,
 ): Promise<string[]> {
