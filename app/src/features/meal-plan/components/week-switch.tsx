@@ -1,12 +1,15 @@
-import { Pressable, View } from 'react-native';
-import { Text } from '@/components/ui';
-import { useTheme } from '@/theme';
+import { SegmentedSwitch } from '@/components/ui';
 
 export interface WeekSwitchProps {
   /** Vrai si la semaine affichée est celle qu'on mange. */
   showingCurrent: boolean;
   onChange: (showCurrent: boolean) => void;
 }
+
+const OPTIONS = [
+  { value: 'current', label: 'Cette semaine' },
+  { value: 'upcoming', label: 'Semaine prochaine' },
+] as const;
 
 /**
  * Bascule entre la semaine en cours et celle à préparer.
@@ -16,52 +19,11 @@ export interface WeekSwitchProps {
  * la sienne, mais doit laisser aller voir l'autre.
  */
 export function WeekSwitch({ showingCurrent, onChange }: WeekSwitchProps) {
-  const theme = useTheme();
-
   return (
-    <View
-      style={{
-        flexDirection: 'row',
-        backgroundColor: theme.colors.bgRaised,
-        borderColor: theme.colors.lineSoft,
-        borderWidth: 1,
-        borderRadius: theme.radius.md,
-        padding: 3,
-      }}
-    >
-      <Option label="Cette semaine" active={showingCurrent} onPress={() => onChange(true)} />
-      <Option label="Semaine prochaine" active={!showingCurrent} onPress={() => onChange(false)} />
-    </View>
-  );
-}
-
-function Option({
-  label,
-  active,
-  onPress,
-}: {
-  label: string;
-  active: boolean;
-  onPress: () => void;
-}) {
-  const theme = useTheme();
-
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityState={{ selected: active }}
-      onPress={onPress}
-      style={{
-        flex: 1,
-        alignItems: 'center',
-        paddingVertical: theme.spacing.sm,
-        borderRadius: theme.radius.sm,
-        backgroundColor: active ? theme.colors.accentSoft : 'transparent',
-      }}
-    >
-      <Text variant="caption" style={{ color: active ? theme.colors.accent : theme.colors.inkSoft }}>
-        {label}
-      </Text>
-    </Pressable>
+    <SegmentedSwitch
+      options={OPTIONS}
+      value={showingCurrent ? 'current' : 'upcoming'}
+      onChange={(value) => onChange(value === 'current')}
+    />
   );
 }
