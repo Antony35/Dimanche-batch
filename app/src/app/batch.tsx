@@ -4,13 +4,24 @@ import { Pressable, View } from 'react-native';
 import {
   AISLE_LABELS,
   formatQuantity,
+  countMealsServing,
   getBatchSession,
   getDayName,
   getUpcomingWeekId,
   capitalize,
   type BatchRecipe,
+  type GenerationLock,
 } from '@dimanche-batch/shared';
-import { Card, EmptyState, ErrorState, LoadingState, Screen, Tag, Text } from '@/components/ui';
+import {
+  Button,
+  Card,
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  Screen,
+  Tag,
+  Text,
+} from '@/components/ui';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useHousehold } from '@/features/household/api/use-household';
 import {
@@ -18,6 +29,9 @@ import {
   type BatchProgressState,
 } from '@/features/meal-plan/api/use-batch-progress';
 import { useRecipes } from '@/features/meal-plan/api/use-recipes';
+import { useReplaceBatchRecipe } from '@/features/meal-plan/api/use-replace-batch-recipe';
+import { GenerationProgress } from '@/features/meal-plan/components/generation-progress';
+import { useGenerationProgress } from '@/features/meal-plan/api/use-generation-progress';
 import { useWeeklyPlan } from '@/features/meal-plan/api/use-weekly-plan';
 import { useTheme } from '@/theme';
 
@@ -43,6 +57,8 @@ export default function BatchScreen() {
   const { plan, isLoading, error } = useWeeklyPlan(householdId, weekId);
   const { recipesById } = useRecipes(householdId);
   const progress = useBatchProgress(householdId, weekId);
+  const replace = useReplaceBatchRecipe();
+  const generation = useGenerationProgress(householdId, weekId);
 
   if (isLoading) {
     return (
@@ -90,12 +106,22 @@ export default function BatchScreen() {
         </Text>
       </View>
 
+      {replace.error ? <ErrorState message={replace.error.message} /> : null}
+
       {session.recipes.map((entry, index) => (
         <BatchRecipeCard
           key={entry.recipe.id}
           entry={entry}
           position={index + 1}
           progress={progress}
+          mealCount={countMealsServing(plan, entry.recipe.id)}
+          isReplacing={replace.isPending && replace.variables?.recipeId === entry.recipe.id}
+          generation={generation}
+          onReplace={() => {
+            if (householdId) {
+              replace.mutate({ householdId, weekId, recipeId: entry.recipe.id });
+            }
+          }}
         />
       ))}
     </Screen>
@@ -106,10 +132,19 @@ function BatchRecipeCard({
   entry,
   position,
   progress,
+  mealCount,
+  isReplacing,
+  generation,
+  onReplace,
 }: {
   entry: BatchRecipe;
   position: number;
   progress: BatchProgressState;
+  /** Repas que ce plat sert : ce qu'un remplacement mettrait à jour d'un coup. */
+  mealCount: number;
+  isReplacing: boolean;
+  generation: GenerationLock | null;
+  onReplace: () => void;
 }) {
   const theme = useTheme();
   const { recipe } = entry;
@@ -212,6 +247,19 @@ function BatchRecipeCard({
             </Pressable>
           );
         })}
+      </View>
+
+      <View style={{ gap: theme.spacing.xs }}>
+        {isReplacing ? (
+          <GenerationProgress lock={generation} />
+        ) : (
+          <Button label="Remplacer ce plat" variant="ghost" onPress={onReplace} />
+        )}
+        <Text variant="caption" tone="faint">
+          Remplace les {mealCount} repas qu’il sert, d’un coup. Consomme une génération, et met à
+          jour la liste de courses — les articles déjà cochés que les deux plats partagent gardent
+          leur case, avec une quantité qui change.
+        </Text>
       </View>
     </Card>
   );

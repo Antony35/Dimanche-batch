@@ -3,9 +3,11 @@ import {
   RecipeSchema,
   WeeklyPlanSchema,
   buildGroceryList,
+  countMealsServing,
   getWeekDates,
   mergePreservingChecked,
   paths,
+  replaceBatchRecipeInPlan,
   replaceMealInPlan,
   type GeneratedMeal,
   type GeneratedPlan,
@@ -17,6 +19,7 @@ import {
   type MealSlot,
   type Recipe,
   type RegenerateMealResult,
+  type ReplaceBatchRecipeResult,
   type SetMealResult,
   type WeeklyPlan,
 } from '@dimanche-batch/shared';
@@ -124,6 +127,52 @@ export async function replaceMeal(params: ReplaceMealParams): Promise<ReplaceMea
     recipeName: nextRecipe.name,
     itemCount: outcome.itemCount,
   };
+}
+
+export interface ReplaceBatchRecipeParams {
+  householdId: string;
+  weekId: string;
+  /** Plat du batch à remplacer. */
+  recipeId: string;
+  recipe: GeneratedRecipe;
+}
+
+/**
+ * Remplace un plat du batch, et tous les repas qu'il servait.
+ *
+ * Le seul écrivain du dépôt à muter `batchRecipeIds` sur un plan existant.
+ * Tout passe par `commitPlan`, comme le reste : la liste de courses est
+ * recalculée en entier plutôt que rapiécée, ce qui est la seule façon de
+ * retirer les ingrédients de l'ancien plat sans emporter ceux qu'il partageait
+ * avec un autre.
+ */
+export async function replaceBatchRecipe(
+  params: ReplaceBatchRecipeParams,
+): Promise<ReplaceBatchRecipeResult> {
+  const { householdId, weekId, recipeId, recipe } = params;
+
+  const current = await readPlanForEdit(householdId, weekId);
+  const mealCount = countMealsServing(current, recipeId);
+  const existing = await readPlanRecipes(householdId, current, [recipe.slug]);
+  const nextRecipe = toRecipe(recipe, existing.get(recipe.slug), current.weekStart);
+
+  const nextPlan = replaceBatchRecipeInPlan(current, recipeId, nextRecipe.id);
+
+  // Le plat sortant quitte le calcul des courses avec le plan : `nextPlan` ne
+  // le cite plus, ni dans `days`, ni dans `batchRecipeIds`.
+  const allRecipes = [
+    nextRecipe,
+    ...[...existing.values()].filter((known) => known.id !== nextRecipe.id),
+  ];
+
+  const { itemCount } = await commitPlan({
+    householdId,
+    plan: nextPlan,
+    recipesToWrite: [nextRecipe],
+    allRecipes,
+  });
+
+  return { weekId, recipeId: nextRecipe.id, recipeName: nextRecipe.name, mealCount, itemCount };
 }
 
 export interface SetPlanMealParams {

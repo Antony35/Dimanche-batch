@@ -261,6 +261,17 @@ function freezableViolations(
   return violations;
 }
 
+/** Le plafond, dit une seule fois pour les deux chemins qui le vérifient. */
+function batchTotalViolations(total: number): ConstraintViolation[] {
+  if (total <= MAX_BATCH_TOTAL_MINUTES) return [];
+  return [
+    {
+      code: 'batch-too-long',
+      message: `Le batch demande ${total} minutes de préparation, le dimanche n'en offre que ${MAX_BATCH_TOTAL_MINUTES}.`,
+    },
+  ];
+}
+
 function batchDurationViolations(
   recipesBySlug: Map<string, GeneratedRecipe>,
   batchSlugs: Set<string>,
@@ -270,13 +281,7 @@ function batchDurationViolations(
     total += recipesBySlug.get(slug)?.prepMinutes ?? 0;
   }
 
-  if (total <= MAX_BATCH_TOTAL_MINUTES) return [];
-  return [
-    {
-      code: 'batch-too-long',
-      message: `Le batch demande ${total} minutes de préparation, le dimanche n'en offre que ${MAX_BATCH_TOTAL_MINUTES}.`,
-    },
-  ];
+  return batchTotalViolations(total);
 }
 
 /**
@@ -346,6 +351,39 @@ export function validateMealReplacement(
 
   violations.push(...quickMealViolations(recipe, `jour ${dayIndex}`));
   return violations;
+}
+
+export interface BatchReplacementContext {
+  /** Nombre de repas que le plat remplacé servait — le nouveau doit les couvrir. */
+  servedMeals: number;
+  /** Index des jours servis, 0 = samedi : décide si la congélation est requise. */
+  servedDayIndexes: readonly number[];
+  /** Temps de préparation des autres plats du batch, qui restent en place. */
+  otherBatchMinutes: number;
+  bannedNames?: readonly string[] | undefined;
+}
+
+/**
+ * Contraintes d'un plat qui prend la place d'un autre dans le batch.
+ *
+ * Contrairement à `validateMealReplacement`, qui ne regarde que le jour visé,
+ * celles-ci portent sur la composition de la semaine — et il le faut, parce
+ * qu'un plat du batch n'occupe pas un créneau mais plusieurs, et que
+ * `buildGroceryList` ne l'achète **qu'une fois, aux portions déclarées**. Un
+ * remplaçant qui en produit trop peu et le foyer sous-achète, sans un mot.
+ */
+export function validateBatchRecipeReplacement(
+  recipe: GeneratedRecipe,
+  context: BatchReplacementContext,
+): ConstraintViolation[] {
+  const bySlug = new Map([[recipe.slug, recipe]]);
+
+  return [
+    ...bannedViolations(recipe, bannedIndex(context.bannedNames)),
+    ...servingsViolations(bySlug, new Map([[recipe.slug, context.servedMeals]])),
+    ...freezableViolations(bySlug, new Map([[recipe.slug, [...context.servedDayIndexes]]])),
+    ...batchTotalViolations(context.otherBatchMinutes + recipe.prepMinutes),
+  ];
 }
 
 /** Rendu compact des violations, réinjecté dans le prompt lors du retry. */

@@ -4,6 +4,7 @@ import {
   GenerateWeeklyPlanResultSchema,
   JoinHouseholdResultSchema,
   RegenerateMealResultSchema,
+  ReplaceBatchRecipeResultSchema,
   SetMealResultSchema,
   type GenerateWeeklyPlanInput,
   type GenerateWeeklyPlanResult,
@@ -11,6 +12,8 @@ import {
   type JoinHouseholdResult,
   type RegenerateMealInput,
   type RegenerateMealResult,
+  type ReplaceBatchRecipeInput,
+  type ReplaceBatchRecipeResult,
   type SetMealInput,
   type SetMealResult,
 } from '@dimanche-batch/shared';
@@ -68,4 +71,10 @@ export function regenerateMeal(input: RegenerateMealInput): Promise<RegenerateMe
 
 export function setMeal(input: SetMealInput): Promise<SetMealResult> {
   return call('setMeal', SetMealResultSchema, input);
+}
+
+export function replaceBatchRecipe(
+  input: ReplaceBatchRecipeInput,
+): Promise<ReplaceBatchRecipeResult> {
+  return call('replaceBatchRecipe', ReplaceBatchRecipeResultSchema, input);
 }

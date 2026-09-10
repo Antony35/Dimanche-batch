@@ -62,3 +62,66 @@ export function collectRecipeIds(days: WeeklyPlan['days']): string[] {
 export function findMeal(plan: WeeklyPlan, date: IsoDate, slot: MealSlot): Meal | null {
   return plan.days.find((day) => day.date === date)?.[slot] ?? null;
 }
+
+export class BatchRecipeNotFoundError extends Error {
+  constructor(recipeId: string) {
+    super(`Le plat « ${recipeId} » ne fait pas partie du batch de cette semaine.`);
+    this.name = 'BatchRecipeNotFoundError';
+  }
+}
+
+/**
+ * Remplace un plat du batch, et tous les repas qu'il servait avec lui.
+ *
+ * L'ordre des trois opérations n'est pas indifférent. `batchRecipeIds` doit
+ * être réécrit **avant** que `recipeIds` ne soit recalculé : ce dernier réunit
+ * les plats du batch, donc laisser l'ancien slug dedans le maintiendrait dans
+ * `recipeIds`, et `buildGroceryList` continuerait d'acheter ses ingrédients
+ * pour un plat que plus personne ne cuisine.
+ *
+ * La position dans `batchRecipeIds` est conservée : c'est elle qui donne son
+ * ordre à la session du dimanche.
+ *
+ * Les repas gardent leur `kind`. Un plat du batch servi en portion le reste ;
+ * si une édition antérieure l'avait posé en `cooked`, le remplaçant hérite de
+ * cette bizarrerie plutôt que d'en introduire une autre.
+ */
+export function replaceBatchRecipeInPlan(
+  plan: WeeklyPlan,
+  oldRecipeId: string,
+  newRecipeId: string,
+): WeeklyPlan {
+  if (!plan.batchRecipeIds.includes(oldRecipeId)) {
+    throw new BatchRecipeNotFoundError(oldRecipeId);
+  }
+
+  const batchRecipeIds = plan.batchRecipeIds.map((id) => (id === oldRecipeId ? newRecipeId : id));
+
+  const days = plan.days.map((day) => ({
+    ...day,
+    lunch: swapRecipe(day.lunch, oldRecipeId, newRecipeId),
+    dinner: swapRecipe(day.dinner, oldRecipeId, newRecipeId),
+  }));
+
+  return {
+    ...plan,
+    days,
+    batchRecipeIds,
+    recipeIds: [...new Set([...collectRecipeIds(days), ...batchRecipeIds])],
+  };
+}
+
+function swapRecipe(meal: Meal, oldRecipeId: string, newRecipeId: string): Meal {
+  return meal.recipeId === oldRecipeId ? { ...meal, recipeId: newRecipeId } : meal;
+}
+
+/** Créneaux servis par un plat, pour dire combien de repas un remplacement touche. */
+export function countMealsServing(plan: WeeklyPlan, recipeId: string): number {
+  let count = 0;
+  for (const day of plan.days) {
+    for (const meal of [day.lunch, day.dinner]) {
+      if (meal.recipeId === recipeId) count += 1;
+    }
+  }
+  return count;
+}

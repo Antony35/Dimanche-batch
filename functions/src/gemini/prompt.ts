@@ -166,6 +166,78 @@ export function buildRetryPrompt(
   ].join('\n\n');
 }
 
+/**
+ * Instruction système du remplacement d'un plat du batch.
+ *
+ * Différente de celle d'un repas, et pas d'un détail : un plat du batch nourrit
+ * plusieurs repas, se cuisine le dimanche et se garde. Les trois contraintes
+ * qui suivent sont exactement celles que `validateBatchRecipeReplacement`
+ * applique — les dire ici évite une reprise, les taire la garantit.
+ */
+export const BATCH_RECIPE_SYSTEM_INSTRUCTION = `Tu proposes un plat qui remplace l'un des plats préparés le dimanche, pour un foyer français de deux personnes. Le reste de la semaine est fixé et ne doit pas être remis en cause.
+
+Tu ne produis qu'une seule recette.
+
+CE QU'EST UN PLAT DU BATCH
+Il est cuisiné le dimanche en une fois, puis réchauffé les jours suivants. Il doit donc bien se garder et bien se réchauffer : évite ce qui se détrempe, ce qui se dessèche ou ce qui ne se mange que sortant de la poêle.
+
+PORTIONS — la contrainte la plus facile à rater
+Le foyer compte ${SERVINGS_PER_MEAL} personnes, donc ${SERVINGS_PER_MEAL} portions par repas. Ce plat doit produire assez de portions pour TOUS les repas qu'il sert, et ses quantités d'ingrédients doivent correspondre à ce total.
+
+${RECIPE_STYLE}`;
+
+export interface BatchRecipePromptInput {
+  /** Plat remplacé, à ne pas reproposer. */
+  currentRecipeName: string;
+  /** Repas que le nouveau plat devra couvrir. */
+  servedMeals: number;
+  /** Vrai s'il est servi jeudi ou vendredi : il devra se congeler. */
+  needsFreezing: boolean;
+  /** Minutes déjà prises par les autres plats du batch. */
+  otherBatchMinutes: number;
+  /** Autres plats de la semaine, pour ne pas créer de doublon. */
+  otherRecipeNames: string[];
+  bannedRecipeNames?: string[] | undefined;
+  notes?: string | undefined;
+}
+
+export function buildBatchRecipePrompt(input: BatchRecipePromptInput): string {
+  const remaining = MAX_BATCH_TOTAL_MINUTES - input.otherBatchMinutes;
+  const parts: string[] = [
+    `Remplace « ${input.currentRecipeName} » parmi les plats du dimanche. Propose autre chose, et pas une variante proche.`,
+    `Ce plat sert ${input.servedMeals} repas : il doit produire au moins ${SERVINGS_PER_MEAL * input.servedMeals} portions.`,
+    `Les autres plats du batch prennent déjà ${input.otherBatchMinutes} minutes : celui-ci doit se préparer en ${remaining} minutes au plus.`,
+  ];
+
+  if (input.needsFreezing) {
+    parts.push(
+      'Il est servi en fin de semaine : il doit se congeler et porter l\'étiquette "congelable".',
+    );
+  }
+
+  if (input.otherRecipeNames.length > 0) {
+    parts.push(
+      `La semaine sert déjà ces plats, n'en produis pas de doublon :\n${input.otherRecipeNames
+        .map((name) => `- ${name}`)
+        .join('\n')}`,
+    );
+  }
+
+  if (input.bannedRecipeNames && input.bannedRecipeNames.length > 0) {
+    parts.push(
+      `Le foyer a goûté ces plats et n'en veut plus. Ne les propose sous aucun prétexte, ni eux ni une variante proche :\n${input.bannedRecipeNames
+        .map((name) => `- ${name}`)
+        .join('\n')}`,
+    );
+  }
+
+  if (input.notes && input.notes.trim().length > 0) {
+    parts.push(`Contraintes particulières :\n${input.notes.trim()}`);
+  }
+
+  return parts.join('\n\n');
+}
+
 export interface MealReplacementPromptInput {
   /** 0 = samedi, cohérent avec le contrat Gemini. */
   dayIndex: number;

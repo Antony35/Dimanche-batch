@@ -119,6 +119,30 @@ export const SetMealResultSchema = z.object({
   itemCount: z.number().int().min(0),
 });
 
+/**
+ * Payload de la callable `replaceBatchRecipe`.
+ *
+ * Ni date ni créneau : un plat du batch n'en occupe pas un seul, et les jours
+ * qu'il sert se déduisent du plan. Demander à l'app de les énumérer serait lui
+ * faire porter une règle qui vit dans le domaine.
+ */
+export const ReplaceBatchRecipeInputSchema = z.object({
+  householdId: z.string().min(1),
+  weekId: WeekIdSchema,
+  /** Plat du batch à remplacer. */
+  recipeId: z.string().min(1),
+  notes: z.string().max(500).optional(),
+});
+
+export const ReplaceBatchRecipeResultSchema = z.object({
+  weekId: WeekIdSchema,
+  recipeId: z.string().min(1),
+  recipeName: z.string().min(1),
+  /** Repas mis à jour d'un coup — ce que l'app annonçait avant le geste. */
+  mealCount: z.number().int().min(0),
+  itemCount: z.number().int().min(0),
+});
+
 export const RegenerateMealResultSchema = z.object({
   weekId: WeekIdSchema,
   /** Identifiant de la recette qui occupe désormais le créneau. */
@@ -140,3 +164,5 @@ export type RegenerateMealResult = z.infer<typeof RegenerateMealResultSchema>;
 export type SetMealChoice = z.infer<typeof SetMealChoiceSchema>;
 export type SetMealInput = z.infer<typeof SetMealInputSchema>;
 export type SetMealResult = z.infer<typeof SetMealResultSchema>;
+export type ReplaceBatchRecipeInput = z.infer<typeof ReplaceBatchRecipeInputSchema>;
+export type ReplaceBatchRecipeResult = z.infer<typeof ReplaceBatchRecipeResultSchema>;
