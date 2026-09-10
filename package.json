@@ -17,7 +17,7 @@
     "test": "npm run test -w @dimanche-batch/shared",
     "test:rules": "firebase emulators:exec --only firestore \"npm run test -w @dimanche-batch/rules-tests\"",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "lint": "npm run lint -w app",
+    "lint": "oxlint",
     "deploy:functions": "npm run build -w functions && firebase deploy --only functions",
     "deploy:rules": "firebase deploy --only firestore:rules",
     "build:android": "cd app && eas build --platform android --profile preview",
@@ -28,6 +28,7 @@
   },
   "devDependencies": {
     "firebase-tools": "^15.30.0",
-    "typescript": "~6.0.3"
+    "oxlint": "^1.82.0",
+    "typescript": "^7.0.2"
   }
 }

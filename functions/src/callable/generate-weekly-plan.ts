@@ -20,7 +20,6 @@ import {
   consumeGenerationQuota,
   refundGenerationQuota,
   releaseGenerationLock,
-  reportGenerationStep,
   requireAuth,
   requireHouseholdMember,
 } from '../lib/guards';
