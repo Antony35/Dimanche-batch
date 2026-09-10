@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getBatchSession } from '../batch';
+import { getBatchSession, getThawReminders } from '../batch';
 import { makePlan, makeRecipe } from './fixtures';
 
 /**
@@ -81,5 +81,46 @@ describe('getBatchSession', () => {
   it('ne compte pas deux fois un plat servi midi et soir le même jour', () => {
     const session = getBatchSession(planWithBatch(), recipesById);
     expect(session.recipes[0]?.servedDayIndexes).toHaveLength(2);
+  });
+});
+
+/**
+ * Le rappel doit tomber le soir où il sert, pas le dimanche.
+ *
+ * Repères de la semaine du samedi 12 : lundi 14 et mardi 15 servent le curry,
+ * mercredi 16 est libre, jeudi 17 et vendredi 18 servent le chili — le seul
+ * plat congelable.
+ */
+describe('getThawReminders', () => {
+  const reminders = (today: string) =>
+    getThawReminders(planWithBatch(), recipesById, today).map((recipe) => recipe.name);
+
+  it('rappelle le mercredi soir ce qu’on mange jeudi', () => {
+    expect(reminders('2026-09-16')).toEqual(['Chili']);
+  });
+
+  it('rappelle encore le jeudi soir, pour le vendredi', () => {
+    expect(reminders('2026-09-17')).toEqual(['Chili']);
+  });
+
+  // Un plat servi mardi sortait du frigo : le congélateur n'a rien à voir là.
+  it('ne rappelle rien pour un jour que le frigo couvre', () => {
+    expect(reminders('2026-09-14')).toEqual([]);
+    expect(reminders('2026-09-15')).toEqual([]);
+  });
+
+  it('ne déborde pas sur la semaine suivante', () => {
+    // Vendredi est le dernier jour : demain appartient à un autre plan.
+    expect(reminders('2026-09-18')).toEqual([]);
+  });
+
+  it('ne dit rien d’une date hors de la semaine', () => {
+    expect(reminders('2026-10-01')).toEqual([]);
+  });
+
+  it('ne nomme un plat qu’une fois, même servi midi et soir', () => {
+    // Le chili occupe les deux créneaux du jeudi : on ne sort qu'une barquette
+    // de plus, pas deux rappels.
+    expect(reminders('2026-09-16')).toHaveLength(1);
   });
 });

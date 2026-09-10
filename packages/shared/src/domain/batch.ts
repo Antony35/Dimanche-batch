@@ -69,3 +69,41 @@ export function getBatchSession(plan: WeeklyPlan, recipesById: Map<string, Recip
     recipes,
   };
 }
+
+/**
+ * Plats à sortir du congélateur ce soir.
+ *
+ * L'écran de préparation dit déjà « sortir la veille », mais il le dit le
+ * dimanche, pour un plat qu'on mange jeudi : l'information arrive trois jours
+ * trop tôt, à quelqu'un qui a les mains dans la farine. Elle est utile le
+ * mercredi soir, sur l'écran qu'on ouvre le soir.
+ *
+ * On ne regarde que les plats servis **demain**, et seulement si demain tombe
+ * un jour qui impose la congélation : un plat servi mercredi sortait du frigo,
+ * même s'il porte l'étiquette parce qu'il est aussi servi vendredi.
+ */
+export function getThawReminders(
+  plan: WeeklyPlan,
+  recipesById: Map<string, Recipe>,
+  today: IsoDate,
+): Recipe[] {
+  const dates = getWeekDates(plan.weekStart);
+  const todayIndex = dates.indexOf(today);
+  if (todayIndex === -1) return [];
+
+  const tomorrowIndex = todayIndex + 1;
+  const tomorrow = plan.days[tomorrowIndex];
+  if (!tomorrow || !requiresFreezing(tomorrowIndex)) return [];
+
+  const batchIds = new Set(plan.batchRecipeIds);
+  const reminders = new Map<string, Recipe>();
+
+  for (const meal of [tomorrow.lunch, tomorrow.dinner]) {
+    if (meal.kind !== 'batch-leftover' || meal.recipeId === null) continue;
+    if (!batchIds.has(meal.recipeId)) continue;
+    const recipe = recipesById.get(meal.recipeId);
+    if (recipe) reminders.set(recipe.id, recipe);
+  }
+
+  return [...reminders.values()];
+}

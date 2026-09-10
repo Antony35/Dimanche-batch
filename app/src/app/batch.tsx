@@ -135,7 +135,8 @@ function BatchRecipeCard({
 
         {entry.needsFreezing ? (
           <Text variant="caption" style={{ color: theme.colors.spice }}>
-            À congeler en portions — sortir la veille du jour où on le mange.
+            À congeler en portions. L’accueil rappellera de le sortir la veille du jour où on le
+            mange.
           </Text>
         ) : null}
 
