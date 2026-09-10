@@ -41,9 +41,7 @@ export default function SignInScreen() {
         <Text variant="overline" tone="accent">
           DIMANCHE BATCH
         </Text>
-        <Text variant="display">
-          {isSignUp ? 'Créer un compte' : 'Bon retour'}
-        </Text>
+        <Text variant="display">{isSignUp ? 'Créer un compte' : 'Bon retour'}</Text>
         <Text tone="soft">
           {isSignUp
             ? 'Un compte par personne ; vous rejoindrez ensuite le même foyer.'

@@ -35,10 +35,7 @@ export interface BatchSession {
   recipes: BatchRecipe[];
 }
 
-export function getBatchSession(
-  plan: WeeklyPlan,
-  recipesById: Map<string, Recipe>,
-): BatchSession {
+export function getBatchSession(plan: WeeklyPlan, recipesById: Map<string, Recipe>): BatchSession {
   const dates = getWeekDates(plan.weekStart);
   const servedByRecipe = new Map<string, number[]>();
 

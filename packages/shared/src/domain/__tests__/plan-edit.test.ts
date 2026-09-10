@@ -6,10 +6,19 @@ const WEEK = '2026-09-14';
 const MARDI = '2026-09-15';
 
 function planWithTwoRecipes() {
-  return makePlan([
-    { lunch: { recipeId: 'batch', kind: 'batch-leftover' }, dinner: { recipeId: 'soupe', kind: 'cooked' } },
-    { lunch: { recipeId: 'batch', kind: 'batch-leftover' }, dinner: { recipeId: 'soupe', kind: 'cooked' } },
-  ], WEEK);
+  return makePlan(
+    [
+      {
+        lunch: { recipeId: 'batch', kind: 'batch-leftover' },
+        dinner: { recipeId: 'soupe', kind: 'cooked' },
+      },
+      {
+        lunch: { recipeId: 'batch', kind: 'batch-leftover' },
+        dinner: { recipeId: 'soupe', kind: 'cooked' },
+      },
+    ],
+    WEEK,
+  );
 }
 
 describe('replaceMealInPlan', () => {
@@ -92,11 +101,9 @@ describe('replaceMealInPlan, invariant du batch', () => {
   it('garde un plat du batch dans `recipeIds` même quand plus aucun repas ne le sert', () => {
     // Le plat est cuisiné le dimanche : il est acheté et préparé. Le sortir de
     // `recipeIds` ferait disparaître ses ingrédients de la liste de courses.
-    const plan = makePlan(
-      [{ dinner: { recipeId: 'batch', kind: 'batch-leftover' } }],
-      WEEK,
-      ['batch'],
-    );
+    const plan = makePlan([{ dinner: { recipeId: 'batch', kind: 'batch-leftover' } }], WEEK, [
+      'batch',
+    ]);
 
     const next = replaceMealInPlan(
       plan,
@@ -110,13 +117,16 @@ describe('replaceMealInPlan, invariant du batch', () => {
   });
 
   it('ne duplique pas un plat du batch également servi par un repas', () => {
-    const plan = makePlan(
-      [{ lunch: { recipeId: 'batch', kind: 'batch-leftover' } }],
-      WEEK,
-      ['batch'],
-    );
+    const plan = makePlan([{ lunch: { recipeId: 'batch', kind: 'batch-leftover' } }], WEEK, [
+      'batch',
+    ]);
 
-    const next = replaceMealInPlan(plan, WEEK, 'dinner', makeMeal({ recipeId: 'batch', kind: 'batch-leftover' }));
+    const next = replaceMealInPlan(
+      plan,
+      WEEK,
+      'dinner',
+      makeMeal({ recipeId: 'batch', kind: 'batch-leftover' }),
+    );
 
     expect(next.recipeIds.filter((id) => id === 'batch')).toHaveLength(1);
   });

@@ -72,7 +72,10 @@ function Option({
         backgroundColor: active ? theme.colors.accentSoft : 'transparent',
       }}
     >
-      <Text variant="caption" style={{ color: active ? theme.colors.accent : theme.colors.inkSoft }}>
+      <Text
+        variant="caption"
+        style={{ color: active ? theme.colors.accent : theme.colors.inkSoft }}
+      >
         {label}
       </Text>
     </Pressable>

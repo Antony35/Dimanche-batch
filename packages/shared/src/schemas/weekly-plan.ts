@@ -6,12 +6,7 @@ import { IsoDateSchema, WeekIdSchema } from './common';
  * à la liste de courses de ne pas compter deux fois les ingrédients du batch :
  * seuls les repas `cooked` consomment des ingrédients.
  */
-export const MEAL_KINDS = [
-  'cooked',
-  'batch-leftover',
-  'freezer-backup',
-  'eat-out',
-] as const;
+export const MEAL_KINDS = ['cooked', 'batch-leftover', 'freezer-backup', 'eat-out'] as const;
 
 export const MealKindSchema = z.enum(MEAL_KINDS);
 

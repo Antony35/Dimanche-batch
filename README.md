@@ -45,9 +45,9 @@ npm run build:android                            # APK via EAS
 
 ## Structure
 
-| Dossier | Rôle |
-|---|---|
-| `packages/shared` | Schémas Zod, types et logique métier pure. Source unique du domaine. |
-| `packages/rules-tests` | Tests des Security Rules contre l'émulateur. |
-| `app` | Application Expo (React Native, Expo Router). |
-| `functions` | Cloud Functions : seul endroit qui connaît la clé Gemini. |
+| Dossier                | Rôle                                                                 |
+| ---------------------- | -------------------------------------------------------------------- |
+| `packages/shared`      | Schémas Zod, types et logique métier pure. Source unique du domaine. |
+| `packages/rules-tests` | Tests des Security Rules contre l'émulateur.                         |
+| `app`                  | Application Expo (React Native, Expo Router).                        |
+| `functions`            | Cloud Functions : seul endroit qui connaît la clé Gemini.            |

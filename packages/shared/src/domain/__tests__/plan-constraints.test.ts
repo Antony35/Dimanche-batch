@@ -7,7 +7,10 @@ import {
 } from '../plan-constraints';
 import { makeGeneratedRecipe, makeValidGeneratedPlan } from './fixtures';
 
-function codes(plan: ReturnType<typeof makeValidGeneratedPlan>, expectedBatchCount?: number): string[] {
+function codes(
+  plan: ReturnType<typeof makeValidGeneratedPlan>,
+  expectedBatchCount?: number,
+): string[] {
   return validateGeneratedPlan(plan, { expectedBatchCount }).map((violation) => violation.code);
 }
 

@@ -11,9 +11,7 @@ import { MealKindSchema } from './weekly-plan';
  * qui permet de valider la cohérence du plan avant d'écrire quoi que ce soit.
  */
 export const GeneratedRecipeSchema = z.object({
-  slug: z
-    .string()
-    .regex(/^[a-z0-9-]{3,60}$/, 'slug en minuscules, tirets uniquement'),
+  slug: z.string().regex(/^[a-z0-9-]{3,60}$/, 'slug en minuscules, tirets uniquement'),
   name: z.string().min(1).max(120),
   servings: z.number().int().min(1).max(16),
   prepMinutes: z.number().int().min(1).max(240),

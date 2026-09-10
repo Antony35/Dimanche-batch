@@ -55,4 +55,3 @@ export function GroceryItemRow({ item, onToggle }: GroceryItemRowProps) {
     </Pressable>
   );
 }
-

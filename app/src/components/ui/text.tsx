@@ -24,9 +24,6 @@ export function Text({ variant = 'body', tone = 'default', style, ...props }: Te
   };
 
   return (
-    <RNText
-      style={[theme.typography[variant], { color: toneColor[tone] }, style]}
-      {...props}
-    />
+    <RNText style={[theme.typography[variant], { color: toneColor[tone] }, style]} {...props} />
   );
 }

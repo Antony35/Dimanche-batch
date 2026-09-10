@@ -39,10 +39,6 @@
       "typedRoutes": true,
       "reactCompiler": true
     },
-    "platforms": [
-      "android",
-      "ios",
-      "web"
-    ]
+    "platforms": ["android", "ios", "web"]
   }
 }

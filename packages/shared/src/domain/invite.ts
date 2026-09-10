@@ -17,6 +17,10 @@ export function generateInviteCode(random: () => number = Math.random): InviteCo
 
 /** Tolère la saisie sans préfixe, en minuscules ou avec des espaces. */
 export function normalizeInviteCode(input: string): string {
-  const cleaned = input.trim().toUpperCase().replace(/\s+/g, '').replace(/^BATCH-?/, '');
+  const cleaned = input
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, '')
+    .replace(/^BATCH-?/, '');
   return `BATCH-${cleaned}`;
 }

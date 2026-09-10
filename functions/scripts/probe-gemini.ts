@@ -141,8 +141,11 @@ async function probePlan(): Promise<void> {
     bannedNames: BANNED_RECIPE_NAMES,
   });
   if (violations.length > 0) {
-    console.error(`⚠️  Contraintes : ${violations.length} violation(s) — la reprise serait déclenchée`);
-    for (const violation of violations) console.error(`   [${violation.code}] ${violation.message}`);
+    console.error(
+      `⚠️  Contraintes : ${violations.length} violation(s) — la reprise serait déclenchée`,
+    );
+    for (const violation of violations)
+      console.error(`   [${violation.code}] ${violation.message}`);
     process.exit(1);
   }
 
@@ -209,8 +212,11 @@ async function probeMeal(): Promise<void> {
     bannedNames: BANNED_RECIPE_NAMES,
   });
   if (violations.length > 0) {
-    console.error(`⚠️  Contraintes : ${violations.length} violation(s) — la reprise serait déclenchée`);
-    for (const violation of violations) console.error(`   [${violation.code}] ${violation.message}`);
+    console.error(
+      `⚠️  Contraintes : ${violations.length} violation(s) — la reprise serait déclenchée`,
+    );
+    for (const violation of violations)
+      console.error(`   [${violation.code}] ${violation.message}`);
     process.exit(1);
   }
 

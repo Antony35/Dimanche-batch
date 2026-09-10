@@ -82,8 +82,8 @@ export function MealChoiceSheet({
           <Card>
             <Text variant="bodyStrong">Noté, on ne te le reproposera plus.</Text>
             <Text variant="caption" tone="soft">
-              Il reste au menu cette semaine : choisis ci-dessous pour le remplacer, ou garde-le
-              une dernière fois.
+              Il reste au menu cette semaine : choisis ci-dessous pour le remplacer, ou garde-le une
+              dernière fois.
             </Text>
           </Card>
         ) : null}
@@ -116,19 +116,19 @@ export function MealChoiceSheet({
             <Text variant="overline" tone="faint">
               CUISINER CE JOUR-LÀ
             </Text>
-            <Button
-              label="Un one-pot, rapide"
-              variant="ghost"
-              onPress={() => onCook('one-pot')}
-            />
+            <Button label="Un one-pot, rapide" variant="ghost" onPress={() => onCook('one-pot')} />
             <Text variant="caption" tone="faint">
               Une seule casserole, {MAX_WEEKDAY_PREP_MINUTES} minutes au plus. Pour un soir de
               semaine où l’on veut autre chose que le batch.
             </Text>
-            <Button label="Un vrai plat cuisiné" variant="ghost" onPress={() => onCook('elaborate')} />
+            <Button
+              label="Un vrai plat cuisiné"
+              variant="ghost"
+              onPress={() => onCook('elaborate')}
+            />
             <Text variant="caption" tone="faint">
-              Sans limite de temps ni d’ustensiles. Les deux demandent une recette au modèle :
-              cela consomme une génération du foyer et modifie la liste de courses.
+              Sans limite de temps ni d’ustensiles. Les deux demandent une recette au modèle : cela
+              consomme une génération du foyer et modifie la liste de courses.
             </Text>
           </View>
           {target?.currentRecipeId ? (
@@ -146,9 +146,8 @@ export function MealChoiceSheet({
                 onPress={() => onDislike(!target.isCurrentDisliked)}
               />
               <Text variant="caption" tone="faint">
-                Le plat sort des propositions du foyer, pour cette semaine comme pour les
-                suivantes. Rien n’est consommé, et la liste des plats bannis se relit dans les
-                réglages.
+                Le plat sort des propositions du foyer, pour cette semaine comme pour les suivantes.
+                Rien n’est consommé, et la liste des plats bannis se relit dans les réglages.
               </Text>
             </View>
           ) : null}

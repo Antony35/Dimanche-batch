@@ -35,7 +35,10 @@ describe('buildGroceryList', () => {
 
   it('ignore les repas issus du batch pour ne pas acheter en double', () => {
     const plan = makePlan([
-      { lunch: { recipeId: 'curry', kind: 'batch-leftover' }, dinner: { recipeId: 'curry', kind: 'cooked' } },
+      {
+        lunch: { recipeId: 'curry', kind: 'batch-leftover' },
+        dinner: { recipeId: 'curry', kind: 'cooked' },
+      },
       { lunch: { recipeId: 'curry', kind: 'batch-leftover' } },
     ]);
 
@@ -97,11 +100,35 @@ describe('buildGroceryList', () => {
 describe('mergePreservingChecked', () => {
   it('conserve les cases cochées lors d’une régénération', () => {
     const previous = [
-      { id: 'oignon--piece', name: 'oignon', qty: 2, unit: 'piece' as const, aisle: 'fruits-legumes' as const, checked: true, fromRecipeIds: ['curry'] },
+      {
+        id: 'oignon--piece',
+        name: 'oignon',
+        qty: 2,
+        unit: 'piece' as const,
+        aisle: 'fruits-legumes' as const,
+        checked: true,
+        fromRecipeIds: ['curry'],
+      },
     ];
     const next = [
-      { id: 'oignon--piece', name: 'oignon', qty: 5, unit: 'piece' as const, aisle: 'fruits-legumes' as const, checked: false, fromRecipeIds: ['curry', 'soupe'] },
-      { id: 'riz--mass', name: 'riz', qty: 300, unit: 'g' as const, aisle: 'epicerie' as const, checked: false, fromRecipeIds: ['soupe'] },
+      {
+        id: 'oignon--piece',
+        name: 'oignon',
+        qty: 5,
+        unit: 'piece' as const,
+        aisle: 'fruits-legumes' as const,
+        checked: false,
+        fromRecipeIds: ['curry', 'soupe'],
+      },
+      {
+        id: 'riz--mass',
+        name: 'riz',
+        qty: 300,
+        unit: 'g' as const,
+        aisle: 'epicerie' as const,
+        checked: false,
+        fromRecipeIds: ['soupe'],
+      },
     ];
 
     const merged = mergePreservingChecked(next, previous);
@@ -113,9 +140,33 @@ describe('mergePreservingChecked', () => {
 
 describe('formatGroceryListForSharing', () => {
   const items = [
-    { id: 'oignon--piece', name: 'oignon', qty: 3, unit: 'piece' as const, aisle: 'fruits-legumes' as const, checked: false, fromRecipeIds: [] },
-    { id: 'riz--mass', name: 'riz', qty: 1500, unit: 'g' as const, aisle: 'epicerie' as const, checked: false, fromRecipeIds: [] },
-    { id: 'sel--mass', name: 'sel', qty: 10, unit: 'g' as const, aisle: 'epicerie' as const, checked: true, fromRecipeIds: [] },
+    {
+      id: 'oignon--piece',
+      name: 'oignon',
+      qty: 3,
+      unit: 'piece' as const,
+      aisle: 'fruits-legumes' as const,
+      checked: false,
+      fromRecipeIds: [],
+    },
+    {
+      id: 'riz--mass',
+      name: 'riz',
+      qty: 1500,
+      unit: 'g' as const,
+      aisle: 'epicerie' as const,
+      checked: false,
+      fromRecipeIds: [],
+    },
+    {
+      id: 'sel--mass',
+      name: 'sel',
+      qty: 10,
+      unit: 'g' as const,
+      aisle: 'epicerie' as const,
+      checked: true,
+      fromRecipeIds: [],
+    },
   ];
 
   it('groupe par rayon et exclut les articles déjà cochés', () => {
@@ -151,11 +202,7 @@ describe('groupByAisle', () => {
     ]);
 
     // Ni l’ordre d’entrée ni l’ordre alphabétique : celui d’AISLES.
-    expect(groups.map((group) => group.aisle)).toEqual([
-      'fruits-legumes',
-      'cremerie',
-      'epicerie',
-    ]);
+    expect(groups.map((group) => group.aisle)).toEqual(['fruits-legumes', 'cremerie', 'epicerie']);
   });
 
   it('réunit dans un seul groupe les articles d’un même rayon, triés par nom', () => {
@@ -236,9 +283,18 @@ describe('buildGroceryList, comptabilité du batch', () => {
       [
         { dinner: { recipeId: 'gratin', kind: 'cooked' } },
         {},
-        { lunch: { recipeId: 'curry', kind: 'batch-leftover' }, dinner: { recipeId: 'curry', kind: 'batch-leftover' } },
-        { lunch: { recipeId: 'curry', kind: 'batch-leftover' }, dinner: { recipeId: 'curry', kind: 'batch-leftover' } },
-        { lunch: { recipeId: 'curry', kind: 'batch-leftover' }, dinner: { recipeId: 'curry', kind: 'batch-leftover' } },
+        {
+          lunch: { recipeId: 'curry', kind: 'batch-leftover' },
+          dinner: { recipeId: 'curry', kind: 'batch-leftover' },
+        },
+        {
+          lunch: { recipeId: 'curry', kind: 'batch-leftover' },
+          dinner: { recipeId: 'curry', kind: 'batch-leftover' },
+        },
+        {
+          lunch: { recipeId: 'curry', kind: 'batch-leftover' },
+          dinner: { recipeId: 'curry', kind: 'batch-leftover' },
+        },
       ],
       '2026-09-12',
       ['curry'],
@@ -262,11 +318,9 @@ describe('buildGroceryList, comptabilité du batch', () => {
   it('ne compte pas deux fois un plat du batch marqué cuisiné', () => {
     // Un plan édité repas par repas peut produire ce cas ; il ne doit pas
     // coûter le double, le plat est déjà acheté au titre du batch.
-    const plan = makePlan(
-      [{ dinner: { recipeId: 'curry', kind: 'cooked' } }],
-      '2026-09-12',
-      ['curry'],
-    );
+    const plan = makePlan([{ dinner: { recipeId: 'curry', kind: 'cooked' } }], '2026-09-12', [
+      'curry',
+    ]);
 
     const items = buildGroceryList(plan, [curry]);
     expect(items).toHaveLength(1);

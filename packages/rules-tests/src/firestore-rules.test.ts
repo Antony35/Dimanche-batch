@@ -168,9 +168,7 @@ describe('verrou de génération', () => {
 
 describe('quota', () => {
   it('est lisible mais jamais modifiable par le client', async () => {
-    await assertSucceeds(
-      getDoc(doc(memberDb(), `households/${HOUSEHOLD_ID}/usage/2026-09-13`)),
-    );
+    await assertSucceeds(getDoc(doc(memberDb(), `households/${HOUSEHOLD_ID}/usage/2026-09-13`)));
     await assertFails(
       updateDoc(doc(memberDb(), `households/${HOUSEHOLD_ID}/usage/2026-09-13`), {
         generations: 0,

@@ -47,9 +47,7 @@ export default function HistoryScreen() {
             description="Les semaines s’ajoutent ici au fil des générations."
           />
         ) : (
-          weeks.map((week) => (
-            <WeekCard key={week.id} week={week} recipesById={recipesById} />
-          ))
+          weeks.map((week) => <WeekCard key={week.id} week={week} recipesById={recipesById} />)
         )}
       </View>
     </Screen>
@@ -72,13 +70,7 @@ function SettingsButton() {
   );
 }
 
-function WeekCard({
-  week,
-  recipesById,
-}: {
-  week: WeeklyPlan;
-  recipesById: Map<string, Recipe>;
-}) {
+function WeekCard({ week, recipesById }: { week: WeeklyPlan; recipesById: Map<string, Recipe> }) {
   const theme = useTheme();
 
   // Les recettes citées par le plan, dans l'ordre où elles y apparaissent.

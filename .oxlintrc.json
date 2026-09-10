@@ -13,11 +13,5 @@
     "unicorn/no-array-sort": "off",
     "unicorn/consistent-function-scoping": "off"
   },
-  "ignorePatterns": [
-    "**/node_modules/**",
-    "**/dist/**",
-    "**/lib/**",
-    "**/.expo/**",
-    "**/.probe/**"
-  ]
+  "ignorePatterns": ["**/node_modules/**", "**/dist/**", "**/lib/**", "**/.expo/**", "**/.probe/**"]
 }

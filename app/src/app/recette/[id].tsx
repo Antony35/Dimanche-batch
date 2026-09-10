@@ -1,12 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useLocalSearchParams } from 'expo-router';
 import { Pressable, View } from 'react-native';
-import {
-  AISLE_LABELS,
-  capitalize,
-  formatQuantity,
-  type Ingredient,
-} from '@dimanche-batch/shared';
+import { AISLE_LABELS, capitalize, formatQuantity, type Ingredient } from '@dimanche-batch/shared';
 import { Card, EmptyState, ErrorState, LoadingState, Screen, Tag, Text } from '@/components/ui';
 import { useHousehold } from '@/features/household/api/use-household';
 import { useRecipes } from '@/features/meal-plan/api/use-recipes';
@@ -51,9 +46,7 @@ export default function RecipeScreen() {
 
   return (
     <Screen>
-      {favorite.error || dislike.error ? (
-        <ErrorState message={VERDICT_WRITE_ERROR} />
-      ) : null}
+      {favorite.error || dislike.error ? <ErrorState message={VERDICT_WRITE_ERROR} /> : null}
 
       <View style={{ gap: theme.spacing.sm }}>
         <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: theme.spacing.md }}>
@@ -67,7 +60,11 @@ export default function RecipeScreen() {
             hitSlop={12}
             onPress={() => {
               if (householdId) {
-                favorite.mutate({ householdId, recipeId: recipe.id, isFavorite: !recipe.isFavorite });
+                favorite.mutate({
+                  householdId,
+                  recipeId: recipe.id,
+                  isFavorite: !recipe.isFavorite,
+                });
               }
             }}
           >
@@ -104,8 +101,8 @@ export default function RecipeScreen() {
 
         {recipe.isDisliked ? (
           <Text variant="caption" style={{ color: theme.colors.danger }}>
-            Ce plat ne sera plus proposé. Il peut rester au menu de la semaine en cours — change
-            le repas depuis le planning.
+            Ce plat ne sera plus proposé. Il peut rester au menu de la semaine en cours — change le
+            repas depuis le planning.
           </Text>
         ) : null}
 
@@ -172,4 +169,3 @@ function IngredientLine({ ingredient }: { ingredient: Ingredient }) {
     </View>
   );
 }
-

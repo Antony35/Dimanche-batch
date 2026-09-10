@@ -13,14 +13,7 @@ import {
   type MealSlot,
   type Recipe,
 } from '@dimanche-batch/shared';
-import {
-  EmptyState,
-  ErrorState,
-  LoadingState,
-  Screen,
-  StaleNotice,
-  Text,
-} from '@/components/ui';
+import { EmptyState, ErrorState, LoadingState, Screen, StaleNotice, Text } from '@/components/ui';
 import { useHousehold } from '@/features/household/api/use-household';
 import { MealCard } from '@/features/meal-plan/components/meal-card';
 import {
@@ -233,4 +226,3 @@ function DaySection({
 function dayOfMonth(iso: string): number {
   return Number(iso.slice(8, 10));
 }
-

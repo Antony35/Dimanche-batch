@@ -2,9 +2,6 @@
   "name": "functions",
   "private": true,
   "main": "lib/index.js",
-  "engines": {
-    "node": "24"
-  },
   "scripts": {
     "build": "tsc --noEmit && node ./esbuild.config.mjs",
     "deploy": "npm run build && firebase deploy --only functions",
@@ -26,5 +23,8 @@
     "esbuild": "^0.28.0",
     "typescript": "^7.0.2",
     "vitest": "^5.0.0"
+  },
+  "engines": {
+    "node": "24"
   }
 }

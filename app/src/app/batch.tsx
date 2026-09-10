@@ -173,4 +173,3 @@ function formatDuration(minutes: number): string {
   const rest = minutes % 60;
   return rest === 0 ? `${hours} h` : `${hours} h ${rest}`;
 }
-

@@ -10,7 +10,11 @@ import {
   SetMealInputSchema,
   WeeklyPlanSchema,
 } from '../weekly-plan';
-import { makeGeneratedRecipe, makeRecipe, makeValidGeneratedPlan } from '../../domain/__tests__/fixtures';
+import {
+  makeGeneratedRecipe,
+  makeRecipe,
+  makeValidGeneratedPlan,
+} from '../../domain/__tests__/fixtures';
 
 /**
  * Les schémas sont la seule défense des frontières du système : réponse Gemini,
@@ -19,7 +23,10 @@ import { makeGeneratedRecipe, makeRecipe, makeValidGeneratedPlan } from '../../d
  * trois écrans plus loin. Ces tests fixent ce que chacun doit refuser.
  */
 
-function expectRejected(schema: { safeParse: (value: unknown) => { success: boolean } }, value: unknown) {
+function expectRejected(
+  schema: { safeParse: (value: unknown) => { success: boolean } },
+  value: unknown,
+) {
   expect(schema.safeParse(value).success).toBe(false);
 }
 
@@ -246,7 +253,9 @@ describe('RegenerateMealInputSchema', () => {
 
   it('accepte un payload complet', () => {
     expect(RegenerateMealInputSchema.safeParse(input).success).toBe(true);
-    expect(RegenerateMealInputSchema.safeParse({ ...input, notes: 'sans porc' }).success).toBe(true);
+    expect(RegenerateMealInputSchema.safeParse({ ...input, notes: 'sans porc' }).success).toBe(
+      true,
+    );
   });
 
   it('n’accepte que les deux créneaux du jour', () => {
