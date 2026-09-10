@@ -27,6 +27,4 @@ export function useTheme(): Theme {
   };
 }
 
-export { darkPalette, lightPalette, radius, spacing, typography };
-export type { Palette };
 export type { TypographyVariant } from './tokens';

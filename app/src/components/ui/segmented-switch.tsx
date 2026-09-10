@@ -2,7 +2,7 @@ import { Pressable, View } from 'react-native';
 import { Text } from './text';
 import { useTheme } from '@/theme';
 
-export interface SegmentedOption<T extends string> {
+interface SegmentedOption<T extends string> {
   value: T;
   label: string;
 }

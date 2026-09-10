@@ -64,6 +64,7 @@ une semaine, mais jamais au prix d'une dette qui bloquerait la v2.
 | Tests | Vitest : domaine pur, callables contre l'émulateur Firestore, Security Rules via `@firebase/rules-unit-testing` | L'émulateur exige un JRE installé — voir §7 |
 | CI | GitHub Actions, sur chaque push et chaque PR | Alerte, ne bloque pas. Aucun secret : le dépôt est public |
 | Lint | oxlint, config à la racine (`.oxlintrc.json`) | Couvre les quatre workspaces, pas seulement `app/` |
+| Code mort | knip (`knip.json`), lancé par la CI | Fichiers, exports et dépendances que plus personne n'utilise |
 
 ---
 
@@ -422,6 +423,22 @@ dans cet ordre d'importance :
 
 Ce qu'on a perdu est en §9 : les trois règles d'`eslint-plugin-expo`.
 
+### Le code mort
+
+`knip` cherche ce que ni le typage ni le lint ne voient : un fichier que plus
+rien n'atteint, un export que personne n'importe, une dépendance déclarée et
+jamais utilisée. C'est ce qu'on cherchait à la main à chaque audit, et la
+première exécution a trouvé **sept dépendances mortes** — dont six paquets
+`expo-*` qu'EAS compilait dans l'APK pour rien.
+
+Deux réglages méritent leur explication, dans `knip.json` :
+`scripts/probe-gemini.ts` est déclaré point d'entrée parce qu'aucun import n'y
+mène — c'est esbuild qui le construit ; et la règle `duplicates` est désactivée
+parce que `WeekIdSchema = IsoDateSchema` est un alias voulu, décrit au §5.
+
+La CI le fait échouer. Une dépendance inutilisée compile parfaitement et se
+déploie sans un mot : c'est le genre de chose qu'il faut une machine pour voir.
+
 ### La CI
 
 `.github/workflows/ci.yml` lance sur chaque push et chaque PR ce que `test:all`
@@ -485,7 +502,8 @@ npm run test:rules               # Security Rules sur émulateur
 npm run test:all                 # les trois, dans cet ordre
 GEMINI_API_KEY=… npm run gemini:probe   # chaîne de génération, sans déployer
 npm run typecheck                # tsc --noEmit sur tous les workspaces
-npm run lint
+npm run lint                     # oxlint, les quatre workspaces
+npm run knip                     # code mort : fichiers, exports, dépendances
 npm run test:coverage           # couverture du domaine partagé
 npm run deploy:rules
 npm run deploy:functions
@@ -560,6 +578,7 @@ Ce qui est **délibérément** simple en v1, et où brancher la suite :
 | Goûts | **fait** | Favoris et plats bannis réunis sur un écran unique atteint des réglages — ce sont les deux valeurs d'un même champ, les séparer cachait le lien. `SegmentedSwitch` extrait de `WeekSwitch`, `splitByVerdict` dans le domaine |
 | CI | **fait** | GitHub Actions sur chaque push et chaque PR ; `.nvmrc` comme source unique de la version de Node ; Renovate en tableau de bord, les paquets du SDK Expo exclus au profit d'`expo install --check` |
 | Montées | **fait** | `firebase-tools` 15, `firebase-admin` 14, Vitest 5 (par la v4), `@google/genai` 2. Seuil de couverture appliqué par la CI. Plus aucune faille critique ni élevée |
+| Outillage | **fait** | knip contre le code mort (7 dépendances mortes trouvées d'emblée), sept paquets `expo-*` retirés de l'APK, TypeScript exclu du contrôle de version d'Expo pour que son alerte reste vraie |
 | Lint | **fait** | oxlint remplace ESLint : les quatre workspaces couverts au lieu d'un seul, trois imports morts trouvés d'emblée, et TypeScript 7 débloqué — `@typescript-eslint` plafonnait le projet sous TS 6 |
 | J7 | à faire | Build EAS, installation, premier vrai dimanche |
 

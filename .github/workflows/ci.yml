@@ -85,6 +85,12 @@ jobs:
       # plus quand ils sont complets. La commande échoue s'ils redescendent.
       - run: npm run test:coverage
 
+      # Code mort : fichiers, exports et dépendances que plus personne
+      # n'utilise. C'est ce qu'on cherchait à la main à chaque audit, et ce que
+      # ni le typage ni le lint ne voient — une dépendance inutilisée compile
+      # parfaitement, et part quand même dans l'APK.
+      - run: npm run knip
+
       # La matrice de versions d'Expo est dictée par le SDK, pas par le semver
       # npm : c'est ici qu'on surveille sa dérive, et pas dans Renovate, qui
       # proposerait des montées qu'Expo ne supporte pas.
