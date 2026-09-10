@@ -20,7 +20,7 @@ import {
  * stockée avec le plan, ce qui permet de savoir quelle formulation a produit
  * quel résultat.
  */
-export const PROMPT_VERSION = 5;
+export const PROMPT_VERSION = 6;
 
 /**
  * Exigences portant sur une recette, indépendamment du contexte qui la demande.
@@ -76,7 +76,9 @@ export const MEAL_REPLACEMENT_SYSTEM_INSTRUCTION = `Tu proposes une recette de r
 Tu ne produis qu'une seule recette. Le reste de la semaine est fixé et ne doit pas être remis en cause.
 
 CONTRAINTE DE SEMAINE
-Une recette servie du lundi au vendredi (dayIndex 0 à 4) doit porter l'étiquette "one-pot" et se préparer en ${MAX_WEEKDAY_PREP_MINUTES} minutes ou moins. Après une journée de travail, personne ne sort trois casseroles. Le samedi et le dimanche échappent à cette contrainte.
+La semaine va du SAMEDI au VENDREDI, et les dayIndex suivent cet ordre : 0 samedi, 1 dimanche, 2 lundi, 3 mardi, 4 mercredi, 5 jeudi, 6 vendredi.
+
+Une recette servie du lundi au vendredi (dayIndex 2 à 6) doit porter l'étiquette "one-pot" et se préparer en ${MAX_WEEKDAY_PREP_MINUTES} minutes ou moins. Après une journée de travail, personne ne sort trois casseroles. Le samedi (0) et le dimanche (1) échappent à cette contrainte.
 
 ${RECIPE_STYLE}`;
 

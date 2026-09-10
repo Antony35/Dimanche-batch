@@ -1,5 +1,6 @@
 import { useLocalSearchParams } from 'expo-router';
-import { View } from 'react-native';
+import { useKeepAwake } from 'expo-keep-awake';
+import { Pressable, View } from 'react-native';
 import {
   AISLE_LABELS,
   formatQuantity,
@@ -10,7 +11,12 @@ import {
   type BatchRecipe,
 } from '@dimanche-batch/shared';
 import { Card, EmptyState, ErrorState, LoadingState, Screen, Tag, Text } from '@/components/ui';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useHousehold } from '@/features/household/api/use-household';
+import {
+  useBatchProgress,
+  type BatchProgressState,
+} from '@/features/meal-plan/api/use-batch-progress';
 import { useRecipes } from '@/features/meal-plan/api/use-recipes';
 import { useWeeklyPlan } from '@/features/meal-plan/api/use-weekly-plan';
 import { useTheme } from '@/theme';
@@ -25,6 +31,10 @@ import { useTheme } from '@/theme';
  */
 export default function BatchScreen() {
   const theme = useTheme();
+  // Trois heures de cuisine, les mains prises : l'écran ne doit pas s'éteindre
+  // toutes les trente secondes. Actif sur ce seul écran, et rendu à Android dès
+  // qu'on en sort.
+  useKeepAwake();
   const { week } = useLocalSearchParams<{ week?: string }>();
   const { household } = useHousehold();
 
@@ -32,6 +42,7 @@ export default function BatchScreen() {
   const householdId = household?.id ?? null;
   const { plan, isLoading, error } = useWeeklyPlan(householdId, weekId);
   const { recipesById } = useRecipes(householdId);
+  const progress = useBatchProgress(householdId, weekId);
 
   if (isLoading) {
     return (
@@ -80,15 +91,30 @@ export default function BatchScreen() {
       </View>
 
       {session.recipes.map((entry, index) => (
-        <BatchRecipeCard key={entry.recipe.id} entry={entry} position={index + 1} />
+        <BatchRecipeCard
+          key={entry.recipe.id}
+          entry={entry}
+          position={index + 1}
+          progress={progress}
+        />
       ))}
     </Screen>
   );
 }
 
-function BatchRecipeCard({ entry, position }: { entry: BatchRecipe; position: number }) {
+function BatchRecipeCard({
+  entry,
+  position,
+  progress,
+}: {
+  entry: BatchRecipe;
+  position: number;
+  progress: BatchProgressState;
+}) {
   const theme = useTheme();
   const { recipe } = entry;
+  const stepCount = recipe.steps.length;
+  const done = progress.checkedCount(recipe.id, stepCount);
 
   return (
     <Card style={{ gap: theme.spacing.md }}>
@@ -142,16 +168,49 @@ function BatchRecipeCard({ entry, position }: { entry: BatchRecipe; position: nu
 
       <View style={{ gap: theme.spacing.xs }}>
         <Text variant="overline" tone="faint">
-          ÉTAPES
+          ÉTAPES {done > 0 ? `· ${done}/${stepCount}` : ''}
         </Text>
-        {recipe.steps.map((step, index) => (
-          <View key={step} style={{ flexDirection: 'row', gap: theme.spacing.md }}>
-            <Text variant="bodyStrong" tone="accent" style={{ minWidth: 20 }}>
-              {index + 1}
-            </Text>
-            <Text style={{ flex: 1 }}>{step}</Text>
-          </View>
-        ))}
+        {/*
+          La clé porte l'index et non le texte : deux étapes identiques dans une
+          même recette (« Réserver. ») entreraient sinon en collision, ce qui se
+          voit dès qu'on coche.
+        */}
+        {recipe.steps.map((step, index) => {
+          const isChecked = progress.isChecked(recipe.id, index, stepCount);
+          return (
+            <Pressable
+              key={`${recipe.id}-${index}`}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: isChecked }}
+              accessibilityLabel={`Étape ${index + 1} : ${step}`}
+              onPress={() => progress.toggleStep(recipe.id, index, stepCount)}
+              hitSlop={6}
+              style={{ flexDirection: 'row', gap: theme.spacing.md, paddingVertical: 2 }}
+            >
+              {isChecked ? (
+                <Ionicons
+                  name="checkmark-circle"
+                  size={18}
+                  color={theme.colors.accent}
+                  style={{ minWidth: 20 }}
+                />
+              ) : (
+                <Text variant="bodyStrong" tone="accent" style={{ minWidth: 20 }}>
+                  {index + 1}
+                </Text>
+              )}
+              <Text
+                style={{
+                  flex: 1,
+                  textDecorationLine: isChecked ? 'line-through' : 'none',
+                  color: isChecked ? theme.colors.inkFaint : theme.colors.ink,
+                }}
+              >
+                {step}
+              </Text>
+            </Pressable>
+          );
+        })}
       </View>
     </Card>
   );
