@@ -10,8 +10,8 @@ import { makeRecipe } from './fixtures';
  */
 describe('splitByVerdict', () => {
   it('rend deux listes vides pour un foyer sans verdict', () => {
-    expect(splitByVerdict([])).toEqual({ favorites: [], banned: [] });
-    expect(splitByVerdict([makeRecipe({ id: 'curry' })])).toEqual({ favorites: [], banned: [] });
+    expect(splitByVerdict([])).toEqual({ favorite: [], banned: [] });
+    expect(splitByVerdict([makeRecipe({ id: 'curry' })])).toEqual({ favorite: [], banned: [] });
   });
 
   it('range chaque plat dans une seule liste', () => {
@@ -21,7 +21,7 @@ describe('splitByVerdict', () => {
       makeRecipe({ id: 'soupe', name: 'Soupe' }),
     ]);
 
-    expect(tastes.favorites.map((recipe) => recipe.id)).toEqual(['chili']);
+    expect(tastes.favorite.map((recipe) => recipe.id)).toEqual(['chili']);
     expect(tastes.banned.map((recipe) => recipe.id)).toEqual(['gratin']);
   });
 
@@ -32,7 +32,7 @@ describe('splitByVerdict', () => {
       makeRecipe({ id: 'gratin', name: 'Gratin', isFavorite: true, isDisliked: true }),
     ]);
 
-    expect(tastes.favorites).toEqual([]);
+    expect(tastes.favorite).toEqual([]);
     expect(tastes.banned.map((recipe) => recipe.id)).toEqual(['gratin']);
   });
 
@@ -43,7 +43,7 @@ describe('splitByVerdict', () => {
       makeRecipe({ id: 'b', name: 'Bœuf carottes', isFavorite: true }),
     ]);
 
-    expect(tastes.favorites.map((recipe) => recipe.name)).toEqual([
+    expect(tastes.favorite.map((recipe) => recipe.name)).toEqual([
       'Bœuf carottes',
       'Épinards à la crème',
       'Fajitas',
@@ -53,6 +53,6 @@ describe('splitByVerdict', () => {
   it('accepte les valeurs d’une Map, comme les rend `useRecipes`', () => {
     const recipes = new Map([['chili', makeRecipe({ id: 'chili', isFavorite: true })]]);
 
-    expect(splitByVerdict(recipes.values()).favorites).toHaveLength(1);
+    expect(splitByVerdict(recipes.values()).favorite).toHaveLength(1);
   });
 });

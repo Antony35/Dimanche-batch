@@ -11,6 +11,7 @@ import { Card, EmptyState, ErrorState, LoadingState, Screen, Tag, Text } from '@
 import { useHousehold } from '@/features/household/api/use-household';
 import { useRecipes } from '@/features/meal-plan/api/use-recipes';
 import {
+  VERDICT_WRITE_ERROR,
   useToggleDislike,
   useToggleFavorite,
 } from '@/features/recipes/api/use-recipe-verdict';
@@ -51,7 +52,7 @@ export default function RecipeScreen() {
   return (
     <Screen>
       {favorite.error || dislike.error ? (
-        <ErrorState message="Ton choix n’a pas pu être enregistré. Vérifie ta connexion." />
+        <ErrorState message={VERDICT_WRITE_ERROR} />
       ) : null}
 
       <View style={{ gap: theme.spacing.sm }}>

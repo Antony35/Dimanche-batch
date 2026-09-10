@@ -22,7 +22,7 @@ export default function SettingsScreen() {
   // Le seul usage des recettes ici : dire s'il vaut la peine d'ouvrir l'écran
   // des goûts. Deux nombres valent mieux qu'une ligne muette.
   const { recipesById } = useRecipes(household?.id ?? null);
-  const { favorites, banned } = splitByVerdict(recipesById.values());
+  const tastes = splitByVerdict(recipesById.values());
 
   return (
     <Screen>
@@ -70,8 +70,8 @@ export default function SettingsScreen() {
         </Text>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md }}>
           <Text tone="soft" style={{ flex: 1 }}>
-            {favorites.length} favori{favorites.length > 1 ? 's' : ''} · {banned.length} banni
-            {banned.length > 1 ? 's' : ''}
+            {tastes.favorite.length} favori{tastes.favorite.length > 1 ? 's' : ''} ·{' '}
+            {tastes.banned.length} banni{tastes.banned.length > 1 ? 's' : ''}
           </Text>
           <Ionicons name="chevron-forward" size={18} color={theme.colors.inkFaint} />
         </View>

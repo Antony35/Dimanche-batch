@@ -1,13 +1,25 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useRouter } from 'expo-router';
 import { Pressable, View } from 'react-native';
-import type { Recipe } from '@dimanche-batch/shared';
+import type { Recipe, RecipeVerdict } from '@dimanche-batch/shared';
 import { Card, Tag, Text } from '@/components/ui';
 import { useTheme } from '@/theme';
 
+/**
+ * Ce que chaque verdict porte à l'écran. La teinte est une clé du thème et non
+ * une couleur : une valeur en dur ici contournerait le mode sombre.
+ */
+const MARKS: Record<
+  RecipeVerdict,
+  { icon: 'heart' | 'close-circle'; tone: 'spice' | 'danger'; action: string }
+> = {
+  favorite: { icon: 'heart', tone: 'spice', action: 'Retirer' },
+  banned: { icon: 'close-circle', tone: 'danger', action: 'Rétablir' },
+};
+
 export interface PreferenceCardProps {
   recipe: Recipe;
-  verdict: 'favorite' | 'banned';
+  verdict: RecipeVerdict;
   /** Lève le verdict — retire des favoris, ou rétablit un plat banni. */
   onToggle: () => void;
 }
@@ -22,30 +34,23 @@ export interface PreferenceCardProps {
 export function PreferenceCard({ recipe, verdict, onToggle }: PreferenceCardProps) {
   const theme = useTheme();
   const router = useRouter();
-
-  const isFavorite = verdict === 'favorite';
+  const mark = MARKS[verdict];
 
   return (
     <Card onPress={() => router.push(`/recette/${recipe.id}`)}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm }}>
-        <Ionicons
-          name={isFavorite ? 'heart' : 'close-circle'}
-          size={16}
-          color={isFavorite ? theme.colors.spice : theme.colors.danger}
-        />
+        <Ionicons name={mark.icon} size={16} color={theme.colors[mark.tone]} />
         <Text variant="heading" style={{ flex: 1 }}>
           {recipe.name}
         </Text>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={
-            isFavorite ? `Retirer ${recipe.name} des favoris` : `Reproposer ${recipe.name}`
-          }
+          accessibilityLabel={`${mark.action} ${recipe.name}`}
           hitSlop={12}
           onPress={onToggle}
         >
           <Text variant="caption" tone="accent">
-            {isFavorite ? 'Retirer' : 'Rétablir'}
+            {mark.action}
           </Text>
         </Pressable>
       </View>

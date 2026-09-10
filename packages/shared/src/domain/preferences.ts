@@ -1,34 +1,34 @@
 import type { Recipe } from '../schemas/recipe';
 
+/** Ce que le foyer peut penser d'une recette, en dehors de l'indifférence. */
+const RECIPE_VERDICTS = ['favorite', 'banned'] as const;
+export type RecipeVerdict = (typeof RECIPE_VERDICTS)[number];
+
 /**
- * Ce que le foyer aime et ce qu'il refuse.
+ * Les recettes du foyer rangées par verdict.
  *
  * Les deux listes sont les deux faces du même champ : un plat passe de l'une à
- * l'autre, jamais dans les deux. Les produire ensemble est ce qui rend cette
- * exclusivité visible — deux filtres séparés laisseraient croire à deux notions
- * indépendantes.
+ * l'autre, jamais dans les deux. Les produire ensemble, et les indexer par le
+ * verdict lui-même, est ce qui permet à l'écran de choisir sa liste sans
+ * rebrancher sur la valeur.
  */
-export interface HouseholdTastes {
-  favorites: Recipe[];
-  banned: Recipe[];
-}
+export type HouseholdTastes = Record<RecipeVerdict, Recipe[]>;
 
 /** Les deux verdicts du foyer, triés par nom, en une seule passe. */
 export function splitByVerdict(recipes: Iterable<Recipe>): HouseholdTastes {
-  const favorites: Recipe[] = [];
-  const banned: Recipe[] = [];
+  const tastes: HouseholdTastes = { favorite: [], banned: [] };
 
   for (const recipe of recipes) {
     // Le rejet l'emporte. Les Security Rules bornent les champs modifiables,
     // pas leur cohérence : un plat à la fois favori et banni reste possible, et
     // le serveur tranche déjà dans le même sens (`readFavoriteRecipeNames`).
-    if (recipe.isDisliked) banned.push(recipe);
-    else if (recipe.isFavorite) favorites.push(recipe);
+    if (recipe.isDisliked) tastes.banned.push(recipe);
+    else if (recipe.isFavorite) tastes.favorite.push(recipe);
   }
 
-  return { favorites: sortByName(favorites), banned: sortByName(banned) };
-}
+  for (const verdict of RECIPE_VERDICTS) {
+    tastes[verdict].sort((a, b) => a.name.localeCompare(b.name, 'fr'));
+  }
 
-function sortByName(recipes: Recipe[]): Recipe[] {
-  return recipes.sort((a, b) => a.name.localeCompare(b.name, 'fr'));
+  return tastes;
 }
