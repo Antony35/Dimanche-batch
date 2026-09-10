@@ -33,6 +33,7 @@ import { useGenerationProgress } from '@/features/meal-plan/api/use-generation-p
 import { useRegenerateMeal } from '@/features/meal-plan/api/use-regenerate-meal';
 import { useSetMeal } from '@/features/meal-plan/api/use-set-meal';
 import { useWeeklyPlan } from '@/features/meal-plan/api/use-weekly-plan';
+import { useToggleDislike } from '@/features/recipes/api/use-recipe-verdict';
 import { useTheme } from '@/theme';
 
 /** Les 7 jours de la semaine, du samedi au vendredi. */
@@ -51,6 +52,7 @@ export default function PlanningScreen() {
   const { recipesById } = useRecipes(householdId);
   const regenerate = useRegenerateMeal();
   const choose = useSetMeal();
+  const dislike = useToggleDislike();
 
   const [target, setTarget] = useState<MealChoiceTarget | null>(null);
   const progress = useGenerationProgress(householdId, weekId);
@@ -80,6 +82,9 @@ export default function PlanningScreen() {
       {error ? <ErrorState message={error.message} /> : null}
       {regenerate.error ? <ErrorState message={regenerate.error.message} /> : null}
       {choose.error ? <ErrorState message={choose.error.message} /> : null}
+      {dislike.error ? (
+        <ErrorState message="Le plat n’a pas pu être banni. Vérifie ta connexion." />
+      ) : null}
 
       {isLoading ? (
         <LoadingState />
@@ -97,8 +102,18 @@ export default function PlanningScreen() {
             recipesById={recipesById}
             pending={pendingSlot}
             progress={progress}
-            onChoose={(slot, currentRecipeName) =>
-              setTarget({ date: day.date, slot, currentRecipeName })
+            onChoose={(slot, currentRecipeId) =>
+              setTarget({
+                date: day.date,
+                slot,
+                currentRecipeId,
+                currentRecipeName: currentRecipeId
+                  ? (recipesById.get(currentRecipeId)?.name ?? null)
+                  : null,
+                isCurrentDisliked: currentRecipeId
+                  ? (recipesById.get(currentRecipeId)?.isDisliked ?? false)
+                  : false,
+              })
             }
           />
         ))
@@ -144,6 +159,18 @@ export default function PlanningScreen() {
           }
           closeSheet();
         }}
+        onDislike={(isDisliked) => {
+          if (householdId && target?.currentRecipeId) {
+            dislike.mutate({
+              householdId,
+              recipeId: target.currentRecipeId,
+              isDisliked,
+            });
+            // La feuille reste ouverte : les trois façons de remplacer le plat
+            // sont juste dessous, et c'est le moment où l'on y pense.
+            setTarget({ ...target, isCurrentDisliked: isDisliked });
+          }
+        }}
       />
     </Screen>
   );
@@ -163,12 +190,9 @@ function DaySection({
   /** Créneau en cours d'enregistrement, s'il y en a un. */
   pending: { date: string; slot: MealSlot } | undefined;
   progress: GenerationLock | null;
-  onChoose: (slot: MealSlot, currentRecipeName: string | null) => void;
+  onChoose: (slot: MealSlot, currentRecipeId: string | null) => void;
 }) {
   const theme = useTheme();
-
-  const nameOf = (recipeId: string | null) =>
-    recipeId ? (recipesById.get(recipeId)?.name ?? null) : null;
 
   const isPending = (slot: MealSlot) => pending?.date === day.date && pending.slot === slot;
 
@@ -191,7 +215,7 @@ function DaySection({
         recipesById={recipesById}
         isRegenerating={isPending('lunch')}
         progress={progress}
-        onChangeMeal={() => onChoose('lunch', nameOf(day.lunch.recipeId))}
+        onChangeMeal={() => onChoose('lunch', day.lunch.recipeId)}
       />
       <MealCard
         label="Soir"
@@ -199,7 +223,7 @@ function DaySection({
         recipesById={recipesById}
         isRegenerating={isPending('dinner')}
         progress={progress}
-        onChangeMeal={() => onChoose('dinner', nameOf(day.dinner.recipeId))}
+        onChangeMeal={() => onChoose('dinner', day.dinner.recipeId)}
       />
     </View>
   );

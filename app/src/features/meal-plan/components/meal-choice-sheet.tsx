@@ -13,6 +13,10 @@ export interface MealChoiceTarget {
   slot: MealSlot;
   /** Nom du plat actuellement prévu, pour que l'utilisateur sache ce qu'il remplace. */
   currentRecipeName: string | null;
+  /** Identifiant du même plat : le bannissement écrit sur son document. */
+  currentRecipeId: string | null;
+  /** Vrai si le foyer l'a déjà banni — le bouton devient alors une levée. */
+  isCurrentDisliked: boolean;
 }
 
 export interface MealChoiceSheetProps {
@@ -23,6 +27,8 @@ export interface MealChoiceSheetProps {
   onCook: (style: MealStyle) => void;
   onServeBatch: (recipeId: string) => void;
   onEatOut: () => void;
+  /** Bannit le plat en place, ou lève son bannissement. */
+  onDislike: (isDisliked: boolean) => void;
 }
 
 /**
@@ -39,6 +45,7 @@ export function MealChoiceSheet({
   onCook,
   onServeBatch,
   onEatOut,
+  onDislike,
 }: MealChoiceSheetProps) {
   const theme = useTheme();
 
@@ -70,6 +77,16 @@ export function MealChoiceSheet({
             </Text>
           ) : null}
         </View>
+
+        {target?.isCurrentDisliked ? (
+          <Card>
+            <Text variant="bodyStrong">Noté, on ne te le reproposera plus.</Text>
+            <Text variant="caption" tone="soft">
+              Il reste au menu cette semaine : choisis ci-dessous pour le remplacer, ou garde-le
+              une dernière fois.
+            </Text>
+          </Card>
+        ) : null}
 
         <ScrollView contentContainerStyle={{ gap: theme.spacing.md }}>
           {batchRecipes.length > 0 ? (
@@ -114,6 +131,27 @@ export function MealChoiceSheet({
               cela consomme une génération du foyer et modifie la liste de courses.
             </Text>
           </View>
+          {target?.currentRecipeId ? (
+            <View style={{ gap: theme.spacing.sm }}>
+              <Text variant="overline" tone="faint">
+                CE PLAT NE ME PLAÎT PAS
+              </Text>
+              <Button
+                label={
+                  target.isCurrentDisliked
+                    ? 'Finalement, on peut me le reproposer'
+                    : 'Ne plus jamais me le proposer'
+                }
+                variant="ghost"
+                onPress={() => onDislike(!target.isCurrentDisliked)}
+              />
+              <Text variant="caption" tone="faint">
+                Le plat sort des propositions du foyer, pour cette semaine comme pour les
+                suivantes. Rien n’est consommé, et la liste des plats bannis se relit dans les
+                réglages.
+              </Text>
+            </View>
+          ) : null}
         </ScrollView>
 
         <Button label="Annuler" variant="ghost" onPress={onClose} />

@@ -54,7 +54,9 @@ service cloud.firestore {
 
       match /recipes/{recipeId} {
         allow read: if isMember(householdId);
-        allow update: if isMember(householdId) && onlyChanges(['isFavorite']);
+        // Les deux verdicts du foyer, et rien d'autre. Ils partent ensemble
+        // parce qu'ils s'excluent : mettre en favori lève le bannissement.
+        allow update: if isMember(householdId) && onlyChanges(['isFavorite', 'isDisliked']);
         allow create, delete: if false;
       }
 

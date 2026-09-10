@@ -10,7 +10,10 @@ import {
 import { Card, EmptyState, ErrorState, LoadingState, Screen, Tag, Text } from '@/components/ui';
 import { useHousehold } from '@/features/household/api/use-household';
 import { useRecipes } from '@/features/meal-plan/api/use-recipes';
-import { useToggleFavorite } from '@/features/recipes/api/use-toggle-favorite';
+import {
+  useToggleDislike,
+  useToggleFavorite,
+} from '@/features/recipes/api/use-recipe-verdict';
 import { useTheme } from '@/theme';
 
 /** Fiche complète d'une recette : ce qu'il faut acheter, et quoi en faire. */
@@ -22,6 +25,7 @@ export default function RecipeScreen() {
   const householdId = household?.id ?? null;
   const { recipesById, isLoading } = useRecipes(householdId);
   const favorite = useToggleFavorite();
+  const dislike = useToggleDislike();
 
   const recipe = recipesById.get(id);
 
@@ -46,8 +50,8 @@ export default function RecipeScreen() {
 
   return (
     <Screen>
-      {favorite.error ? (
-        <ErrorState message="Le favori n’a pas pu être enregistré. Vérifie ta connexion." />
+      {favorite.error || dislike.error ? (
+        <ErrorState message="Ton choix n’a pas pu être enregistré. Vérifie ta connexion." />
       ) : null}
 
       <View style={{ gap: theme.spacing.sm }}>
@@ -72,7 +76,37 @@ export default function RecipeScreen() {
               color={recipe.isFavorite ? theme.colors.spice : theme.colors.inkFaint}
             />
           </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={
+              recipe.isDisliked ? 'Reproposer ce plat' : 'Ne plus jamais proposer ce plat'
+            }
+            accessibilityState={{ selected: recipe.isDisliked }}
+            hitSlop={12}
+            onPress={() => {
+              if (householdId) {
+                dislike.mutate({
+                  householdId,
+                  recipeId: recipe.id,
+                  isDisliked: !recipe.isDisliked,
+                });
+              }
+            }}
+          >
+            <Ionicons
+              name={recipe.isDisliked ? 'close-circle' : 'close-circle-outline'}
+              size={28}
+              color={recipe.isDisliked ? theme.colors.danger : theme.colors.inkFaint}
+            />
+          </Pressable>
         </View>
+
+        {recipe.isDisliked ? (
+          <Text variant="caption" style={{ color: theme.colors.danger }}>
+            Ce plat ne sera plus proposé. Il peut rester au menu de la semaine en cours — change
+            le repas depuis le planning.
+          </Text>
+        ) : null}
 
         <Text tone="soft">
           {recipe.prepMinutes} min · {recipe.servings} portions

@@ -105,6 +105,15 @@ describe('recipes', () => {
     );
   });
 
+  it('autorise le bannissement, qui lève le favori dans la même écriture', async () => {
+    await assertSucceeds(
+      updateDoc(doc(memberDb(), `households/${HOUSEHOLD_ID}/recipes/recipe-1`), {
+        isFavorite: false,
+        isDisliked: true,
+      }),
+    );
+  });
+
   it('refuse la modification du contenu d’une recette', async () => {
     await assertFails(
       updateDoc(doc(memberDb(), `households/${HOUSEHOLD_ID}/recipes/recipe-1`), {
@@ -115,6 +124,13 @@ describe('recipes', () => {
       updateDoc(doc(memberDb(), `households/${HOUSEHOLD_ID}/recipes/recipe-1`), {
         isFavorite: true,
         prepMinutes: 5,
+      }),
+    );
+    // Un verdict ne sert pas de cheval de Troie pour le reste du document.
+    await assertFails(
+      updateDoc(doc(memberDb(), `households/${HOUSEHOLD_ID}/recipes/recipe-1`), {
+        isDisliked: true,
+        name: 'Recette réécrite',
       }),
     );
   });

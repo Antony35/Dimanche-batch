@@ -60,6 +60,7 @@ export async function seed(testEnv: RulesTestEnvironment): Promise<void> {
       steps: ['Cuire.'],
       lastUsedAt: null,
       isFavorite: false,
+      isDisliked: false,
       createdAt: Date.now(),
     });
 
