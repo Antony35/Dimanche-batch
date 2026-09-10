@@ -29,9 +29,9 @@ jobs:
     timeout-minutes: 20
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -39,7 +39,7 @@ jobs:
       # L'émulateur Firestore tourne sur la JVM. Sans JRE il ne démarre pas, et
       # son message d'erreur ne le dit pas clairement — c'est ce qui nous avait
       # bloqués en local.
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '21'
@@ -47,7 +47,7 @@ jobs:
       # Le JAR de l'émulateur pèse plusieurs dizaines de Mo et se
       # retéléchargerait à chaque exécution.
       - name: Cache des émulateurs Firebase
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/firebase/emulators
           key: firebase-emulators-${{ runner.os }}
@@ -82,9 +82,20 @@ jobs:
 
       # La matrice de versions d'Expo est dictée par le SDK, pas par le semver
       # npm : c'est ici qu'on surveille sa dérive, et pas dans Renovate, qui
-      # proposerait des montées qu'Expo ne supporte pas. Informatif : une
-      # montante Expo ne doit pas rendre la CI rouge.
+      # proposerait des montées qu'Expo ne supporte pas.
+      #
+      # Une montante Expo ne doit pas rendre la CI rouge. Mais un simple
+      # `continue-on-error` afficherait le pas comme réussi et enterrerait
+      # l'alerte dans les logs — or c'est précisément l'alerte qu'on veut. On
+      # émet donc une annotation, visible sur la page du run.
       - name: Dérive de la matrice Expo
         working-directory: app
-        continue-on-error: true
-        run: npx expo install --check
+        run: |
+          if npx expo install --check > /tmp/expo-check.log 2>&1; then
+            echo "Matrice Expo alignée."
+          else
+            cat /tmp/expo-check.log
+            paquets=$(grep -oE '^ +[^ ]+ - expected version: [^ ]+' /tmp/expo-check.log \
+              | sed 's/^ *//' | paste -sd ';' - | sed 's/;/; /g')
+            echo "::warning title=Matrice Expo en retard::${paquets:-voir les logs} — réaligner avec: cd app && npx expo install --fix"
+          fi
