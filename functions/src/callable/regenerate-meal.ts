@@ -2,7 +2,6 @@ import { onCall } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions';
 import {
   RegenerateMealInputSchema,
-  WeeklyPlanSchema,
   findMeal,
   paths,
   type RegenerateMealInput,

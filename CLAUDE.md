@@ -63,7 +63,7 @@ une semaine, mais jamais au prix d'une dette qui bloquerait la v2.
 | Validation | Zod, partagé client/serveur | |
 | Tests | Vitest : domaine pur, callables contre l'émulateur Firestore, Security Rules via `@firebase/rules-unit-testing` | L'émulateur exige un JRE installé — voir §7 |
 | CI | GitHub Actions, sur chaque push et chaque PR | Alerte, ne bloque pas. Aucun secret : le dépôt est public |
-| Lint | ESLint (`eslint-config-expo`), config dans `app/` | |
+| Lint | oxlint, config à la racine (`.oxlintrc.json`) | Couvre les quatre workspaces, pas seulement `app/` |
 
 ---
 
@@ -402,6 +402,26 @@ dossier où vit le code.
 | `npm run test:functions` | `functions/src` : guards, quota, écriture du plan, politique de reprise, classification des erreurs Gemini | démarre l'émulateur Firestore |
 | `npm run test:rules` | `firestore.rules` face à un client non privilégié | démarre l'émulateur Firestore |
 
+### Le lint
+
+`oxlint` (config `.oxlintrc.json` à la racine) a remplacé ESLint. Trois raisons,
+dans cet ordre d'importance :
+
+1. **Il couvre les quatre workspaces.** ESLint ne lisait que `app/` — c'était une
+   limite documentée ici même. Dès la première exécution, oxlint a trouvé trois
+   imports morts dans `functions/` et `packages/rules-tests/` qu'aucun audit
+   n'avait vus.
+2. **Il garde ce qui compte.** Les règles React Compiler sont natives, dont
+   `set-state-in-effect` — celle sur laquelle s'appuie la convention du §7 — et
+   `no-deriving-state-in-effects`, qui énonce littéralement la règle « dériver
+   l'état au rendu ». Vérifié en écrivant les fautes exprès.
+3. **Il ne dépend pas du compilateur TypeScript**, là où `@typescript-eslint`
+   plafonnait le projet sous TypeScript 6. C'est ce qui a débloqué TS 7.
+
+0,36 s sur tout le dépôt, contre 1,39 s pour ESLint sur `app/` seul.
+
+Ce qu'on a perdu est en §9 : les trois règles d'`eslint-plugin-expo`.
+
 ### La CI
 
 `.github/workflows/ci.yml` lance sur chaque push et chaque PR ce que `test:all`
@@ -426,9 +446,8 @@ vérifié — et la CI serait moins stricte que la machine locale. Aucune
 sous-commande de génération n'existe dans le CLI d'Expo SDK 57 ; seul `start`
 produit ce fichier.
 
-Le lint ne couvre que `app/` : c'est le seul workspace à porter une
-configuration ESLint. Sur les trois autres, le typage strict fait l'essentiel du
-travail.
+Le lint couvre les quatre workspaces depuis le passage à oxlint — voir plus
+haut. C'était une limite de l'ancienne configuration, pas un choix.
 
 `npm run test:coverage` mesure le domaine partagé, hors `index.ts` — un baril
 de ré-exports n'a rien à couvrir, et l'y inclure rendait le total illisible. Le
@@ -505,8 +524,7 @@ Ce qui est **délibérément** simple en v1, et où brancher la suite :
 | App Check désactivé | L'auth suffit pour deux utilisateurs | Activer et exiger le token dans les callables |
 | Foyer de deux personnes en dur (`SERVINGS_PER_MEAL`) | La v1 sert un seul foyer connu | Un champ `size` sur `Household`, lu par les contraintes de portions et par le prompt |
 | Étapes du batch affichées à la suite, sans entrelacement | Mélanger les gestes de quatre plats produit une liste qu'on ne rattache plus à un plat quand on s'y perd | Demander au modèle un déroulé unique, dans une callable séparée pour ne pas alourdir le `responseSchema` |
-| `eslint` reste en 9 | v10 retire des API de contexte (`getFilename`) qu'`eslint-plugin-react@7.37.5` et `eslint-plugin-import@2.32.0` utilisent encore, tous deux tirés par `eslint-config-expo`. Vérifié : le lint plante sur `contextOrFilename.getFilename is not a function` | Attendre qu'Expo publie un `eslint-config-expo` remontant ces deux plugins |
-| `typescript` reste en 6 | **Notre code est prêt** : TS 7 typecheck les quatre workspaces sans une erreur, et le dernier obstacle projet (`moduleResolution: node10`) est levé. C'est `@typescript-eslint` qui plante dessus (`Cannot read properties of undefined (reading 'Intrinsic')`). Le blocage est en amont, pas chez Expo : TypeScript 7.0 n'expose pas d'API programmatique stable, et ESLint ne supporte pas les parseurs asynchrones — l'issue typescript-eslint #10940 est ouverte, étiquetée « blocked by external API », sans échéance annoncée. Angular, Vue et Svelte sont au même point | Attendre. Ou changer de linter : `oxlint` est bâti sur tsgo et n'a donc pas ce blocage — mais ses règles React Compiler sont expérimentales, et on quitterait la config qu'Expo maintient pour nous. Le gain de TS 7 étant la vitesse de compilation sur un projet qui compile en secondes, l'échange est mauvais aujourd'hui |
+| Les règles propres à Expo ne sont plus appliquées | `eslint-plugin-expo` apportait `no-dynamic-env-var`, `no-env-var-destructuring` et `use-dom-exports`, sans équivalent oxlint. Les deux premières gardaient un seul fichier, `app/src/lib/env.ts`, qui lit ses variables statiquement et ne bouge jamais | Relire `env.ts` à la main si on y touche : Expo **inline** les `EXPO_PUBLIC_*` à la construction, donc un accès destructuré ou dynamique vaudrait `undefined` dans l'APK, en silence |
 | Renovate ne suit pas les paquets du SDK Expo | Leur version est dictée par le SDK, pas par le semver npm : une montée faite hors d'`expo install` casse le build de façon pénible à diagnostiquer | La CI lance `npx expo install --check` à chaque exécution et signale la dérive. Au changement de SDK, `npx expo install --fix` réaligne tout le bloc d'un coup |
 | 200 plats bannis lus au plus (`BANNED_READ_LIMIT`) | Un foyer en bannit quelques-uns par an ; la borne protège le coût de lecture avant d'être une limite réelle | Paginer la lecture, ou porter un `dislikedAt` pour ne garder que les plus récents dans le prompt |
 | `regenerateMeal` ne vérifie que les contraintes du jour visé | Réappliquer les contraintes d'ensemble ferait refuser un remplacement légitime : la recette écartée pouvait être l'une des deux congelables | Recomposer le plan après remplacement et signaler — sans bloquer — les contraintes globales devenues fausses |
@@ -541,7 +559,8 @@ Ce qui est **délibérément** simple en v1, et où brancher la suite :
 | Dislike | **fait** | Bannissement d'un plat par son nom : `isDisliked`, mémoire du foyer à trois listes, filet de validation, boutons sur la fiche recette et la feuille de choix |
 | Goûts | **fait** | Favoris et plats bannis réunis sur un écran unique atteint des réglages — ce sont les deux valeurs d'un même champ, les séparer cachait le lien. `SegmentedSwitch` extrait de `WeekSwitch`, `splitByVerdict` dans le domaine |
 | CI | **fait** | GitHub Actions sur chaque push et chaque PR ; `.nvmrc` comme source unique de la version de Node ; Renovate en tableau de bord, les paquets du SDK Expo exclus au profit d'`expo install --check` |
-| Montées | **fait** | `firebase-tools` 15, `firebase-admin` 14, Vitest 5 (par la v4), TypeScript 6 aligné sur les quatre workspaces, `@google/genai` 2. Seuil de couverture appliqué par la CI. Plus aucune faille critique ni élevée |
+| Montées | **fait** | `firebase-tools` 15, `firebase-admin` 14, Vitest 5 (par la v4), `@google/genai` 2. Seuil de couverture appliqué par la CI. Plus aucune faille critique ni élevée |
+| Lint | **fait** | oxlint remplace ESLint : les quatre workspaces couverts au lieu d'un seul, trois imports morts trouvés d'emblée, et TypeScript 7 débloqué — `@typescript-eslint` plafonnait le projet sous TS 6 |
 | J7 | à faire | Build EAS, installation, premier vrai dimanche |
 
 Ce qui reste à faire hors code, dans l'ordre :
