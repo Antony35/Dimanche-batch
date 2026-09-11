@@ -25,6 +25,7 @@ export * from './domain/plan-edit';
 export * from './domain/preferences';
 export * from './domain/batch';
 export * from './domain/batch-schedule';
+export * from './domain/mise-en-place';
 export * from './domain/invite';
 
 export * from './firestore-paths';
