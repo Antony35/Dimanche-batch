@@ -563,7 +563,7 @@ CI pour que ce pari reste tenable.
 lance en local, sur une machine qui n'a rien d'installé : Node lu dans `.nvmrc`
 (**24**, celui du runtime déployé — l'`engines` racine et `firebase.json`
 disaient deux choses différentes), Java 21 pour l'émulateur, puis typage, lint et
-les trois suites.
+les quatre suites.
 
 Elle **alerte sans bloquer** : `main` n'est pas protégée, on y pousse
 directement, et une CI rouge se voit. La protéger reste une case à cocher.
