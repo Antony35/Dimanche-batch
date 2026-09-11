@@ -8,3 +8,4 @@ export { generateWeeklyPlan } from './callable/generate-weekly-plan';
 export { regenerateMeal } from './callable/regenerate-meal';
 export { setMeal } from './callable/set-meal';
 export { replaceBatchRecipeCallable as replaceBatchRecipe } from './callable/replace-batch-recipe';
+export { generateBatchSchedule } from './callable/generate-batch-schedule';

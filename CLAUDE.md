@@ -15,7 +15,7 @@ dernier jour aurait attendu huit jours au frigo.
 **Statut : v1 en cours — J1 à J6 livrés, modèle du batch refondu.** Le monorepo, le domaine partagé, les
 Security Rules, l'authentification, le foyer partagé, la génération Gemini, le
 planning des 7 jours, la régénération d'un repas isolé, la liste de courses, la
-fiche recette, l'historique et le fonctionnement hors ligne ; 332 tests couvrent
+fiche recette, l'historique et le fonctionnement hors ligne ; 355 tests couvrent
 le domaine, les schémas, les callables et les règles. Reste le build (J7). Ce
 document fait autorité sur l'architecture ; il est mis à jour en même temps que
 le code, jamais après.
@@ -212,6 +212,11 @@ households/{hid}/usage/{yyyy-mm-dd}        # rate limiting
 households/{hid}/locks/{weekId}            # une génération à la fois par semaine
   startedAt: number                        # ms epoch ; repris au-delà du TTL
   by: string                               # uid
+
+households/{hid}/batchSchedules/{weekId}  # déroulé entrelacé du dimanche
+  sourceRecipeIds: string[]              # batch à partir duquel il a été composé
+  steps: { recipeIds: string[], text }[] # chaque étape nomme ses plats
+  generatedAt, generatedBy, model, promptVersion
 ```
 
 **Security Rules** — l'intention à implémenter :
@@ -234,6 +239,9 @@ households/{hid}/locks/{weekId}            # une génération à la fois par sem
 - `usage` et `locks` : lecture seule côté client. Voir un verrou permet
   d'afficher « génération en cours » ; pouvoir en poser un permettrait de
   bloquer l'autre téléphone indéfiniment.
+- `batchSchedules` : lecture seule côté client. Le déroulé est composé par
+  Gemini dans une callable ; pouvoir l'écrire permettrait de réécrire la
+  session du dimanche de l'autre téléphone.
 
 Les règles sont testées avec l'émulateur (`npm run test:rules`, dans
 `packages/rules-tests`). Une règle non testée est une règle fausse. Ajouter une
@@ -245,13 +253,14 @@ règle sans ajouter son test n'est pas une modification terminée.
 
 Une responsabilité par function, nommage `verbeNom`.
 
-| Function             | Rôle                                                                                                                                                                                                                                                                                                                                                                                                        |
-| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `generateWeeklyPlan` | Génère le plan de la semaine. Vérifie l'appartenance au foyer et le rate limit, construit le prompt avec l'historique des 3 dernières semaines, appelle Gemini, valide via Zod, écrit `weeklyPlans` + `recipes` + `groceryLists` dans un batch, incrémente `usage`.                                                                                                                                         |
-| `setMeal`            | Pose un repas choisi par l'utilisateur : une portion d'un plat du batch, ou un repas à l'extérieur. **Aucun appel Gemini, donc aucun quota décompté** — mais le verrou de semaine est pris, car la liste de courses est intégralement recalculée.                                                                                                                                                           |
-| `regenerateMeal`     | Remplace un seul repas d'un plan existant. Même chemin de validation, mais des contraintes **locales au jour visé** — voir §9. Passe par le même écrivain que la génération complète : la liste de courses est intégralement recalculée, jamais rapiécée.                                                                                                                                                   |
-| `replaceBatchRecipe` | Remplace un plat du batch, et avec lui **tous les repas qu'il servait**. Callable à part et non un paramètre de `regenerateMeal` : un plat du batch n'occupe pas un créneau mais plusieurs, et le remplacer repas par repas coûterait autant de générations qu'il sert de repas, en laissant la semaine incohérente entre deux appels. Seul écrivain du dépôt à muter `batchRecipeIds` sur un plan existant |
-| `joinHousehold`      | Consomme un code d'invitation et ajoute l'uid aux `members`. Côté serveur pour que le code reste à usage unique.                                                                                                                                                                                                                                                                                            |
+| Function                | Rôle                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `generateWeeklyPlan`    | Génère le plan de la semaine. Vérifie l'appartenance au foyer et le rate limit, construit le prompt avec l'historique des 3 dernières semaines, appelle Gemini, valide via Zod, écrit `weeklyPlans` + `recipes` + `groceryLists` dans un batch, incrémente `usage`.                                                                                                                                         |
+| `setMeal`               | Pose un repas choisi par l'utilisateur : une portion d'un plat du batch, ou un repas à l'extérieur. **Aucun appel Gemini, donc aucun quota décompté** — mais le verrou de semaine est pris, car la liste de courses est intégralement recalculée.                                                                                                                                                           |
+| `regenerateMeal`        | Remplace un seul repas d'un plan existant. Même chemin de validation, mais des contraintes **locales au jour visé** — voir §9. Passe par le même écrivain que la génération complète : la liste de courses est intégralement recalculée, jamais rapiécée.                                                                                                                                                   |
+| `replaceBatchRecipe`    | Remplace un plat du batch, et avec lui **tous les repas qu'il servait**. Callable à part et non un paramètre de `regenerateMeal` : un plat du batch n'occupe pas un créneau mais plusieurs, et le remplacer repas par repas coûterait autant de générations qu'il sert de repas, en laissant la semaine incohérente entre deux appels. Seul écrivain du dépôt à muter `batchRecipeIds` sur un plan existant |
+| `generateBatchSchedule` | Compose le déroulé entrelacé du dimanche, **à la demande puis conservé** : une génération par batch, jamais une par consultation. Si un déroulé à jour existe, il est rendu sans rien décompter — vérification faite sous le verrou, sans quoi deux téléphones ouvrant l'onglet ensemble paieraient deux fois                                                                                               |
+| `joinHousehold`         | Consomme un code d'invitation et ajoute l'uid aux `members`. Côté serveur pour que le code reste à usage unique.                                                                                                                                                                                                                                                                                            |
 
 Contrat Gemini :
 
@@ -319,6 +328,19 @@ l'après-midi une fois les autres plats comptés. Elles sont nécessaires parce 
 `buildGroceryList` n'achète un plat du batch **qu'une fois, aux portions
 déclarées** : un remplaçant qui en produit trop peu et le foyer sous-achète, sans
 un mot.
+
+**Le déroulé entrelacé, et ce qu'il ne doit jamais perdre.** Le modèle ne
+crée rien : il réordonne des étapes qui existent déjà. La faute à craindre est
+donc un plat oublié en route — on s'en apercevrait devant les fourneaux. D'où
+`validateBatchSchedule`, qui exige que chaque plat du batch apparaisse et que
+chaque étape vise un plat du batch. Chaque étape nomme ses plats : c'est ce qui
+répond à la crainte qui avait fait différer cette vue, celle d'une liste qu'on
+ne rattache plus à un plat quand on s'y perd.
+
+Un déroulé composé puis un plat remplacé : le déroulé décrit un batch qui
+n'existe plus. Plutôt que de compter sur chaque écrivain pour l'effacer, le
+document fige `sourceRecipeIds`, et `isScheduleCurrent` le compare au plan au
+moment de l'afficher. La vue recette par recette reste la vue par défaut.
 
 **Une règle, un seul endroit.** `requiresFreezing(dayIndex)` dit qu'un plat servi
 jeudi ou vendredi doit se congeler — cuisiné le dimanche, il aurait attendu cinq
@@ -440,7 +462,7 @@ refuserait des recettes légitimes, et chaque refus coûte une reprise.
   document. Elle refuse, et sans reprise le planning, la progression de
   génération et les courses restent morts jusqu'au prochain montage, alors que
   tout est en ordre une seconde plus tard. Un `onSnapshot` posé en direct est
-  donc une erreur ; il y en a six, tous enveloppés.
+  donc une erreur ; il y en a sept, tous enveloppés.
 - **Ce qui vient du cache local n'est jamais persisté.** `metadata.fromCache`
   distingue un snapshot confirmé par le serveur d'un snapshot qui reflète nos
   propres écritures en attente. Persister le second figerait une vue partielle
@@ -585,7 +607,7 @@ npm run test:functions           # Guards et écritures Firestore, sur émulateu
 npm run test:rules               # Security Rules sur émulateur
 npm run test:all                 # les trois, dans cet ordre
 GEMINI_API_KEY=… npm run gemini:probe   # chaînes de génération, sans déployer
-#   -- plan | meal | batch pour n'en tester qu'une
+#   -- plan | meal | batch | schedule pour n'en tester qu'une
 npm run typecheck                # tsc --noEmit sur tous les workspaces
 npm run lint                     # oxlint, les quatre workspaces
 npm run knip                     # code mort : fichiers, exports, dépendances
@@ -599,7 +621,7 @@ npm run build:android            # eas build -p android --profile preview (APK)
 
 `gemini:probe` envoie à Gemini les payloads réels de `generateWeeklyPlan` et de
 `regenerateMeal`, puis fait traverser chaque réponse les deux mêmes filtres que
-la function correspondante (`-- plan` ou `-- meal` pour n'en tester qu'une). **À lancer avant tout
+la function correspondante (`-- plan`, `-- meal`, `-- batch` ou `-- schedule` pour n'en tester qu'une). **À lancer avant tout
 changement de modèle ou de `responseSchema`** : l'API refuse certaines
 constructions de schéma avec un `INVALID_ARGUMENT` qui ne nomme aucun champ, et
 publie des modèles fermés aux comptes récents qui répondent 404 alors qu'ils
@@ -628,7 +650,8 @@ Ce qui est **délibérément** simple en v1, et où brancher la suite :
 | Pas de gestion des restes du frigo                           | Hors périmètre                                                                                                                                                                                                                                          | Nouveau champ d'entrée du prompt, pas de changement de schéma                                                                                                                                                                                                |
 | App Check désactivé                                          | L'auth suffit pour deux utilisateurs                                                                                                                                                                                                                    | Activer et exiger le token dans les callables                                                                                                                                                                                                                |
 | Foyer de deux personnes en dur (`SERVINGS_PER_MEAL`)         | La v1 sert un seul foyer connu                                                                                                                                                                                                                          | Un champ `size` sur `Household`, lu par les contraintes de portions et par le prompt                                                                                                                                                                         |
-| Étapes du batch affichées à la suite, sans entrelacement     | Mélanger les gestes de quatre plats produit une liste qu'on ne rattache plus à un plat quand on s'y perd                                                                                                                                                | Demander au modèle un déroulé unique, dans une callable séparée pour ne pas alourdir le `responseSchema`                                                                                                                                                     |
+| Le déroulé n'est comparé au plan que par ses identifiants    | Un plat régénéré sous le même slug garde son identifiant : ses étapes peuvent changer sans que le déroulé soit déclaré périmé. Cas rare — `replaceBatchRecipe` produit en pratique un nouveau slug                                                      | Figer une empreinte des étapes dans `sourceRecipeIds`, ou effacer le déroulé depuis chaque écrivain du plan                                                                                                                                                  |
+| Le déroulé n'est pas dans le cache hors ligne                | Il se consulte chez soi, le dimanche, réseau disponible ; le cache mémoire de Firestore suffit tant que l'app est ouverte                                                                                                                               | L'ajouter à `offline-cache.ts` comme le plan et les recettes                                                                                                                                                                                                 |
 | Les règles propres à Expo ne sont plus appliquées            | `eslint-plugin-expo` apportait `no-dynamic-env-var`, `no-env-var-destructuring` et `use-dom-exports`, sans équivalent oxlint. Les deux premières gardaient un seul fichier, `app/src/lib/env.ts`, qui lit ses variables statiquement et ne bouge jamais | Relire `env.ts` à la main si on y touche : Expo **inline** les `EXPO_PUBLIC_*` à la construction, donc un accès destructuré ou dynamique vaudrait `undefined` dans l'APK, en silence                                                                         |
 | oxfmt est en 0.x                                             | Choisi en connaissance de cause : petit projet, enjeu faible, et l'occasion d'essayer l'outil pendant qu'il se construit. Même famille qu'oxlint                                                                                                        | `npm run format:check` en CI est ce qui rend le pari tenable : si une version change ses règles, la CI le dit d'un coup au lieu de laisser le formatage dériver fichier par fichier. En secours, `oxfmt --migrate` sait convertir depuis une config Prettier |
 | Les composants de `app/` ne sont pas testés                  | Aucun renderer React ni environnement DOM installé, pas de configuration Babel dans `app/`, et les modules React Native sont en Flow — inconsommables tels quels par Vitest. La logique sans rendu, elle, est couverte                                  | Ajouter un environnement DOM et un renderer, en acceptant que `reactCompiler` ne s'applique pas sous test : ce qu'on mesurerait ne serait pas tout à fait ce qui tourne                                                                                      |
@@ -667,6 +690,7 @@ Ce qui est **délibérément** simple en v1, et où brancher la suite :
 | Goûts         | **fait** | Favoris et plats bannis réunis sur un écran unique atteint des réglages — ce sont les deux valeurs d'un même champ, les séparer cachait le lien. `SegmentedSwitch` extrait de `WeekSwitch`, `splitByVerdict` dans le domaine                                                                                                                                |
 | CI            | **fait** | GitHub Actions sur chaque push et chaque PR ; `.nvmrc` comme source unique de la version de Node ; Renovate en tableau de bord, les paquets du SDK Expo exclus au profit d'`expo install --check`                                                                                                                                                           |
 | Montées       | **fait** | `firebase-tools` 15, `firebase-admin` 14, Vitest 5 (par la v4), `@google/genai` 2. Seuil de couverture appliqué par la CI. Plus aucune faille critique ni élevée                                                                                                                                                                                            |
+| Déroulé       | **fait** | Vue « tout en parallèle » sur l'écran de préparation : les étapes des plats fondues par Gemini, chacune nommant son plat, composées à la demande puis conservées. Un déroulé périmé par un remplacement de plat est détecté au plan, pas effacé par chaque écrivain                                                                                         |
 | Plat du batch | **fait** | Remplacer un plat met à jour tous les repas qu'il servait, depuis l'écran de préparation. Callable, prompt et validation dédiés                                                                                                                                                                                                                             |
 | Décongélation | **fait** | Rappel sur l'accueil le soir où il sert, plutôt que sur l'écran de préparation trois jours trop tôt                                                                                                                                                                                                                                                         |
 | Tests app     | **fait** | Première suite sur `app/` : reprise des abonnements, stockage local, contrat des callables. Ce qu'elle ne couvre pas est écrit au §9 plutôt que passé sous silence                                                                                                                                                                                          |
