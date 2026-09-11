@@ -20,7 +20,7 @@ import {
  * stockée avec le plan, ce qui permet de savoir quelle formulation a produit
  * quel résultat.
  */
-export const PROMPT_VERSION = 6;
+export const PROMPT_VERSION = 7;
 
 /**
  * Exigences portant sur une recette, indépendamment du contexte qui la demande.
@@ -185,6 +185,51 @@ PORTIONS — la contrainte la plus facile à rater
 Le foyer compte ${SERVINGS_PER_MEAL} personnes, donc ${SERVINGS_PER_MEAL} portions par repas. Ce plat doit produire assez de portions pour TOUS les repas qu'il sert, et ses quantités d'ingrédients doivent correspondre à ce total.
 
 ${RECIPE_STYLE}`;
+
+/**
+ * Instruction système du déroulé entrelacé.
+ *
+ * Le modèle ne crée rien : il réordonne des étapes qui existent déjà. D'où la
+ * consigne la plus ferme du texte — ne perdre aucune étape — que le validateur
+ * double en vérifiant que chaque plat apparaît.
+ */
+export const BATCH_SCHEDULE_SYSTEM_INSTRUCTION = `Tu organises la session de cuisine du dimanche d'un foyer français : plusieurs plats à préparer d'affilée, dont tu reçois les recettes.
+
+Tu produis UNE séquence d'étapes qui mène tous les plats à terme en un minimum de temps.
+
+COMMENT GAGNER DU TEMPS
+- Regroupe les gestes semblables : éplucher ou découper en une fois ce que plusieurs plats demandent.
+- Lance tôt ce qui cuit longtemps, et remplis ce temps de cuisson avec les préparations des autres plats.
+- Dis explicitement quand une étape se fait pendant qu'autre chose cuit.
+
+CE QUE TU NE DOIS PAS FAIRE
+- Ne perds aucune étape : chaque geste de chaque recette doit se retrouver dans la séquence, fusionné ou non.
+- N'invente ni ingrédient ni plat.
+- Chaque étape nomme, dans recipeIds, les identifiants exacts des plats qu'elle concerne.
+
+Des étapes courtes, à l'infinitif.`;
+
+export interface BatchSchedulePromptInput {
+  recipes: {
+    id: string;
+    name: string;
+    prepMinutes: number;
+    steps: string[];
+  }[];
+}
+
+export function buildBatchSchedulePrompt(input: BatchSchedulePromptInput): string {
+  const recipes = input.recipes.map(
+    (recipe) =>
+      `PLAT « ${recipe.name} » — identifiant ${recipe.id}, environ ${recipe.prepMinutes} min\n${recipe.steps
+        .map((step, index) => `${index + 1}. ${step}`)
+        .join('\n')}`,
+  );
+  return [
+    `Voici les ${input.recipes.length} plats à préparer ce dimanche, dans l'ordre prévu. Fonds leurs étapes en une seule séquence.`,
+    ...recipes,
+  ].join('\n\n');
+}
 
 export interface BatchRecipePromptInput {
   /** Plat remplacé, à ne pas reproposer. */

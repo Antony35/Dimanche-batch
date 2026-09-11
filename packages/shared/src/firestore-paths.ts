@@ -15,6 +15,7 @@ export const COLLECTIONS = {
   groceryItems: 'items',
   usage: 'usage',
   locks: 'locks',
+  batchSchedules: 'batchSchedules',
 } as const;
 
 export const paths = {
@@ -48,6 +49,9 @@ export const paths = {
   locks: (householdId: string) => `${COLLECTIONS.households}/${householdId}/${COLLECTIONS.locks}`,
   generationLock: (householdId: string, weekId: string) =>
     `${COLLECTIONS.households}/${householdId}/${COLLECTIONS.locks}/${weekId}`,
+
+  batchSchedule: (householdId: string, weekId: string) =>
+    `${COLLECTIONS.households}/${householdId}/${COLLECTIONS.batchSchedules}/${weekId}`,
 } as const;
 
 /** Plafond de générations Gemini par foyer et par jour. Voir CLAUDE.md §4. */

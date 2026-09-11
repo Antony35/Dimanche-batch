@@ -136,3 +136,33 @@ export const SINGLE_RECIPE_RESPONSE_SCHEMA: Schema = {
   properties: { recipe: recipeSchema },
   required: ['recipe'],
 };
+
+/**
+ * Déroulé entrelacé du dimanche. Des étapes plates, chacune rattachée aux plats
+ * qu'elle concerne — aucun objet imbriqué de plus, pour la même raison qu'au
+ * début de ce fichier : l'API refuse certaines constructions sans nommer le
+ * champ fautif. La couverture de chaque plat est vérifiée côté validateur.
+ */
+export const BATCH_SCHEDULE_RESPONSE_SCHEMA: Schema = {
+  type: Type.OBJECT,
+  properties: {
+    steps: {
+      type: Type.ARRAY,
+      description: 'Toutes les étapes du dimanche, dans l’ordre où les faire.',
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          recipeIds: {
+            type: Type.ARRAY,
+            items: { type: Type.STRING },
+            description: 'Identifiants des plats que cette étape concerne — un ou plusieurs.',
+          },
+          text: { type: Type.STRING, description: 'L’étape, courte, à l’infinitif.' },
+        },
+        required: ['recipeIds', 'text'],
+        propertyOrdering: ['recipeIds', 'text'],
+      },
+    },
+  },
+  required: ['steps'],
+};

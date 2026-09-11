@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  BATCH_SCHEDULE_SYSTEM_INSTRUCTION,
+  buildBatchSchedulePrompt,
   MEAL_REPLACEMENT_SYSTEM_INSTRUCTION,
   PROMPT_VERSION,
   SYSTEM_INSTRUCTION,
@@ -234,5 +236,30 @@ describe('instructions système', () => {
   it('porte une version, stockée avec chaque plan', () => {
     expect(Number.isInteger(PROMPT_VERSION)).toBe(true);
     expect(PROMPT_VERSION).toBeGreaterThan(0);
+  });
+});
+
+describe('buildBatchSchedulePrompt', () => {
+  const prompt = buildBatchSchedulePrompt({
+    recipes: [
+      { id: 'curry', name: 'Curry', prepMinutes: 50, steps: ['Émincer l’oignon.', 'Mijoter.'] },
+      { id: 'chili', name: 'Chili', prepMinutes: 40, steps: ['Hacher l’oignon.'] },
+    ],
+  });
+
+  // Le modèle doit citer ces identifiants dans recipeIds : sans eux dans le
+  // prompt, il inventerait des noms que le validateur refuserait.
+  it('donne chaque plat avec son identifiant exact', () => {
+    expect(prompt).toContain('identifiant curry');
+    expect(prompt).toContain('identifiant chili');
+  });
+
+  it('numérote les étapes de chaque recette', () => {
+    expect(prompt).toContain('1. Émincer l’oignon.');
+    expect(prompt).toContain('2. Mijoter.');
+  });
+
+  it('interdit de perdre une étape, la faute que le validateur guette', () => {
+    expect(BATCH_SCHEDULE_SYSTEM_INSTRUCTION).toContain('Ne perds aucune étape');
   });
 });

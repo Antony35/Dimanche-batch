@@ -13,6 +13,7 @@ export * from './schemas/weekly-plan';
 export * from './schemas/grocery-list';
 export * from './schemas/gemini';
 export * from './schemas/generation';
+export * from './schemas/batch-schedule';
 
 export * from './domain/text';
 export * from './domain/units';
@@ -23,6 +24,7 @@ export * from './domain/plan-constraints';
 export * from './domain/plan-edit';
 export * from './domain/preferences';
 export * from './domain/batch';
+export * from './domain/batch-schedule';
 export * from './domain/invite';
 
 export * from './firestore-paths';

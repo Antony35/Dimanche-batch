@@ -83,6 +83,13 @@ service cloud.firestore {
         allow read: if isMember(householdId);
         allow write: if false;
       }
+
+      // Déroulé entrelacé du dimanche : composé par Gemini dans une callable,
+      // donc écrit par l'admin SDK uniquement. Le client le lit, rien de plus.
+      match /batchSchedules/{weekId} {
+        allow read: if isMember(householdId);
+        allow write: if false;
+      }
     }
 
     // Tout le reste est fermé.

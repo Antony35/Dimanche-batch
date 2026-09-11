@@ -25,7 +25,9 @@ import {
   addDays,
   getUpcomingWeekId,
   validateGeneratedPlan,
+  GeneratedBatchScheduleSchema,
   validateBatchRecipeReplacement,
+  validateBatchSchedule,
   validateMealReplacement,
 } from '@dimanche-batch/shared';
 import { GEMINI_MODEL } from '../src/config';
@@ -33,18 +35,22 @@ import {
   MEAL_REPLACEMENT_SYSTEM_INSTRUCTION,
   SYSTEM_INSTRUCTION,
   BATCH_RECIPE_SYSTEM_INSTRUCTION,
+  BATCH_SCHEDULE_SYSTEM_INSTRUCTION,
+  buildBatchSchedulePrompt,
   buildBatchRecipePrompt,
   buildMealReplacementPrompt,
   buildPlanPrompt,
 } from '../src/gemini/prompt';
 import {
+  BATCH_SCHEDULE_RESPONSE_SCHEMA,
   SINGLE_RECIPE_RESPONSE_SCHEMA,
   WEEKLY_PLAN_RESPONSE_SCHEMA,
 } from '../src/gemini/response-schema';
 
 const args = process.argv.slice(2);
-const targets = args.filter((arg) => arg === 'plan' || arg === 'meal' || arg === 'batch');
-const model = args.find((arg) => !['plan', 'meal', 'batch'].includes(arg)) ?? GEMINI_MODEL;
+const CHAINS = new Set(['plan', 'meal', 'batch', 'schedule']);
+const targets = args.filter((arg) => CHAINS.has(arg));
+const model = args.find((arg) => !CHAINS.has(arg)) ?? GEMINI_MODEL;
 const weekStart = getUpcomingWeekId();
 /** Ce que demanderait un foyer par défaut. */
 const BATCH_RECIPE_COUNT = 4;
@@ -304,6 +310,86 @@ async function probeBatchRecipe(): Promise<void> {
   );
 }
 
+/**
+ * Déroulé entrelacé : nouveau `responseSchema`, donc à exercer avant tout
+ * déploiement. Le risque propre à cette chaîne est un plat perdu en route.
+ */
+async function probeSchedule(): Promise<void> {
+  console.log('\n── generateBatchSchedule ──');
+
+  const recipes = [
+    {
+      id: 'chili-sin-carne',
+      name: 'Chili sin carne',
+      prepMinutes: 60,
+      steps: [
+        'Émincer l’oignon et le poivron.',
+        'Faire revenir.',
+        'Ajouter haricots et tomates.',
+        'Mijoter 40 minutes.',
+      ],
+    },
+    {
+      id: 'curry-lentilles',
+      name: 'Curry de lentilles',
+      prepMinutes: 45,
+      steps: [
+        'Émincer l’oignon.',
+        'Faire revenir avec les épices.',
+        'Ajouter lentilles et lait de coco.',
+        'Cuire 25 minutes.',
+      ],
+    },
+    {
+      id: 'gratin-courge',
+      name: 'Gratin de courge',
+      prepMinutes: 70,
+      steps: [
+        'Préchauffer le four à 180 °C.',
+        'Éplucher et trancher la courge.',
+        'Monter le gratin.',
+        'Enfourner 50 minutes.',
+      ],
+    },
+  ];
+
+  const data = await callGemini({
+    contents: [{ parts: [{ text: buildBatchSchedulePrompt({ recipes }) }] }],
+    systemInstruction: { parts: [{ text: BATCH_SCHEDULE_SYSTEM_INSTRUCTION }] },
+    generationConfig: {
+      responseMimeType: 'application/json',
+      responseSchema: BATCH_SCHEDULE_RESPONSE_SCHEMA,
+      temperature: 0.3,
+    },
+  });
+
+  const parsed = GeneratedBatchScheduleSchema.safeParse(data);
+  if (!parsed.success) {
+    reportSchemaFailure(parsed.error.issues);
+    process.exit(1);
+  }
+  console.log(`✅ Schéma : ${parsed.data.steps.length} étapes`);
+
+  const violations = validateBatchSchedule(
+    parsed.data,
+    recipes.map((recipe) => recipe.id),
+  );
+  if (violations.length > 0) {
+    console.error(
+      `⚠️  Contraintes : ${violations.length} violation(s) — la reprise serait déclenchée`,
+    );
+    for (const violation of violations)
+      console.error(`   [${violation.code}] ${violation.message}`);
+    process.exit(1);
+  }
+
+  console.log('✅ Chaque plat apparaît dans le déroulé\n');
+  parsed.data.steps.forEach((step, index) => {
+    console.log(`   ${String(index + 1).padStart(2)}. [${step.recipeIds.join(', ')}] ${step.text}`);
+  });
+}
+
 if (targets.length === 0 || targets.includes('plan')) await probePlan();
 if (targets.length === 0 || targets.includes('meal')) await probeMeal();
 if (targets.length === 0 || targets.includes('batch')) await probeBatchRecipe();
+if (targets.length === 0 || targets.includes('schedule')) await probeSchedule();

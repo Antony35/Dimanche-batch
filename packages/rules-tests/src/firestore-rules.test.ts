@@ -176,3 +176,23 @@ describe('quota', () => {
     );
   });
 });
+
+describe('batchSchedules', () => {
+  const schedulePath = `households/${HOUSEHOLD_ID}/batchSchedules/${WEEK_ID}`;
+
+  it('laisse un membre lire le déroulé', async () => {
+    await assertSucceeds(getDoc(doc(memberDb(), schedulePath)));
+  });
+
+  it('refuse la lecture à qui n’est pas du foyer', async () => {
+    await assertFails(getDoc(doc(outsiderDb(), schedulePath)));
+    await assertFails(getDoc(doc(anonDb(), schedulePath)));
+  });
+
+  // Composé par Gemini dans une callable : le client n'a aucune raison d'en
+  // fabriquer un, et pouvoir le faire lui laisserait réécrire la session du
+  // dimanche de l'autre téléphone.
+  it('refuse toute écriture au client, membre compris', async () => {
+    await assertFails(setDoc(doc(memberDb(), schedulePath), { steps: [] }));
+  });
+});

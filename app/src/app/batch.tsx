@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useLocalSearchParams } from 'expo-router';
 import { useKeepAwake } from 'expo-keep-awake';
 import { Pressable, View } from 'react-native';
@@ -19,6 +20,7 @@ import {
   ErrorState,
   LoadingState,
   Screen,
+  SegmentedSwitch,
   Tag,
   Text,
 } from '@/components/ui';
@@ -28,8 +30,11 @@ import {
   useBatchProgress,
   type BatchProgressState,
 } from '@/features/meal-plan/api/use-batch-progress';
+import { useBatchSchedule } from '@/features/meal-plan/api/use-batch-schedule';
+import { useGenerateBatchSchedule } from '@/features/meal-plan/api/use-generate-batch-schedule';
 import { useRecipes } from '@/features/meal-plan/api/use-recipes';
 import { useReplaceBatchRecipe } from '@/features/meal-plan/api/use-replace-batch-recipe';
+import { BatchScheduleView } from '@/features/meal-plan/components/batch-schedule-view';
 import { GenerationProgress } from '@/features/meal-plan/components/generation-progress';
 import { useGenerationProgress } from '@/features/meal-plan/api/use-generation-progress';
 import { useWeeklyPlan } from '@/features/meal-plan/api/use-weekly-plan';
@@ -43,6 +48,19 @@ import { useTheme } from '@/theme';
  * quatre plats produit une liste qu'on ne peut plus rattacher à un plat quand
  * on s'y perd.
  */
+type BatchView = 'recipes' | 'parallel';
+
+const VIEW_OPTIONS = [
+  { value: 'recipes', label: 'Recette par recette' },
+  { value: 'parallel', label: 'Tout en parallèle' },
+] as const;
+
+/** Ce que promet chaque vue, sous le sélecteur. */
+const VIEW_HINTS: Record<BatchView, string> = {
+  recipes: 'Un plat après l’autre, dans l’ordre prévu : plus lent, plus tranquille.',
+  parallel: 'Les gestes des plats mêlés pour gagner du temps, chaque étape nommant son plat.',
+};
+
 export default function BatchScreen() {
   const theme = useTheme();
   // Trois heures de cuisine, les mains prises : l'écran ne doit pas s'éteindre
@@ -59,6 +77,11 @@ export default function BatchScreen() {
   const progress = useBatchProgress(householdId, weekId);
   const replace = useReplaceBatchRecipe();
   const generation = useGenerationProgress(householdId, weekId);
+  const schedule = useBatchSchedule(householdId, weekId);
+  const composeSchedule = useGenerateBatchSchedule();
+  // La vue par recette reste la vue par défaut : selon les plats et le temps
+  // disponible, enchaîner tranquillement reste un choix valable.
+  const [view, setView] = useState<BatchView>('recipes');
 
   if (isLoading) {
     return (
@@ -102,28 +125,51 @@ export default function BatchScreen() {
         <Text variant="title">Préparation du batch</Text>
         <Text tone="soft">
           {session.recipes.length} plats · environ {formatDuration(session.totalMinutes)} de
-          cuisine, à enchaîner dans cet ordre.
+          cuisine.
+        </Text>
+      </View>
+
+      <View style={{ gap: theme.spacing.xs }}>
+        <SegmentedSwitch options={VIEW_OPTIONS} value={view} onChange={setView} />
+        <Text variant="caption" tone="faint">
+          {VIEW_HINTS[view]}
         </Text>
       </View>
 
       {replace.error ? <ErrorState message={replace.error.message} /> : null}
 
-      {session.recipes.map((entry, index) => (
-        <BatchRecipeCard
-          key={entry.recipe.id}
-          entry={entry}
-          position={index + 1}
+      {view === 'parallel' ? (
+        <BatchScheduleView
+          plan={plan}
+          recipesById={recipesById}
+          schedule={schedule}
           progress={progress}
-          mealCount={countMealsServing(plan, entry.recipe.id)}
-          isReplacing={replace.isPending && replace.variables?.recipeId === entry.recipe.id}
+          isComposing={composeSchedule.isPending}
+          composeError={composeSchedule.error}
           generation={generation}
-          onReplace={() => {
-            if (householdId) {
-              replace.mutate({ householdId, weekId, recipeId: entry.recipe.id });
-            }
+          onCompose={() => {
+            if (householdId) composeSchedule.mutate({ householdId, weekId });
           }}
         />
-      ))}
+      ) : null}
+
+      {view === 'recipes' &&
+        session.recipes.map((entry, index) => (
+          <BatchRecipeCard
+            key={entry.recipe.id}
+            entry={entry}
+            position={index + 1}
+            progress={progress}
+            mealCount={countMealsServing(plan, entry.recipe.id)}
+            isReplacing={replace.isPending && replace.variables?.recipeId === entry.recipe.id}
+            generation={generation}
+            onReplace={() => {
+              if (householdId) {
+                replace.mutate({ householdId, weekId, recipeId: entry.recipe.id });
+              }
+            }}
+          />
+        ))}
     </Screen>
   );
 }

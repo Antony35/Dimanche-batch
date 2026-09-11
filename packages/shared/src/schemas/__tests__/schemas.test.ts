@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { GeneratedPlanSchema, GeneratedRecipeSchema } from '../gemini';
+import {
+  BatchScheduleSchema,
+  GenerateBatchScheduleInputSchema,
+  GenerateBatchScheduleResultSchema,
+  GeneratedBatchScheduleSchema,
+} from '../batch-schedule';
 import { GenerationLockSchema } from '../generation';
 import { GroceryItemSchema, GroceryListSchema } from '../grocery-list';
 import { HouseholdSchema, InviteCodeSchema } from '../household';
@@ -415,5 +421,63 @@ describe('GenerationLockSchema', () => {
 
     expect(parsed.success).toBe(true);
     expect(parsed.success && 'error' in parsed.data).toBe(false);
+  });
+});
+
+/**
+ * Le déroulé vient du modèle : c'est une frontière comme une autre. Une étape
+ * sans plat, ou un déroulé réduit à une ligne, ne doit pas atteindre l'écran.
+ */
+describe('schémas du déroulé entrelacé', () => {
+  const step = { recipeIds: ['curry'], text: 'Éplucher les oignons.' };
+  const steps = [step, step, step];
+
+  it('accepte un déroulé tel que le modèle le rend', () => {
+    expect(GeneratedBatchScheduleSchema.safeParse({ steps }).success).toBe(true);
+  });
+
+  it('refuse une étape rattachée à aucun plat', () => {
+    expectRejected(GeneratedBatchScheduleSchema, {
+      steps: [...steps, { recipeIds: [], text: 'Orpheline.' }],
+    });
+  });
+
+  it('refuse un déroulé trop court pour en être un', () => {
+    expectRejected(GeneratedBatchScheduleSchema, { steps: [step] });
+  });
+
+  it('refuse une étape vide', () => {
+    expectRejected(GeneratedBatchScheduleSchema, {
+      steps: [...steps, { recipeIds: ['curry'], text: '' }],
+    });
+  });
+
+  it('accepte le document tel que la function l’écrit', () => {
+    expect(
+      BatchScheduleSchema.safeParse({
+        id: '2026-09-12',
+        sourceRecipeIds: ['curry'],
+        steps,
+        generatedAt: 0,
+        generatedBy: 'uid',
+        model: 'gemini-test',
+        promptVersion: 1,
+      }).success,
+    ).toBe(true);
+  });
+
+  it('valide l’entrée et la sortie de la callable', () => {
+    expect(
+      GenerateBatchScheduleInputSchema.safeParse({ householdId: 'foyer', weekId: '2026-09-12' })
+        .success,
+    ).toBe(true);
+    expectRejected(GenerateBatchScheduleInputSchema, { householdId: '', weekId: '2026-09-12' });
+    expect(
+      GenerateBatchScheduleResultSchema.safeParse({
+        weekId: '2026-09-12',
+        stepCount: 12,
+        generated: true,
+      }).success,
+    ).toBe(true);
   });
 });
