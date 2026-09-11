@@ -1,22 +1,9 @@
 const { getDefaultConfig } = require('expo/metro-config');
-const path = require('node:path');
 
-const projectRoot = __dirname;
-const workspaceRoot = path.resolve(projectRoot, '..');
-
-const config = getDefaultConfig(projectRoot);
-
-// Monorepo : Metro doit surveiller la racine pour voir `packages/shared`,
-// et résoudre les modules depuis les deux dossiers node_modules.
-config.watchFolders = [workspaceRoot];
-config.resolver.nodeModulesPaths = [
-  path.resolve(projectRoot, 'node_modules'),
-  path.resolve(workspaceRoot, 'node_modules'),
-];
-config.resolver.disableHierarchicalLookup = true;
-
-// `@dimanche-batch/shared` est consommé en TypeScript source via la condition
-// d'export "react-native" : Metro le transpile comme le reste de l'app.
-config.resolver.unstable_enablePackageExports = true;
-
-module.exports = config;
+// Aucune surcharge, à dessein. Depuis le SDK 52, `getDefaultConfig` détecte le
+// monorepo tout seul — racine surveillée, `packages/shared` résolu — et les
+// exports de paquets sont actifs par défaut : c'est par eux que Metro trouve la
+// source TypeScript de `@dimanche-batch/shared`, via la condition
+// "react-native". Les réglages de l'ancien guide monorepo d'Expo
+// (`disableHierarchicalLookup`, `nodeModulesPaths`) font échouer `expo doctor`.
+module.exports = getDefaultConfig(__dirname);
