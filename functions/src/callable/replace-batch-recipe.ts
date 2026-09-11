@@ -2,15 +2,12 @@ import { onCall } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions';
 import {
   MAX_BATCH_TOTAL_MINUTES,
-  RecipeSchema,
   ReplaceBatchRecipeInputSchema,
   countMealsServing,
   getBatchSession,
-  paths,
   requiresFreezing,
   type ReplaceBatchRecipeInput,
   type ReplaceBatchRecipeResult,
-  type Recipe,
   type WeeklyPlan,
 } from '@dimanche-batch/shared';
 import {
@@ -20,20 +17,18 @@ import {
   MAX_INSTANCES,
   REGION,
 } from '../config';
-import { db } from '../lib/firestore';
-import { internal, invalidArgument, notFound, parseInput, unavailable } from '../lib/errors';
+import { internal, invalidArgument, notFound, parseInput } from '../lib/errors';
 import {
   acquireGenerationLock,
   consumeGenerationQuota,
-  refundGenerationQuota,
   releaseGenerationLock,
   reportGenerationStep,
   requireAuth,
   requireHouseholdMember,
 } from '../lib/guards';
-import { PlanNotFoundError, readPlanForEdit, replaceBatchRecipe } from '../lib/plan-writer';
+import { PlanNotFoundError, readPlanRecipes, replaceBatchRecipe } from '../lib/plan-writer';
 import { readBannedRecipeNames } from '../lib/recipe-memory';
-import { GeminiUnavailableError } from '../gemini/client';
+import { rethrowIfUnavailable, readPlanOrFail } from '../lib/callable-support';
 import {
   BatchRecipeGenerationError,
   generateBatchRecipeFromGemini,
@@ -90,7 +85,7 @@ async function swapBatchRecipe(
 ): Promise<ReplaceBatchRecipeResult> {
   await consumeGenerationQuota(input.householdId);
 
-  const recipes = await readRecipes(input.householdId, plan.recipeIds);
+  const recipes = await readPlanRecipes(input.householdId, plan);
   const session = getBatchSession(plan, recipes);
   const entry = session.recipes.find((candidate) => candidate.recipe.id === input.recipeId);
   const current = recipes.get(input.recipeId);
@@ -146,15 +141,7 @@ async function swapBatchRecipe(
       },
     );
   } catch (error) {
-    // Aucun appel n'a abouti : la génération décomptée est rendue au foyer.
-    if (error instanceof GeminiUnavailableError) {
-      await refundGenerationQuota(input.householdId);
-      throw unavailable(
-        'Le service de génération est saturé en ce moment. Ta génération n’a pas été ' +
-          'décomptée : réessaie dans une minute.',
-        error,
-      );
-    }
+    await rethrowIfUnavailable(error, input.householdId);
 
     if (error instanceof BatchRecipeGenerationError) {
       logger.error('remplacement de plat abandonné', {
@@ -203,31 +190,5 @@ async function swapBatchRecipe(
       'Le plat a bien été trouvé mais n’a pas pu être enregistré. Réessaie dans un instant.',
       error,
     );
-  }
-}
-
-/** Recettes du plan, indexées — le domaine en a besoin pour situer le batch. */
-async function readRecipes(householdId: string, recipeIds: string[]): Promise<Map<string, Recipe>> {
-  const snapshots = await Promise.all(
-    [...new Set(recipeIds)].map((id) => db.doc(paths.recipe(householdId, id)).get()),
-  );
-
-  const recipes = new Map<string, Recipe>();
-  for (const snapshot of snapshots) {
-    if (!snapshot.exists) continue;
-    const parsed = RecipeSchema.safeParse({ id: snapshot.id, ...snapshot.data() });
-    if (parsed.success) recipes.set(parsed.data.id, parsed.data);
-  }
-  return recipes;
-}
-
-async function readPlanOrFail(householdId: string, weekId: string): Promise<WeeklyPlan> {
-  try {
-    return await readPlanForEdit(householdId, weekId);
-  } catch (error) {
-    if (error instanceof PlanNotFoundError) {
-      throw notFound('Aucun plan pour cette semaine. Compose-la depuis l’accueil.');
-    }
-    throw error;
   }
 }

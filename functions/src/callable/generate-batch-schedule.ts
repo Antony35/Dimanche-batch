@@ -14,7 +14,7 @@ import {
   MAX_INSTANCES,
   REGION,
 } from '../config';
-import { internal, invalidArgument, notFound, parseInput, unavailable } from '../lib/errors';
+import { internal, invalidArgument, notFound, parseInput } from '../lib/errors';
 import {
   acquireGenerationLock,
   consumeGenerationQuota,
@@ -24,9 +24,9 @@ import {
   requireAuth,
   requireHouseholdMember,
 } from '../lib/guards';
-import { PlanNotFoundError, readPlanForEdit, readPlanRecipes } from '../lib/plan-writer';
+import { readPlanRecipes } from '../lib/plan-writer';
 import { readBatchSchedule, writeBatchSchedule } from '../lib/batch-schedule-writer';
-import { GeminiUnavailableError } from '../gemini/client';
+import { rethrowIfUnavailable, readPlanOrFail } from '../lib/callable-support';
 import {
   BatchScheduleGenerationError,
   generateBatchScheduleFromGemini,
@@ -117,14 +117,7 @@ async function composeSchedule(
       },
     );
   } catch (error) {
-    if (error instanceof GeminiUnavailableError) {
-      await refundGenerationQuota(input.householdId);
-      throw unavailable(
-        'Le service de génération est saturé en ce moment. Ta génération n’a pas été ' +
-          'décomptée : réessaie dans une minute.',
-        error,
-      );
-    }
+    await rethrowIfUnavailable(error, input.householdId);
     if (error instanceof BatchScheduleGenerationError) {
       logger.error('déroulé abandonné', {
         violations: error.violations.map((violation) => violation.code),
@@ -165,15 +158,4 @@ async function composeSchedule(
     tentatives: generated.attempts,
   });
   return { weekId: input.weekId, stepCount: generated.schedule.steps.length, generated: true };
-}
-
-async function readPlanOrFail(householdId: string, weekId: string): Promise<WeeklyPlan> {
-  try {
-    return await readPlanForEdit(householdId, weekId);
-  } catch (error) {
-    if (error instanceof PlanNotFoundError) {
-      throw notFound('Aucun plan pour cette semaine. Compose-la depuis l’accueil.');
-    }
-    throw error;
-  }
 }

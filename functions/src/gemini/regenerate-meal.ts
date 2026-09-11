@@ -1,4 +1,3 @@
-import { logger } from 'firebase-functions';
 import {
   GeneratedMealReplacementSchema,
   validateMealReplacement,
@@ -8,11 +7,10 @@ import {
 import {
   MEAL_REPLACEMENT_SYSTEM_INSTRUCTION,
   buildMealReplacementPrompt,
-  buildRetryPrompt,
   type MealReplacementPromptInput,
 } from './prompt';
 import { SINGLE_RECIPE_RESPONSE_SCHEMA } from './response-schema';
-import { generateJson } from './client';
+import { generateWithContentRetry } from './content-retry';
 
 export interface MealRecipeResult {
   recipe: GeneratedRecipe;
@@ -32,61 +30,34 @@ export class MealGenerationError extends Error {
 }
 
 /**
- * Produit la recette qui remplacera un repas, ou échoue clairement.
- *
- * Même politique que la génération complète : deux tentatives au maximum, et
- * la reprise renvoie au modèle la liste exacte de ses erreurs plutôt que la
- * même demande. Chaque appel consomme le quota du foyer — une boucle ici
- * coûterait autant qu'une semaine entière.
+ * Produit la recette qui remplacera un repas, ou échoue clairement. Chaque
+ * appel consomme le quota du foyer : la reprise vit dans `content-retry.ts`,
+ * bornée à deux tentatives.
  */
 export async function generateMealRecipeFromGemini(
   input: MealReplacementPromptInput,
-  /** Appelé avant chaque tentative, pour que l'app dise où en est la recherche. */
   onAttempt?: (attempt: number) => void,
 ): Promise<MealRecipeResult> {
-  const basePrompt = buildMealReplacementPrompt(input);
-  let prompt = basePrompt;
-  let lastViolations: ConstraintViolation[] = [];
+  const outcome = await generateWithContentRetry({
+    subject: 'recette',
+    systemInstruction: MEAL_REPLACEMENT_SYSTEM_INSTRUCTION,
+    prompt: buildMealReplacementPrompt(input),
+    responseSchema: SINGLE_RECIPE_RESPONSE_SCHEMA,
+    schema: GeneratedMealReplacementSchema,
+    validate: ({ recipe }) =>
+      validateMealReplacement(recipe, input.dayIndex, {
+        style: input.style,
+        bannedNames: input.bannedRecipeNames,
+      }),
+    describe: ({ recipe }) => ({ slug: recipe.slug }),
+    onAttempt,
+  });
 
-  for (let attempt = 1; attempt <= 2; attempt += 1) {
-    onAttempt?.(attempt);
-
-    const { data, model } = await generateJson({
-      systemInstruction: MEAL_REPLACEMENT_SYSTEM_INSTRUCTION,
-      prompt,
-      responseSchema: SINGLE_RECIPE_RESPONSE_SCHEMA,
-    });
-
-    const parsed = GeneratedMealReplacementSchema.safeParse(data);
-    if (!parsed.success) {
-      lastViolations = parsed.error.issues.map((issue) => ({
-        code: 'schema',
-        message: `${issue.path.join('.') || 'racine'} : ${issue.message}`,
-      }));
-      logger.warn('recette refusée au schéma', { attempt, violations: lastViolations.length });
-      prompt = buildRetryPrompt(basePrompt, lastViolations, data);
-      continue;
-    }
-
-    const violations = validateMealReplacement(parsed.data.recipe, input.dayIndex, {
-      style: input.style,
-      bannedNames: input.bannedRecipeNames,
-    });
-    if (violations.length === 0) {
-      logger.info('recette acceptée', { attempt, model, slug: parsed.data.recipe.slug });
-      return { recipe: parsed.data.recipe, model, attempts: attempt };
-    }
-
-    lastViolations = violations;
-    logger.warn('recette refusée aux contraintes', {
-      attempt,
-      codes: violations.map((violation) => violation.code),
-    });
-    prompt = buildRetryPrompt(basePrompt, violations, parsed.data);
+  if (!outcome.ok) {
+    throw new MealGenerationError(
+      'La recette proposée ne convient pas à ce jour de la semaine, même après correction.',
+      outcome.violations,
+    );
   }
-
-  throw new MealGenerationError(
-    'La recette proposée ne convient pas à ce jour de la semaine, même après correction.',
-    lastViolations,
-  );
+  return { recipe: outcome.value.recipe, model: outcome.model, attempts: outcome.attempts };
 }

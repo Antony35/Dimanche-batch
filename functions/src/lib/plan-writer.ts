@@ -23,6 +23,7 @@ import {
   type SetMealResult,
   type WeeklyPlan,
 } from '@dimanche-batch/shared';
+import { logger } from 'firebase-functions';
 import { PROMPT_VERSION } from '../gemini/prompt';
 import { db } from './firestore';
 
@@ -70,7 +71,7 @@ export async function writeWeeklyPlan(params: WritePlanParams): Promise<WritePla
   const weekId = weekStart;
   const dates = getWeekDates(weekStart);
 
-  const existingRecipes = await readExistingRecipes(
+  const existingRecipes = await readRecipesByIds(
     householdId,
     plan.recipes.map((recipe) => recipe.slug),
   );
@@ -242,7 +243,7 @@ export async function readPlanRecipes(
   plan: WeeklyPlan,
   extraIds: string[] = [],
 ): Promise<Map<string, Recipe>> {
-  return readExistingRecipes(householdId, [
+  return readRecipesByIds(householdId, [
     ...plan.recipeIds,
     ...plan.batchRecipeIds,
     ...extraIds,
@@ -321,7 +322,7 @@ async function commitPlan(params: CommitPlanParams): Promise<{ itemCount: number
 }
 
 /** Recettes déjà connues du foyer, pour préserver ce que l'utilisateur y a mis. */
-async function readExistingRecipes(
+export async function readRecipesByIds(
   householdId: string,
   recipeIds: string[],
 ): Promise<Map<string, Recipe>> {
@@ -331,10 +332,17 @@ async function readExistingRecipes(
   );
 
   const existing = new Map<string, Recipe>();
+  const rejected: string[] = [];
   for (const snapshot of snapshots) {
     if (!snapshot.exists) continue;
     const parsed = RecipeSchema.safeParse({ id: snapshot.id, ...snapshot.data() });
     if (parsed.success) existing.set(parsed.data.id, parsed.data);
+    else rejected.push(snapshot.id);
+  }
+  // Écarter une recette illisible sans le dire la rendrait indiscernable d'une
+  // recette absente (§7).
+  if (rejected.length > 0) {
+    logger.warn('recettes illisibles écartées', { householdId, recettes: rejected });
   }
   return existing;
 }

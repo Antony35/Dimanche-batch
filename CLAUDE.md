@@ -83,7 +83,7 @@ dimanche-batch/
 ├─ firestore.rules
 ├─ firestore.indexes.json
 │
-├─ .github/workflows/ci.yml   # typage, lint, format, code mort, les 3 suites
+├─ .github/workflows/ci.yml   # typage, lint, format, code mort, les 4 suites
 ├─ .oxlintrc.json             # lint des quatre workspaces
 ├─ .oxfmtrc.json              # format
 ├─ knip.json                  # code mort
@@ -284,6 +284,13 @@ donc rien n'a été consommé côté modèle. Elle est portée par `gemini/clien
 et sa classification vit dans `gemini/transport-errors.ts` — isolée pour être
 testable sans réseau, car elle repose sur la forme des erreurs d'un SDK tiers,
 qui n'expose pas son statut HTTP de façon stable.
+
+La reprise de contenu vit en un seul endroit, `gemini/content-retry.ts`. Les
+quatre chaînes — semaine, repas, plat du batch, déroulé — ne diffèrent que par
+leur schéma et leur validateur, et en portaient chacune une copie de quarante
+lignes : une politique de reprise écrite quatre fois finit par en être quatre.
+Même chose pour ce que les callables partagent — lire le plan ou dire qu'il
+manque, rendre la génération sur saturation — dans `lib/callable-support.ts`.
 
 Quand les trois essais échouent, la callable **rend au foyer la génération
 décomptée** (`refundGenerationQuota`) : le quota protège la clé Gemini, pas le
@@ -495,7 +502,7 @@ refuserait des recettes légitimes, et chaque refus coûte une reprise.
 
 ### Où va quel test
 
-Trois suites, séparées par ce dont elles ont besoin pour tourner, pas par le
+Quatre suites, séparées par ce dont elles ont besoin pour tourner, pas par le
 dossier où vit le code.
 
 | Suite                    | Couvre                                                                                                     | Coût                                   |
@@ -556,7 +563,7 @@ CI pour que ce pari reste tenable.
 lance en local, sur une machine qui n'a rien d'installé : Node lu dans `.nvmrc`
 (**24**, celui du runtime déployé — l'`engines` racine et `firebase.json`
 disaient deux choses différentes), Java 21 pour l'émulateur, puis typage, lint et
-les trois suites.
+les quatre suites.
 
 Elle **alerte sans bloquer** : `main` n'est pas protégée, on y pousse
 directement, et une CI rouge se voit. La protéger reste une case à cocher.
@@ -619,7 +626,7 @@ npm run test                     # Vitest sur le domaine partagé, sans émulate
 npm run test:app                 # logique de l'app, sans rendu ni émulateur
 npm run test:functions           # Guards et écritures Firestore, sur émulateur
 npm run test:rules               # Security Rules sur émulateur
-npm run test:all                 # les trois, dans cet ordre
+npm run test:all                 # les quatre, dans cet ordre
 GEMINI_API_KEY=… npm run gemini:probe   # chaînes de génération, sans déployer
 #   -- plan | meal | batch | schedule pour n'en tester qu'une
 npm run typecheck                # tsc --noEmit sur tous les workspaces
@@ -633,10 +640,11 @@ npm run deploy:functions
 npm run build:android            # eas build -p android --profile preview (APK)
 ```
 
-`gemini:probe` envoie à Gemini les payloads réels de `generateWeeklyPlan` et de
-`regenerateMeal`, puis fait traverser chaque réponse les deux mêmes filtres que
-la function correspondante (`-- plan`, `-- meal`, `-- batch` ou `-- schedule` pour n'en tester qu'une). **À lancer avant tout
-changement de modèle ou de `responseSchema`** : l'API refuse certaines
+`gemini:probe` envoie à Gemini les payloads réels des quatre callables qui
+l'appellent, puis fait traverser chaque réponse les deux mêmes filtres que la
+function correspondante (`-- plan`, `-- meal`, `-- batch` ou `-- schedule` pour
+n'en tester qu'une). **À lancer avant tout changement de modèle ou de
+`responseSchema`** : l'API refuse certaines
 constructions de schéma avec un `INVALID_ARGUMENT` qui ne nomme aucun champ, et
 publie des modèles fermés aux comptes récents qui répondent 404 alors qu'ils
 figurent dans `GET /models`. Dans les deux cas, seul un appel réel tranche, et
@@ -704,6 +712,7 @@ Ce qui est **délibérément** simple en v1, et où brancher la suite :
 | Goûts         | **fait** | Favoris et plats bannis réunis sur un écran unique atteint des réglages — ce sont les deux valeurs d'un même champ, les séparer cachait le lien. `SegmentedSwitch` extrait de `WeekSwitch`, `splitByVerdict` dans le domaine                                                                                                                                |
 | CI            | **fait** | GitHub Actions sur chaque push et chaque PR ; `.nvmrc` comme source unique de la version de Node ; Renovate en tableau de bord, les paquets du SDK Expo exclus au profit d'`expo install --check`                                                                                                                                                           |
 | Montées       | **fait** | `firebase-tools` 15, `firebase-admin` 14, Vitest 5 (par la v4), `@google/genai` 2. Seuil de couverture appliqué par la CI. Plus aucune faille critique ni élevée                                                                                                                                                                                            |
+| Audit final   | **fait** | La reprise de contenu vivait en quatre copies, une par chaîne de génération : réunie dans `content-retry.ts`. Le bloc « saturé, génération rendue » en quatre copies identiques, `readPlanOrFail` en trois, la lecture de recettes en quatre variantes dont une copie exacte : tout réuni. CLAUDE.md remis d'aplomb sur les quatre suites de tests          |
 | Mise en place | **fait** | Le partage des ingrédients coupés d'un coup, calculé depuis les recettes : une carte en tête du déroulé, et une ligne sous chaque étape qui mêle plusieurs plats                                                                                                                                                                                            |
 | Déroulé       | **fait** | Vue « tout en parallèle » sur l'écran de préparation : les étapes des plats fondues par Gemini, chacune nommant son plat, composées à la demande puis conservées. Un déroulé périmé par un remplacement de plat est détecté au plan, pas effacé par chaque écrivain                                                                                         |
 | Plat du batch | **fait** | Remplacer un plat met à jour tous les repas qu'il servait, depuis l'écran de préparation. Callable, prompt et validation dédiés                                                                                                                                                                                                                             |

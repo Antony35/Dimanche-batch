@@ -1,5 +1,6 @@
 import { addDays, normalizeName, paths } from '@dimanche-batch/shared';
 import { db } from './firestore';
+import { readRecipesByIds } from './plan-writer';
 
 /**
  * Ce que le foyer a déjà mangé, aimé et rejeté.
@@ -76,13 +77,8 @@ async function readRecentRecipeNames(
   }
   if (recipeIds.size === 0) return [];
 
-  const recipes = await Promise.all(
-    [...recipeIds].map((id) => db.doc(paths.recipe(householdId, id)).get()),
-  );
-
-  return recipes
-    .map((recipe) => recipe.get('name'))
-    .filter((name): name is string => typeof name === 'string');
+  const recipes = await readRecipesByIds(householdId, [...recipeIds]);
+  return [...recipes.values()].map((recipe) => recipe.name);
 }
 
 /**

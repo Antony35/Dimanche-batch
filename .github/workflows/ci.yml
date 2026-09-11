@@ -24,7 +24,7 @@ permissions:
 
 jobs:
   verify:
-    name: Typage, lint et les trois suites
+    name: Typage, lint et les quatre suites
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
