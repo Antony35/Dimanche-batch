@@ -14,18 +14,17 @@ import {
   REGION,
 } from '../config';
 import { db } from '../lib/firestore';
-import { internal, invalidArgument, parseInput, unavailable } from '../lib/errors';
+import { internal, invalidArgument, parseInput } from '../lib/errors';
 import {
   acquireGenerationLock,
   consumeGenerationQuota,
-  refundGenerationQuota,
   releaseGenerationLock,
   requireAuth,
   requireHouseholdMember,
 } from '../lib/guards';
 import { writeWeeklyPlan } from '../lib/plan-writer';
 import { readHouseholdMemory } from '../lib/recipe-memory';
-import { GeminiUnavailableError } from '../gemini/client';
+import { rethrowIfUnavailable } from '../lib/callable-support';
 import { PlanGenerationError, generateWeeklyPlanFromGemini } from '../gemini/generate-plan';
 
 /**
@@ -93,15 +92,7 @@ async function composePlan(
       notes: input.notes,
     });
   } catch (error) {
-    // Aucun appel n'a abouti : la génération décomptée est rendue au foyer.
-    if (error instanceof GeminiUnavailableError) {
-      await refundGenerationQuota(input.householdId);
-      throw unavailable(
-        'Le service de génération est saturé en ce moment. Ta génération n’a pas été ' +
-          'décomptée : réessaie dans une minute.',
-        error,
-      );
-    }
+    await rethrowIfUnavailable(error, input.householdId);
 
     if (error instanceof PlanGenerationError) {
       logger.error('génération abandonnée', {
