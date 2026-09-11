@@ -15,7 +15,7 @@ dernier jour aurait attendu huit jours au frigo.
 **Statut : v1 en cours — J1 à J6 livrés, modèle du batch refondu.** Le monorepo, le domaine partagé, les
 Security Rules, l'authentification, le foyer partagé, la génération Gemini, le
 planning des 7 jours, la régénération d'un repas isolé, la liste de courses, la
-fiche recette, l'historique et le fonctionnement hors ligne ; 355 tests couvrent
+fiche recette, l'historique et le fonctionnement hors ligne ; 366 tests couvrent
 le domaine, les schémas, les callables et les règles. Reste le build (J7). Ce
 document fait autorité sur l'architecture ; il est mis à jour en même temps que
 le code, jamais après.
@@ -95,7 +95,8 @@ dimanche-batch/
 │     │                       #       groceryList, gemini (contrat du modèle)
 │     ├─ domain/              # logique pure : semaine, unités, agrégation des
 │     │                       #   courses, export Listonic, contraintes de plan,
-│     │                       #   édition d'un repas, batch, goûts, texte
+│     │                       #   édition d'un repas, batch, déroulé,
+│     │                       #   mise en place, goûts, texte
 │     └─ firestore-paths.ts   # chemins Firestore, définis une seule fois
 │
 ├─ packages/rules-tests/       # Security Rules testées contre l'émulateur
@@ -341,6 +342,19 @@ Un déroulé composé puis un plat remplacé : le déroulé décrit un batch qui
 n'existe plus. Plutôt que de compter sur chaque écrivain pour l'effacer, le
 document fige `sourceRecipeIds`, et `isScheduleCurrent` le compare au plan au
 moment de l'afficher. La vue recette par recette reste la vue par défaut.
+
+**La mise en place se calcule, elle ne se génère pas.** Le déroulé regroupe
+les gestes semblables — « émincer les oignons des deux plats » —, mais une fois
+tout coupé il faut répartir. Les quantités existent déjà, exactes, recette par
+recette : `getSharedIngredients` refait l'agrégation de la liste de courses, avec
+la **même clé** (`ingredientKey`, exportée de `grocery.ts` pour ne pas être
+réécrite), en gardant la part de chaque plat. Le demander au modèle serait moins
+sûr — il peut se tromper en comptant — et coûterait une génération ; le calcul,
+lui, vaut aussi pour les déroulés composés avant. Des grammes et des pièces du
+même légume restent deux lignes. Sous chaque étape, `ingredientsForStep` ne
+montre que les ingrédients qu'elle nomme, reconnus par préfixe de mots
+(« oignon » dans « oignons ») ; une étape qui dit « échalote » pour « oignon »
+n'affiche rien, et c'est pour ce cas que la carte « Mise en place » existe en tête.
 
 **Une règle, un seul endroit.** `requiresFreezing(dayIndex)` dit qu'un plat servi
 jeudi ou vendredi doit se congeler — cuisiné le dimanche, il aurait attendu cinq
@@ -690,6 +704,7 @@ Ce qui est **délibérément** simple en v1, et où brancher la suite :
 | Goûts         | **fait** | Favoris et plats bannis réunis sur un écran unique atteint des réglages — ce sont les deux valeurs d'un même champ, les séparer cachait le lien. `SegmentedSwitch` extrait de `WeekSwitch`, `splitByVerdict` dans le domaine                                                                                                                                |
 | CI            | **fait** | GitHub Actions sur chaque push et chaque PR ; `.nvmrc` comme source unique de la version de Node ; Renovate en tableau de bord, les paquets du SDK Expo exclus au profit d'`expo install --check`                                                                                                                                                           |
 | Montées       | **fait** | `firebase-tools` 15, `firebase-admin` 14, Vitest 5 (par la v4), `@google/genai` 2. Seuil de couverture appliqué par la CI. Plus aucune faille critique ni élevée                                                                                                                                                                                            |
+| Mise en place | **fait** | Le partage des ingrédients coupés d'un coup, calculé depuis les recettes : une carte en tête du déroulé, et une ligne sous chaque étape qui mêle plusieurs plats                                                                                                                                                                                            |
 | Déroulé       | **fait** | Vue « tout en parallèle » sur l'écran de préparation : les étapes des plats fondues par Gemini, chacune nommant son plat, composées à la demande puis conservées. Un déroulé périmé par un remplacement de plat est détecté au plan, pas effacé par chaque écrivain                                                                                         |
 | Plat du batch | **fait** | Remplacer un plat met à jour tous les repas qu'il servait, depuis l'écran de préparation. Callable, prompt et validation dédiés                                                                                                                                                                                                                             |
 | Décongélation | **fait** | Rappel sur l'accueil le soir où il sert, plutôt que sur l'écran de préparation trois jours trop tôt                                                                                                                                                                                                                                                         |

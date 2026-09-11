@@ -1,9 +1,14 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Pressable, View } from 'react-native';
 import {
+  capitalize,
+  formatQuantity,
+  getSharedIngredients,
+  ingredientsForStep,
   isScheduleCurrent,
   type GenerationLock,
   type Recipe,
+  type SharedIngredient,
   type WeeklyPlan,
 } from '@dimanche-batch/shared';
 import { Button, Card, ErrorState, LoadingState, Text } from '@/components/ui';
@@ -78,57 +83,100 @@ export function BatchScheduleView({
   // Une clé par version du déroulé. Les slugs ne contiennent jamais de `_`,
   // donc aucune collision possible avec l'avancement d'un plat — et un déroulé
   // recomposé repart de zéro au lieu d'hériter des cases de l'ancien.
+  // Le partage se calcule depuis les recettes, pas depuis le déroulé : il vaut
+  // pour tout déroulé, y compris ceux composés avant cette fonctionnalité.
+  const batchRecipes = plan.batchRecipeIds
+    .map((id) => recipesById.get(id))
+    .filter((recipe): recipe is Recipe => recipe !== undefined);
+  const shared = getSharedIngredients(batchRecipes);
+  const dishName = (id: string) => recipesById.get(id)?.name ?? id;
+
   const progressKey = `__deroule:${current.generatedAt}`;
   const stepCount = current.steps.length;
   const done = progress.checkedCount(progressKey, stepCount);
 
   return (
-    <Card style={{ gap: theme.spacing.sm }}>
-      <Text variant="overline" tone="faint">
-        DÉROULÉ {done > 0 ? `· ${done}/${stepCount}` : `· ${stepCount} ÉTAPES`}
-      </Text>
-      {current.steps.map((step, index) => {
-        const isChecked = progress.isChecked(progressKey, index, stepCount);
-        const dishes = step.recipeIds.map((id) => recipesById.get(id)?.name ?? id).join(' · ');
-        return (
-          <Pressable
-            key={`${progressKey}-${index}`}
-            accessibilityRole="checkbox"
-            accessibilityState={{ checked: isChecked }}
-            accessibilityLabel={`Étape ${index + 1}, ${dishes} : ${step.text}`}
-            onPress={() => progress.toggleStep(progressKey, index, stepCount)}
-            hitSlop={6}
-            style={{ flexDirection: 'row', gap: theme.spacing.md, paddingVertical: 4 }}
-          >
-            {isChecked ? (
-              <Ionicons
-                name="checkmark-circle"
-                size={18}
-                color={theme.colors.accent}
-                style={{ minWidth: 20 }}
-              />
-            ) : (
-              <Text variant="bodyStrong" tone="accent" style={{ minWidth: 20 }}>
-                {index + 1}
-              </Text>
-            )}
-            <View style={{ flex: 1, gap: 2 }}>
-              {/* Le plat d'abord : c'est ce qui permet de s'y retrouver. */}
-              <Text variant="caption" style={{ color: theme.colors.spice }}>
-                {dishes}
-              </Text>
-              <Text
-                style={{
-                  textDecorationLine: isChecked ? 'line-through' : 'none',
-                  color: isChecked ? theme.colors.inkFaint : theme.colors.ink,
-                }}
-              >
-                {step.text}
-              </Text>
-            </View>
-          </Pressable>
-        );
-      })}
-    </Card>
+    <>
+      {shared.length > 0 ? (
+        <Card style={{ gap: theme.spacing.xs }}>
+          <Text variant="overline" tone="faint">
+            MISE EN PLACE
+          </Text>
+          <Text variant="caption" tone="faint">
+            Ce qui se coupe pour plusieurs plats, et la part de chacun.
+          </Text>
+          {shared.map((ingredient) => (
+            <Text key={`${ingredient.name}-${ingredient.total.unit}`}>
+              <Text variant="bodyStrong">{capitalize(ingredient.name)}</Text>{' '}
+              {describeShares(ingredient, dishName)}
+            </Text>
+          ))}
+        </Card>
+      ) : null}
+      <Card style={{ gap: theme.spacing.sm }}>
+        <Text variant="overline" tone="faint">
+          DÉROULÉ {done > 0 ? `· ${done}/${stepCount}` : `· ${stepCount} ÉTAPES`}
+        </Text>
+        {current.steps.map((step, index) => {
+          const isChecked = progress.isChecked(progressKey, index, stepCount);
+          const dishes = step.recipeIds.map((id) => recipesById.get(id)?.name ?? id).join(' · ');
+          return (
+            <Pressable
+              key={`${progressKey}-${index}`}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: isChecked }}
+              accessibilityLabel={`Étape ${index + 1}, ${dishes} : ${step.text}`}
+              onPress={() => progress.toggleStep(progressKey, index, stepCount)}
+              hitSlop={6}
+              style={{ flexDirection: 'row', gap: theme.spacing.md, paddingVertical: 4 }}
+            >
+              {isChecked ? (
+                <Ionicons
+                  name="checkmark-circle"
+                  size={18}
+                  color={theme.colors.accent}
+                  style={{ minWidth: 20 }}
+                />
+              ) : (
+                <Text variant="bodyStrong" tone="accent" style={{ minWidth: 20 }}>
+                  {index + 1}
+                </Text>
+              )}
+              <View style={{ flex: 1, gap: 2 }}>
+                {/* Le plat d'abord : c'est ce qui permet de s'y retrouver. */}
+                <Text variant="caption" style={{ color: theme.colors.spice }}>
+                  {dishes}
+                </Text>
+                <Text
+                  style={{
+                    textDecorationLine: isChecked ? 'line-through' : 'none',
+                    color: isChecked ? theme.colors.inkFaint : theme.colors.ink,
+                  }}
+                >
+                  {step.text}
+                </Text>
+                {ingredientsForStep(step, shared).map((ingredient) => (
+                  <Text
+                    key={`${ingredient.name}-${ingredient.total.unit}`}
+                    variant="caption"
+                    tone="soft"
+                  >
+                    └ {capitalize(ingredient.name)} {describeShares(ingredient, dishName)}
+                  </Text>
+                ))}
+              </View>
+            </Pressable>
+          );
+        })}
+      </Card>
+    </>
   );
+}
+
+/** « 5 → 2 Curry · 3 Chili » : le total d'abord, puisqu'on coupe tout d'un coup. */
+function describeShares(ingredient: SharedIngredient, dishName: (id: string) => string): string {
+  const parts = ingredient.shares.map(
+    (share) => `${formatQuantity(share.qty, share.unit)} ${dishName(share.recipeId)}`,
+  );
+  return `${formatQuantity(ingredient.total.qty, ingredient.total.unit)} → ${parts.join(' · ')}`;
 }

@@ -11,7 +11,13 @@ export function normalizeIngredientName(name: string): string {
   return normalizeName(name);
 }
 
-function itemKey(name: string, unit: string): string {
+/**
+ * Clé d'un ingrédient : nom normalisé et dimension d'unité. Partagée par la
+ * liste de courses et la mise en place du batch — deux clés qui doivent
+ * coïncider finiraient par diverger, et les deux écrans ne reconnaîtraient
+ * plus le même oignon.
+ */
+export function ingredientKey(name: string, unit: string): string {
   return `${normalizeIngredientName(name).replace(/[^a-z0-9]+/g, '-')}--${unit}`;
 }
 
@@ -19,7 +25,7 @@ function itemKey(name: string, unit: string): string {
 function addRecipeIngredients(accumulator: Map<string, GroceryItem>, recipe: Recipe): void {
   for (const ingredient of recipe.ingredients) {
     const base = toBaseQuantity(ingredient.qty, ingredient.unit);
-    const key = itemKey(ingredient.name, dimensionOf(ingredient.unit));
+    const key = ingredientKey(ingredient.name, dimensionOf(ingredient.unit));
     const existing = accumulator.get(key);
 
     if (existing) {
