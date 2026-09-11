@@ -637,7 +637,7 @@ npm run format:check             # échoue si un fichier n'est pas formaté
 npm run test:coverage           # couverture du domaine partagé
 npm run deploy:rules
 npm run deploy:functions
-npm run build:android            # eas build -p android --profile preview (APK)
+npm run build:android            # EAS, profil preview : un APK à installer
 ```
 
 `gemini:probe` envoie à Gemini les payloads réels des quatre callables qui
@@ -656,6 +656,17 @@ l'attente d'ingestion des logs.
 bout explicite — un appel Gemini réel consomme du quota. Sur téléphone physique,
 `EXPO_PUBLIC_EMULATOR_HOST` doit valoir l'IP locale de la machine ; la valeur par
 défaut `10.0.2.2` ne vaut que pour l'émulateur Android.
+
+**Le build EAS ne lit pas `app/.env`.** EAS n'envoie au serveur de build que ce
+que git suit, et `.env` est ignoré : sans autre source, l'APK serait compilé
+avec une configuration Firebase vide, et l'app ne pourrait pas se connecter.
+Les six `EXPO_PUBLIC_FIREBASE_*` vivent donc aussi dans les variables
+d'environnement du projet EAS (`@devwanderer/dimanche-batch`), en `preview` et
+en `production`, que les profils de `eas.json` désignent par leur champ
+`environment`. Elles n'y sont pas au titre de secrets — elles sont lisibles
+dans l'APK — mais pour rester hors d'un dépôt public. Si l'une change dans
+`.env`, la reporter avec `eas env:update`. `EXPO_PUBLIC_USE_EMULATORS=0` est
+fixé par `eas.json` : un APK ne parle jamais aux émulateurs.
 
 ---
 

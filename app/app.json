@@ -39,6 +39,13 @@
       "typedRoutes": true,
       "reactCompiler": true
     },
-    "platforms": ["android", "ios", "web"]
+    "platforms": ["android", "ios", "web"],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "c179de7a-28e6-4f34-b36b-eeb60b54df4b"
+      }
+    },
+    "owner": "devwanderer"
   }
 }
