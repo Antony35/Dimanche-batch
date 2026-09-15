@@ -37,3 +37,8 @@ app/eas.json.local
 .DS_Store
 *.log
 npm-debug.log*
+
+# La CLI Expo lancée depuis la racine du monorepo y crée ces fichiers vides.
+# Le projet Expo vit dans app/ : à la racine, ce ne sont que des artefacts.
+/app.json
+/tsconfig.json
