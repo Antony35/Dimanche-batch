@@ -5,6 +5,7 @@ import { Pressable, View } from 'react-native';
 import {
   AISLE_LABELS,
   formatDateLong,
+  formatDuration,
   formatQuantity,
   countBatchMealsServing,
   getBatchSession,
@@ -32,8 +33,8 @@ import {
   useBatchProgress,
   type BatchProgressState,
 } from '@/features/meal-plan/api/use-batch-progress';
-import { useBatchSchedule } from '@/features/meal-plan/api/use-batch-schedule';
-import { useGenerateBatchSchedule } from '@/features/meal-plan/api/use-generate-batch-schedule';
+import { useCookingSession } from '@/features/meal-plan/api/use-cooking-session';
+import { useComposeCookingSession } from '@/features/meal-plan/api/use-compose-cooking-session';
 import { useRecipes } from '@/features/meal-plan/api/use-recipes';
 import { useReplaceBatchRecipe } from '@/features/meal-plan/api/use-replace-batch-recipe';
 import { BatchSessionView } from '@/features/meal-plan/components/batch-session-view';
@@ -79,8 +80,8 @@ export default function BatchScreen() {
   const progress = useBatchProgress(householdId, weekId);
   const replace = useReplaceBatchRecipe();
   const generation = useGenerationProgress(householdId, weekId);
-  const schedule = useBatchSchedule(householdId, weekId);
-  const composeSchedule = useGenerateBatchSchedule();
+  const cookingSession = useCookingSession(householdId, weekId);
+  const composeSession = useComposeCookingSession();
   // La vue par recette reste la vue par défaut : selon les plats et le temps
   // disponible, enchaîner tranquillement reste un choix valable.
   const [view, setView] = useState<BatchView>('recipes');
@@ -144,13 +145,13 @@ export default function BatchScreen() {
         <BatchSessionView
           plan={plan}
           recipesById={recipesById}
-          schedule={schedule}
+          cookingSession={cookingSession}
           progress={progress}
-          isComposing={composeSchedule.isPending}
-          composeError={composeSchedule.error}
+          isComposing={composeSession.isPending}
+          composeError={composeSession.error}
           generation={generation}
           onCompose={() => {
-            if (householdId) composeSchedule.mutate({ householdId, weekId });
+            if (householdId) composeSession.mutate({ householdId, weekId });
           }}
         />
       ) : null}
@@ -332,11 +333,4 @@ function describeServedDays(dayIndexes: number[]): string {
 
   const last = names[names.length - 1];
   return `servi ${names.slice(0, -1).join(', ')} et ${last}`;
-}
-
-function formatDuration(minutes: number): string {
-  if (minutes < 60) return `${minutes} min`;
-  const hours = Math.floor(minutes / 60);
-  const rest = minutes % 60;
-  return rest === 0 ? `${hours} h` : `${hours} h ${rest}`;
 }

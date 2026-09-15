@@ -1,6 +1,7 @@
-import type { CookingSession, GeneratedCookingSession } from '../schemas/batch-schedule';
+import type { CookingSession, GeneratedCookingSession } from '../schemas/cooking-session';
 import type { Recipe } from '../schemas/recipe';
 import type { WeeklyPlan } from '../schemas/weekly-plan';
+import { orderForCooking } from './batch';
 import { cookTimeViolations, type ConstraintViolation } from './plan-constraints';
 import { singularIngredientName } from './mise-en-place';
 import { normalizeName } from './text';
@@ -32,7 +33,7 @@ const PREP_VERBS: ReadonlySet<string> = new Set([
  * étape qui redemande de couper, une découpe d'un ingrédient que la recette ne
  * contient pas.
  */
-export function validateBatchSession(
+export function validateCookingSession(
   session: GeneratedCookingSession,
   recipes: readonly Pick<Recipe, 'id' | 'name' | 'ingredients'>[],
 ): ConstraintViolation[] {
@@ -129,8 +130,27 @@ export function sessionCookMinutes(
  * l'efface. La comparer au plan au moment de l'afficher est la seule garantie
  * qui ne dépende pas de la mémoire de chaque écrivain.
  */
-export function isScheduleCurrent(session: CookingSession, plan: WeeklyPlan): boolean {
+export function isCookingSessionCurrent(session: CookingSession, plan: WeeklyPlan): boolean {
   const source = session.sourceRecipeIds;
   const current = plan.batchRecipeIds;
   return source.length === current.length && source.every((id, index) => id === current[index]);
+}
+
+/**
+ * Plats de la session dans l'ordre de cuisson, chacun avec le temps de cuisson
+ * seule que l'écran doit annoncer.
+ *
+ * Le temps de la session, qui concorde avec les étapes affichées, décide à la
+ * fois de l'ordre et de ce que la fiche dit ; la recette sert de repli.
+ */
+export function orderCookingSession<T extends { recipe: Recipe }>(
+  entries: readonly T[],
+  session: Pick<CookingSession, 'timings'> | null,
+): T[] {
+  return orderForCooking(
+    entries.map((entry) => ({
+      ...entry,
+      recipe: { ...entry.recipe, cookMinutes: sessionCookMinutes(session, entry.recipe) },
+    })),
+  );
 }

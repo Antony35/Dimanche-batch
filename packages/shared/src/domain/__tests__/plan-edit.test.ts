@@ -3,6 +3,7 @@ import {
   BatchRecipeNotFoundError,
   MealNotFoundError,
   collectRecipeIds,
+  countUndecidedWeekendMeals,
   countMealsServing,
   findMeal,
   findSwapCounterpart,
@@ -360,5 +361,18 @@ describe('isLastMealOfBatchDish', () => {
     expect(isLastMealOfBatchDish(plan, LUNDI, 'dinner')).toBe(true);
     expect(isLastMealOfBatchDish(plan, LUNDI, 'lunch')).toBe(false);
     expect(isLastMealOfBatchDish(plan, '2026-09-12', 'lunch')).toBe(false);
+  });
+});
+
+describe('countUndecidedWeekendMeals', () => {
+  it('compte les repas du samedi et du dimanche encore à décider, et eux seuls', () => {
+    const undecided = { recipeId: null, kind: 'undecided' as const };
+    const plan = makePlan([
+      { lunch: undecided, dinner: undecided },
+      { lunch: { recipeId: null, kind: 'eat-out' }, dinner: undecided },
+      { lunch: undecided },
+    ]);
+    // Le lundi « à décider » ne compte pas : seul le week-end se décide.
+    expect(countUndecidedWeekendMeals(plan)).toBe(3);
   });
 });

@@ -227,7 +227,7 @@ ${RECIPE_STYLE}`;
  * disparaîtrait sinon avec les étapes qui la portaient. Il n'ordonne rien et ne
  * compte rien : l'ordre et les quantités se calculent.
  */
-export const BATCH_SCHEDULE_SYSTEM_INSTRUCTION = `Tu prépares la session de cuisine du dimanche d'un foyer français qui cuisine plusieurs plats d'affilée.
+export const COOKING_SESSION_SYSTEM_INSTRUCTION = `Tu prépares la session de cuisine du dimanche d'un foyer français qui cuisine plusieurs plats d'affilée.
 
 La session se fait en deux temps :
 1. MISE EN PLACE — tout ce qui se coupe est coupé d'un coup, avant de cuisiner : oignons, ail, légumes, herbes, viande, poisson.
@@ -247,7 +247,7 @@ RÈGLES DES ÉTAPES
 
 Des étapes courtes, à l'infinitif.`;
 
-export interface BatchSchedulePromptInput {
+export interface CookingSessionPromptInput {
   recipes: {
     id: string;
     name: string;
@@ -258,7 +258,7 @@ export interface BatchSchedulePromptInput {
   }[];
 }
 
-export function buildBatchSchedulePrompt(input: BatchSchedulePromptInput): string {
+export function buildCookingSessionPrompt(input: CookingSessionPromptInput): string {
   const recipes = input.recipes.map((recipe) =>
     [
       `PLAT « ${recipe.name} » — identifiant ${recipe.id}${recipe.cookMinutes > 0 ? `, ${recipe.cookMinutes} min de cuisson sans surveillance` : ''}`,

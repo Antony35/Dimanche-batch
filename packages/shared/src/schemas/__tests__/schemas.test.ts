@@ -2,10 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { GeneratedPlanSchema, GeneratedRecipeSchema } from '../gemini';
 import {
   CookingSessionSchema,
-  GenerateBatchScheduleInputSchema,
-  GenerateBatchScheduleResultSchema,
+  ComposeCookingSessionInputSchema,
+  ComposeCookingSessionResultSchema,
   GeneratedCookingSessionSchema,
-} from '../batch-schedule';
+} from '../cooking-session';
 import { GenerationLockSchema } from '../generation';
 import { GroceryItemSchema, GroceryListSchema } from '../grocery-list';
 import { HouseholdSchema, InviteCodeSchema } from '../household';
@@ -513,12 +513,12 @@ describe('schémas de la session de cuisson', () => {
 
   it('valide l’entrée et la sortie de la callable', () => {
     expect(
-      GenerateBatchScheduleInputSchema.safeParse({ householdId: 'foyer', weekId: '2026-09-12' })
+      ComposeCookingSessionInputSchema.safeParse({ householdId: 'foyer', weekId: '2026-09-12' })
         .success,
     ).toBe(true);
-    expectRejected(GenerateBatchScheduleInputSchema, { householdId: '', weekId: '2026-09-12' });
+    expectRejected(ComposeCookingSessionInputSchema, { householdId: '', weekId: '2026-09-12' });
     expect(
-      GenerateBatchScheduleResultSchema.safeParse({
+      ComposeCookingSessionResultSchema.safeParse({
         weekId: '2026-09-12',
         stepCount: 12,
         generated: true,

@@ -1,4 +1,4 @@
-import type { Aisle } from '../schemas/common';
+import type { Aisle, Unit } from '../schemas/common';
 import { AISLES } from '../schemas/common';
 import type { GroceryItem, GroceryOrigin } from '../schemas/grocery-list';
 import type { Recipe } from '../schemas/recipe';
@@ -178,8 +178,30 @@ export function manualItemId(name: string, unit: string): string {
   return `${MANUAL_PREFIX}${ingredientKey(name, unit)}`;
 }
 
-export function isManualItemId(id: string): boolean {
-  return id.startsWith(MANUAL_PREFIX);
+/**
+ * Article ajouté à la main, prêt à écrire.
+ *
+ * La quantité est ramenée en unité de base, comme l'agrégation le fait : sans
+ * quoi « 1 kg de farine » et les 300 g d'une recette tomberaient sur des lignes
+ * aux nombres incomparables. Le nom est normalisé comme ceux des recettes.
+ */
+export function makeManualGroceryItem(input: {
+  name: string;
+  qty: number;
+  unit: Unit;
+  aisle: Aisle;
+}): GroceryItem {
+  const base = toBaseQuantity(input.qty, input.unit);
+  return {
+    id: manualItemId(input.name, dimensionOf(input.unit)),
+    name: normalizeIngredientName(input.name),
+    qty: base.qty,
+    unit: base.unit,
+    aisle: input.aisle,
+    checked: false,
+    origin: 'manual',
+    fromRecipeIds: [],
+  };
 }
 
 /**

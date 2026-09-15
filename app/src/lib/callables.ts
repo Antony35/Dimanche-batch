@@ -1,15 +1,15 @@
 import { httpsCallable, type HttpsCallableResult } from 'firebase/functions';
 import { FirebaseError } from 'firebase/app';
 import {
-  GenerateBatchScheduleResultSchema,
+  ComposeCookingSessionResultSchema,
   GenerateWeeklyPlanResultSchema,
   JoinHouseholdResultSchema,
   RegenerateMealResultSchema,
   ReplaceBatchRecipeResultSchema,
   SetMealResultSchema,
   SwapMealsResultSchema,
-  type GenerateBatchScheduleInput,
-  type GenerateBatchScheduleResult,
+  type ComposeCookingSessionInput,
+  type GenerateCookingSessionResult,
   type GenerateWeeklyPlanInput,
   type GenerateWeeklyPlanResult,
   type JoinHouseholdInput,
@@ -89,8 +89,8 @@ export function replaceBatchRecipe(
   return call('replaceBatchRecipe', ReplaceBatchRecipeResultSchema, input);
 }
 
-export function generateBatchSchedule(
-  input: GenerateBatchScheduleInput,
-): Promise<GenerateBatchScheduleResult> {
-  return call('generateBatchSchedule', GenerateBatchScheduleResultSchema, input);
+export function composeCookingSession(
+  input: ComposeCookingSessionInput,
+): Promise<GenerateCookingSessionResult> {
+  return call('composeCookingSession', ComposeCookingSessionResultSchema, input);
 }

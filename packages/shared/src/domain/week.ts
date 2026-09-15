@@ -85,16 +85,6 @@ export function getDayNameForDate(iso: IsoDate): string {
   return getDayName((parseIsoDate(iso).getDay() + 1) % 7);
 }
 
-/**
- * Jours nourris par le batch : lundi (2) à vendredi (6).
- *
- * Le samedi et le dimanche se cuisinent le jour même — ce sont les seuls où un
- * repas peut être `cooked`.
- */
-export function isWeekday(dayIndex: number): boolean {
-  return dayIndex >= 2 && dayIndex <= 6;
-}
-
 /** Index du jour où le batch est cuisiné : le dimanche. */
 export const BATCH_DAY_INDEX = 1;
 
@@ -127,23 +117,6 @@ const MONTH_NAMES = [
   'novembre',
   'décembre',
 ] as const;
-
-/**
- * Date lisible par un francophone : `2026-09-14` devient `14/09/2026`.
- *
- * Le format ISO reste celui du stockage — il est la clé des documents de plan et
- * son ordre lexicographique est l'ordre chronologique, ce qui fait tenir le tri
- * de l'historique. Mais il n'a rien à faire sous les yeux de l'utilisateur, et
- * il y était à six endroits.
- *
- * Écrit à la main plutôt qu'avec `Intl.DateTimeFormat` : le résultat doit être
- * identique sur les deux téléphones et sous les tests, quelles que soient la
- * locale du système et les données ICU embarquées dans le binaire.
- */
-export function formatDate(iso: IsoDate): string {
-  const [year, month, day] = iso.split('-');
-  return `${day}/${month}/${year}`;
-}
 
 /** `samedi 14 septembre` — pour les en-têtes, où le jour de la semaine porte le sens. */
 export function formatDateLong(iso: IsoDate): string {
@@ -193,4 +166,12 @@ export function getComposableWeekId(today: IsoDate): WeekId {
 /** Vrai si `weekStart` est la semaine composable à la date `today`. */
 export function isComposableWeek(weekStart: WeekId, today: IsoDate): boolean {
   return weekStart === getComposableWeekId(today);
+}
+
+/** « 45 min », « 2 h », « 2 h 30 » : une durée telle qu'on la dit en cuisine. */
+export function formatDuration(minutes: number): string {
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return rest === 0 ? `${hours} h` : `${hours} h ${rest}`;
 }

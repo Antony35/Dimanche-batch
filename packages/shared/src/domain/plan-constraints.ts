@@ -2,7 +2,7 @@ import type { RecipeTag } from '../schemas/common';
 import type { GeneratedPlan, GeneratedRecipe } from '../schemas/gemini';
 import type { MealStyle } from '../schemas/weekly-plan';
 import { normalizeName } from './text';
-import { BATCH_DAY_INDEX, requiresFreezing } from './week';
+import { BATCH_DAY_INDEX, formatDuration, requiresFreezing } from './week';
 
 /**
  * Règles de la semaine type. Un JSON syntaxiquement valide peut décrire un plan
@@ -619,13 +619,7 @@ export function cookTimeViolations(
   return [
     {
       code: 'cook-time-mismatch',
-      message: `« ${recipeName} » : les étapes indiquent ${formatMinutes(longest)} de cuisson, mais cookMinutes vaut ${cookMinutes}. Fais concorder les deux.`,
+      message: `« ${recipeName} » : les étapes indiquent ${formatDuration(longest)} de cuisson, mais cookMinutes vaut ${cookMinutes}. Fais concorder les deux.`,
     },
   ];
-}
-
-function formatMinutes(minutes: number): string {
-  if (minutes < 60) return `${minutes} min`;
-  const rest = minutes % 60;
-  return rest === 0 ? `${minutes / 60} h` : `${Math.floor(minutes / 60)} h ${rest}`;
 }

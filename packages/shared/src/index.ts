@@ -13,7 +13,7 @@ export * from './schemas/weekly-plan';
 export * from './schemas/grocery-list';
 export * from './schemas/gemini';
 export * from './schemas/generation';
-export * from './schemas/batch-schedule';
+export * from './schemas/cooking-session';
 
 export * from './domain/text';
 export * from './domain/units';
@@ -25,7 +25,7 @@ export * from './domain/aisle-lookup';
 export * from './domain/plan-edit';
 export * from './domain/preferences';
 export * from './domain/batch';
-export * from './domain/batch-schedule';
+export * from './domain/cooking-session';
 export * from './domain/mise-en-place';
 export * from './domain/invite';
 

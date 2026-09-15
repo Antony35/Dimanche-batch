@@ -3,12 +3,12 @@ import { Pressable, View } from 'react-native';
 import {
   AISLE_LABELS,
   capitalize,
+  formatDuration,
   formatQuantity,
   getBatchSession,
   getMiseEnPlace,
-  isScheduleCurrent,
-  orderForCooking,
-  sessionCookMinutes,
+  isCookingSessionCurrent,
+  orderCookingSession,
   scaleIngredients,
   type BatchRecipe,
   type CookingSession,
@@ -20,14 +20,14 @@ import {
 } from '@dimanche-batch/shared';
 import { Button, Card, ErrorState, LoadingState, Text } from '@/components/ui';
 import type { BatchProgressState } from '@/features/meal-plan/api/use-batch-progress';
-import type { BatchScheduleState } from '@/features/meal-plan/api/use-batch-schedule';
+import type { CookingSessionState } from '@/features/meal-plan/api/use-cooking-session';
 import { GenerationProgress } from '@/features/meal-plan/components/generation-progress';
 import { useTheme } from '@/theme';
 
 export interface BatchSessionViewProps {
   plan: WeeklyPlan;
   recipesById: Map<string, Recipe>;
-  schedule: BatchScheduleState;
+  cookingSession: CookingSessionState;
   progress: BatchProgressState;
   isComposing: boolean;
   composeError: Error | null;
@@ -54,7 +54,7 @@ const GROUP_LABELS: Record<MiseEnPlaceGroup, string> = {
 export function BatchSessionView({
   plan,
   recipesById,
-  schedule,
+  cookingSession,
   progress,
   isComposing,
   composeError,
@@ -63,11 +63,11 @@ export function BatchSessionView({
 }: BatchSessionViewProps) {
   const theme = useTheme();
 
-  if (schedule.isLoading) return <LoadingState />;
+  if (cookingSession.isLoading) return <LoadingState />;
 
   const entries = getBatchSession(plan, recipesById).recipes;
-  const stored = schedule.session;
-  const isStale = stored !== null && !isScheduleCurrent(stored, plan);
+  const stored = cookingSession.session;
+  const isStale = stored !== null && !isCookingSessionCurrent(stored, plan);
   const session = stored !== null && !isStale ? stored : null;
 
   const lines = getMiseEnPlace(entries, session?.cuts ?? []);
@@ -96,7 +96,7 @@ export function BatchSessionView({
               : 'Une fois tout coupé, chaque plat n’a plus que sa cuisson. Les étapes sont réécrites sans la découpe, et la mise en place dira comment couper chaque ingrédient.'}
           </Text>
           {composeError ? <ErrorState message={composeError.message} /> : null}
-          {schedule.error ? <ErrorState message={schedule.error.message} /> : null}
+          {cookingSession.error ? <ErrorState message={cookingSession.error.message} /> : null}
           {isComposing ? (
             <GenerationProgress lock={generation} />
           ) : (
@@ -115,14 +115,7 @@ export function BatchSessionView({
           <Text variant="overline" tone="faint">
             CUISSON · DU PLUS LONG AU PLUS COURT
           </Text>
-          {orderForCooking(
-            // Le temps de la session, qui concorde avec les étapes affichées,
-            // décide de l'ordre comme de ce que la fiche annonce.
-            entries.map((entry) => ({
-              ...entry,
-              recipe: { ...entry.recipe, cookMinutes: sessionCookMinutes(session, entry.recipe) },
-            })),
-          ).map((entry, index, ordered) => (
+          {orderCookingSession(entries, session).map((entry, index, ordered) => (
             <CookingCard
               key={entry.recipe.id}
               entry={entry}
@@ -249,7 +242,9 @@ function CookingCard({
         </View>
         <Text variant="caption" tone="soft">
           {portions} portions
-          {recipe.cookMinutes > 0 ? ` · ${recipe.cookMinutes} min de cuisson seule` : ''}
+          {recipe.cookMinutes > 0
+            ? ` · ${formatDuration(recipe.cookMinutes)} de cuisson seule`
+            : ''}
           {entry.needsFreezing ? ' · à congeler en portions' : ''}
         </Text>
       </View>
@@ -318,7 +313,8 @@ function CookingCard({
         // La seule vraie valeur de l'ancien entrelacement : ne pas attendre
         // devant une cocotte qui cuit seule.
         <Text variant="caption" style={{ color: theme.colors.accent }}>
-          → Il cuit seul {recipe.cookMinutes} min : passe à « {nextName} » pendant ce temps.
+          → Il cuit seul {formatDuration(recipe.cookMinutes)} : passe à « {nextName} » pendant ce
+          temps.
         </Text>
       ) : null}
     </Card>

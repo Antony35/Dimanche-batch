@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { isScheduleCurrent, sessionCookMinutes, validateBatchSession } from '../batch-schedule';
+import {
+  isCookingSessionCurrent,
+  orderCookingSession,
+  sessionCookMinutes,
+  validateCookingSession,
+} from '../cooking-session';
 import { makePlan, makeRecipe } from './fixtures';
 
 /**
@@ -38,12 +43,12 @@ function codes(session: {
   steps: ReturnType<typeof step>[];
   timings?: { recipeId: string; cookMinutes: number }[];
 }) {
-  return validateBatchSession({ timings: TIMINGS, ...session }, RECIPES).map(
+  return validateCookingSession({ timings: TIMINGS, ...session }, RECIPES).map(
     (violation) => violation.code,
   );
 }
 
-describe('validateBatchSession', () => {
+describe('validateCookingSession', () => {
   it('accepte une session qui donne des étapes à chaque plat', () => {
     expect(
       codes({
@@ -90,7 +95,7 @@ describe('validateBatchSession', () => {
   });
 
   it('refuse la découpe d’un ingrédient que la recette ne contient pas', () => {
-    const violations = validateBatchSession(
+    const violations = validateCookingSession(
       {
         cuts: [cut('curry', 'échalote', 'ciselée')],
         steps: [step('curry', 'Cuire.'), step('chili', 'Cuire.')],
@@ -107,7 +112,7 @@ describe('validateBatchSession', () => {
  * L'écran annonçait un temps de cuisson que les étapes démentaient. La session
  * rend désormais le sien, et il doit concorder avec ses propres étapes.
  */
-describe('validateBatchSession, temps de cuisson', () => {
+describe('validateCookingSession, temps de cuisson', () => {
   it('exige un temps pour chaque plat', () => {
     expect(
       codes({
@@ -137,7 +142,7 @@ describe('validateBatchSession, temps de cuisson', () => {
   });
 });
 
-describe('isScheduleCurrent', () => {
+describe('isCookingSessionCurrent', () => {
   const session = {
     id: '2026-09-12',
     sourceRecipeIds: ['curry', 'chili'],
@@ -151,14 +156,50 @@ describe('isScheduleCurrent', () => {
   };
 
   it('reconnaît une session composée pour ce batch', () => {
-    expect(isScheduleCurrent(session, makePlan([], '2026-09-12', ['curry', 'chili']))).toBe(true);
+    expect(isCookingSessionCurrent(session, makePlan([], '2026-09-12', ['curry', 'chili']))).toBe(
+      true,
+    );
   });
 
   it('signale une session périmée par un plat remplacé', () => {
-    expect(isScheduleCurrent(session, makePlan([], '2026-09-12', ['curry', 'tajine']))).toBe(false);
+    expect(isCookingSessionCurrent(session, makePlan([], '2026-09-12', ['curry', 'tajine']))).toBe(
+      false,
+    );
   });
 
   it('signale une session dont l’ordre du batch a changé', () => {
-    expect(isScheduleCurrent(session, makePlan([], '2026-09-12', ['chili', 'curry']))).toBe(false);
+    expect(isCookingSessionCurrent(session, makePlan([], '2026-09-12', ['chili', 'curry']))).toBe(
+      false,
+    );
+  });
+});
+
+describe('orderCookingSession', () => {
+  it('ordonne et annonce selon le temps de la session, pas celui de la recette', () => {
+    const entries = [
+      { recipe: makeRecipe({ id: 'curry', cookMinutes: 120 }) },
+      { recipe: makeRecipe({ id: 'chili', cookMinutes: 10 }) },
+    ];
+    const ordered = orderCookingSession(entries, {
+      timings: [
+        { recipeId: 'curry', cookMinutes: 20 },
+        { recipeId: 'chili', cookMinutes: 90 },
+      ],
+    });
+    expect(ordered.map((entry) => [entry.recipe.id, entry.recipe.cookMinutes])).toEqual([
+      ['chili', 90],
+      ['curry', 20],
+    ]);
+  });
+
+  it('retombe sur la recette sans session', () => {
+    const entries = [
+      { recipe: makeRecipe({ id: 'curry', cookMinutes: 30 }) },
+      { recipe: makeRecipe({ id: 'chili', cookMinutes: 60 }) },
+    ];
+    expect(orderCookingSession(entries, null).map((entry) => entry.recipe.id)).toEqual([
+      'chili',
+      'curry',
+    ]);
   });
 });

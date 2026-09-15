@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildGroceryList,
   groupByAisle,
-  isManualItemId,
+  makeManualGroceryItem,
   manualItemId,
   mergeGroceryLists,
   normalizeIngredientName,
@@ -304,12 +304,27 @@ describe('buildGroceryList, origine des articles', () => {
 describe('articles ajoutés à la main', () => {
   it('vit dans son propre espace de noms, sans collision possible', () => {
     const manual = manualItemId('Courgette', 'piece');
-    expect(isManualItemId(manual)).toBe(true);
+    expect(manual.startsWith('manual--')).toBe(true);
     expect(manual).not.toBe('courgette--piece');
     // Deux ajouts du même article mettent la ligne à jour au lieu de la doubler.
     expect(manualItemId('courgettes ', 'piece')).not.toBe(manual);
     expect(manualItemId('Courgette', 'piece')).toBe(manual);
-    expect(isManualItemId('courgette--piece')).toBe(false);
+  });
+});
+
+describe('makeManualGroceryItem', () => {
+  it('construit un article manuel dans son espace de noms, en unité de base', () => {
+    const item = makeManualGroceryItem({ name: ' Farine ', qty: 1, unit: 'kg', aisle: 'epicerie' });
+    expect(item).toEqual({
+      id: 'manual--farine--mass',
+      name: 'farine',
+      qty: 1000,
+      unit: 'g',
+      aisle: 'epicerie',
+      checked: false,
+      origin: 'manual',
+      fromRecipeIds: [],
+    });
   });
 });
 

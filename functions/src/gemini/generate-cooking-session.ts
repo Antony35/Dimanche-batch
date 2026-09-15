@@ -1,31 +1,31 @@
 import {
   GeneratedCookingSessionSchema,
-  validateBatchSession,
+  validateCookingSession,
   type ConstraintViolation,
   type GeneratedCookingSession,
   type Recipe,
 } from '@dimanche-batch/shared';
 import {
-  BATCH_SCHEDULE_SYSTEM_INSTRUCTION,
-  buildBatchSchedulePrompt,
-  type BatchSchedulePromptInput,
+  COOKING_SESSION_SYSTEM_INSTRUCTION,
+  buildCookingSessionPrompt,
+  type CookingSessionPromptInput,
 } from './prompt';
-import { BATCH_SCHEDULE_RESPONSE_SCHEMA } from './response-schema';
+import { COOKING_SESSION_RESPONSE_SCHEMA } from './response-schema';
 import { generateWithContentRetry } from './content-retry';
 
-export interface BatchScheduleResult {
+export interface CookingSessionResult {
   session: GeneratedCookingSession;
   model: string;
   attempts: number;
 }
 
-export class BatchScheduleGenerationError extends Error {
+export class CookingSessionGenerationError extends Error {
   constructor(
     message: string,
     readonly violations: ConstraintViolation[],
   ) {
     super(message);
-    this.name = 'BatchScheduleGenerationError';
+    this.name = 'CookingSessionGenerationError';
   }
 }
 
@@ -34,26 +34,26 @@ export class BatchScheduleGenerationError extends Error {
  * plat sans étape, une étape qui redemande de couper, une découpe pour un
  * ingrédient absent de la recette.
  */
-export async function generateBatchScheduleFromGemini(
-  input: BatchSchedulePromptInput,
+export async function generateCookingSessionFromGemini(
+  input: CookingSessionPromptInput,
   recipes: readonly Pick<Recipe, 'id' | 'name' | 'ingredients'>[],
   onAttempt?: (attempt: number) => void,
-): Promise<BatchScheduleResult> {
+): Promise<CookingSessionResult> {
   const outcome = await generateWithContentRetry({
     subject: 'session de cuisson',
-    systemInstruction: BATCH_SCHEDULE_SYSTEM_INSTRUCTION,
-    prompt: buildBatchSchedulePrompt(input),
-    responseSchema: BATCH_SCHEDULE_RESPONSE_SCHEMA,
+    systemInstruction: COOKING_SESSION_SYSTEM_INSTRUCTION,
+    prompt: buildCookingSessionPrompt(input),
+    responseSchema: COOKING_SESSION_RESPONSE_SCHEMA,
     // Réécrire n'appelle pas d'invention : on veut le même résultat deux fois.
     temperature: 0.3,
     schema: GeneratedCookingSessionSchema,
-    validate: (session) => validateBatchSession(session, recipes),
+    validate: (session) => validateCookingSession(session, recipes),
     describe: (session) => ({ etapes: session.steps.length, decoupes: session.cuts.length }),
     onAttempt,
   });
 
   if (!outcome.ok) {
-    throw new BatchScheduleGenerationError(
+    throw new CookingSessionGenerationError(
       'Les étapes de cuisson proposées ne tenaient pas, même après correction.',
       outcome.violations,
     );

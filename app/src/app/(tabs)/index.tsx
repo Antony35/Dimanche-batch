@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useRouter } from 'expo-router';
 import { View } from 'react-native';
 import {
-  BATCH_DAY_INDEX,
+  countUndecidedWeekendMeals,
   formatWeekRange,
   getComposableWeekId,
   getCurrentWeekId,
@@ -119,14 +119,6 @@ function ThawReminder({ recipes }: { recipes: Recipe[] }) {
   );
 }
 
-/** Nombre de créneaux du samedi et du dimanche encore à décider. */
-function countUndecidedWeekend(plan: WeeklyPlan): number {
-  return plan.days
-    .slice(0, BATCH_DAY_INDEX + 1)
-    .flatMap((entry) => [entry.lunch, entry.dinner])
-    .filter((meal) => meal.kind === 'undecided').length;
-}
-
 /**
  * Étape suivante du cycle hebdomadaire, dans l'ordre du calendrier réel.
  *
@@ -184,7 +176,7 @@ function NextStep({
     );
   }
 
-  const undecided = nextPlan ? countUndecidedWeekend(nextPlan) : 0;
+  const undecided = nextPlan ? countUndecidedWeekendMeals(nextPlan) : 0;
   if (nextPlan && undecided > 0) {
     return (
       <Card style={{ gap: theme.spacing.md, borderColor: theme.colors.spice, borderWidth: 1 }}>

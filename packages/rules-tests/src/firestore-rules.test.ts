@@ -329,21 +329,21 @@ describe('quota', () => {
 });
 
 describe('batchSessions', () => {
-  const schedulePath = `households/${HOUSEHOLD_ID}/batchSessions/${WEEK_ID}`;
+  const sessionPath = `households/${HOUSEHOLD_ID}/batchSessions/${WEEK_ID}`;
 
   it('laisse un membre lire la session de cuisson', async () => {
-    await assertSucceeds(getDoc(doc(memberDb(), schedulePath)));
+    await assertSucceeds(getDoc(doc(memberDb(), sessionPath)));
   });
 
   it('refuse la lecture à qui n’est pas du foyer', async () => {
-    await assertFails(getDoc(doc(outsiderDb(), schedulePath)));
-    await assertFails(getDoc(doc(anonDb(), schedulePath)));
+    await assertFails(getDoc(doc(outsiderDb(), sessionPath)));
+    await assertFails(getDoc(doc(anonDb(), sessionPath)));
   });
 
   // Composé par Gemini dans une callable : le client n'a aucune raison d'en
   // fabriquer un, et pouvoir le faire lui laisserait réécrire la session du
   // dimanche de l'autre téléphone.
   it('refuse toute écriture au client, membre compris', async () => {
-    await assertFails(setDoc(doc(memberDb(), schedulePath), { steps: [] }));
+    await assertFails(setDoc(doc(memberDb(), sessionPath), { steps: [] }));
   });
 });

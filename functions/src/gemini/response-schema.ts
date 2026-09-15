@@ -171,7 +171,7 @@ export const SINGLE_RECIPE_RESPONSE_SCHEMA: Schema = {
  * début de ce fichier. La couverture de chaque plat est vérifiée côté
  * validateur.
  */
-export const BATCH_SCHEDULE_RESPONSE_SCHEMA: Schema = {
+export const COOKING_SESSION_RESPONSE_SCHEMA: Schema = {
   type: Type.OBJECT,
   properties: {
     cuts: {

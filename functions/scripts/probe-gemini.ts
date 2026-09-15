@@ -19,6 +19,7 @@
  *   GEMINI_API_KEY=$K npm run gemini:probe -- meal  # une seule
  *   GEMINI_API_KEY=$K npm run gemini:probe -- plan gemini-3.8-flash
  */
+import { z } from 'zod';
 import {
   GeneratedMealReplacementSchema,
   GeneratedPlanSchema,
@@ -30,7 +31,7 @@ import {
   validateGeneratedPlan,
   GeneratedCookingSessionSchema,
   validateBatchRecipeReplacement,
-  validateBatchSession,
+  validateCookingSession,
   validateMealReplacement,
 } from '@dimanche-batch/shared';
 import { GEMINI_MODEL } from '../src/config';
@@ -38,20 +39,20 @@ import {
   MEAL_REPLACEMENT_SYSTEM_INSTRUCTION,
   SYSTEM_INSTRUCTION,
   BATCH_RECIPE_SYSTEM_INSTRUCTION,
-  BATCH_SCHEDULE_SYSTEM_INSTRUCTION,
-  buildBatchSchedulePrompt,
+  COOKING_SESSION_SYSTEM_INSTRUCTION,
+  buildCookingSessionPrompt,
   buildBatchRecipePrompt,
   buildMealReplacementPrompt,
   buildPlanPrompt,
 } from '../src/gemini/prompt';
 import {
-  BATCH_SCHEDULE_RESPONSE_SCHEMA,
+  COOKING_SESSION_RESPONSE_SCHEMA,
   SINGLE_RECIPE_RESPONSE_SCHEMA,
   WEEKLY_PLAN_RESPONSE_SCHEMA,
 } from '../src/gemini/response-schema';
 
 const args = process.argv.slice(2);
-const CHAINS = new Set(['plan', 'meal', 'batch', 'schedule']);
+const CHAINS = new Set(['plan', 'meal', 'batch', 'session']);
 const targets = args.filter((arg) => CHAINS.has(arg));
 const model = args.find((arg) => !CHAINS.has(arg)) ?? GEMINI_MODEL;
 const weekStart = getUpcomingWeekId();
@@ -84,10 +85,22 @@ if (!apiKey) {
   process.exit(1);
 }
 
-interface GeminiPayload {
-  error?: { message?: string };
-  candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-}
+/**
+ * Ce qu'on lit de la réponse brute de l'API. Validé comme toute donnée externe,
+ * y compris dans un script : un changement de forme doit se voir, pas passer.
+ */
+const GeminiPayloadSchema = z.object({
+  error: z.object({ message: z.string().optional() }).optional(),
+  candidates: z
+    .array(
+      z.object({
+        content: z
+          .object({ parts: z.array(z.object({ text: z.string().optional() })).optional() })
+          .optional(),
+      }),
+    )
+    .optional(),
+});
 
 /** Appel brut, sans le SDK : c'est le transport que la function utilisera. */
 async function callGemini(body: unknown): Promise<unknown> {
@@ -100,7 +113,7 @@ async function callGemini(body: unknown): Promise<unknown> {
     },
   );
 
-  const payload = (await response.json()) as GeminiPayload;
+  const payload = GeminiPayloadSchema.parse(await response.json());
 
   if (!response.ok) {
     console.error(`❌ API : ${response.status} — ${payload.error?.message ?? 'erreur inconnue'}`);
@@ -336,8 +349,8 @@ async function probeBatchRecipe(): Promise<void> {
  * « Émincer l'oignon et le faire revenir » — : c'est exactement ce que le
  * modèle doit savoir réécrire.
  */
-async function probeSchedule(): Promise<void> {
-  console.log('\n── generateBatchSchedule ──');
+async function probeSession(): Promise<void> {
+  console.log('\n── composeCookingSession ──');
 
   const recipes = [
     {
@@ -375,7 +388,7 @@ async function probeSchedule(): Promise<void> {
     },
   ];
 
-  const prompt = buildBatchSchedulePrompt({
+  const prompt = buildCookingSessionPrompt({
     recipes: recipes.map((recipe) => ({
       id: recipe.id,
       name: recipe.name,
@@ -390,10 +403,10 @@ async function probeSchedule(): Promise<void> {
 
   const data = await callGemini({
     contents: [{ parts: [{ text: prompt }] }],
-    systemInstruction: { parts: [{ text: BATCH_SCHEDULE_SYSTEM_INSTRUCTION }] },
+    systemInstruction: { parts: [{ text: COOKING_SESSION_SYSTEM_INSTRUCTION }] },
     generationConfig: {
       responseMimeType: 'application/json',
-      responseSchema: BATCH_SCHEDULE_RESPONSE_SCHEMA,
+      responseSchema: COOKING_SESSION_RESPONSE_SCHEMA,
       temperature: 0.3,
     },
   });
@@ -407,7 +420,7 @@ async function probeSchedule(): Promise<void> {
     `✅ Schéma : ${parsed.data.cuts.length} découpes, ${parsed.data.steps.length} étapes, ${parsed.data.timings.length} temps`,
   );
 
-  const violations = validateBatchSession(parsed.data, recipes);
+  const violations = validateCookingSession(parsed.data, recipes);
   if (violations.length > 0) {
     console.error(
       `⚠️  Contraintes : ${violations.length} violation(s) — la reprise serait déclenchée`,
@@ -433,4 +446,4 @@ async function probeSchedule(): Promise<void> {
 if (targets.length === 0 || targets.includes('plan')) await probePlan();
 if (targets.length === 0 || targets.includes('meal')) await probeMeal();
 if (targets.length === 0 || targets.includes('batch')) await probeBatchRecipe();
-if (targets.length === 0 || targets.includes('schedule')) await probeSchedule();
+if (targets.length === 0 || targets.includes('session')) await probeSession();

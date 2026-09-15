@@ -17,30 +17,29 @@ npm run build:shared           # requis une fois, pour les Cloud Functions
 ### Développer
 
 ```bash
-npm run emulators              # Firestore + Auth + Functions en local
-npm run dev                    # Expo, à ouvrir dans Expo Go
+npm run dev                    # Expo, à ouvrir dans Expo Go — base de test
 ```
 
-Mettre `EXPO_PUBLIC_USE_EMULATORS=1` dans `app/.env` pour que l'app parle aux
-émulateurs plutôt qu'au projet Firebase réel. Sur un téléphone physique,
-remplacer aussi `EXPO_PUBLIC_EMULATOR_HOST` par l'IP locale de la machine.
+Deux projets Firebase : `dimanche-batch-dev` pour les essais, `dimanche-batch`
+pour le foyer. `npm run dev` lit `app/.env.development`, qui pointe sur la base
+de test et passe devant `app/.env` ; un bandeau « BASE DE TEST » le rappelle sur
+chaque écran. Voir `app/.env.example` et CLAUDE.md §8.
 
 ### Vérifier
 
 ```bash
-npm run typecheck              # les trois workspaces
-npm run test                   # logique métier (domaine partagé)
-npm run test:rules             # Security Rules, nécessite Java pour l'émulateur
-npm run lint
+npm run typecheck              # les quatre workspaces
+npm run lint && npm run knip && npm run format:check
+npm run test:all               # domaine, app, functions, Security Rules (Java requis)
 ```
 
 ### Déployer
 
 ```bash
-firebase functions:secrets:set GEMINI_API_KEY   # une fois, jamais dans le dépôt
-npm run deploy:rules
-npm run deploy:functions
-npm run build:android                            # APK via EAS
+firebase functions:secrets:set GEMINI_API_KEY -P dev   # une fois par projet, jamais dans le dépôt
+npm run deploy:dev                                      # base de test
+npm run deploy:prod                                     # base du foyer
+npm run build:android:prod                              # APK du foyer via EAS
 ```
 
 ## Structure

@@ -1,7 +1,7 @@
 import type { IsoDate } from '../schemas/common';
 import type { Meal, MealSlot, WeeklyPlan } from '../schemas/weekly-plan';
 import { countBatchMealsServing } from './batch';
-import { requiresFreezing } from './week';
+import { BATCH_DAY_INDEX, requiresFreezing } from './week';
 
 /**
  * Édition d'un plan existant, sans passer par une régénération complète.
@@ -234,4 +234,18 @@ export function swapMealsInPlan(plan: WeeklyPlan, a: MealSlotRef, b: MealSlotRef
     return next;
   });
   return { ...plan, days };
+}
+
+/**
+ * Repas du samedi et du dimanche encore à décider.
+ *
+ * La génération les laisse ainsi. Tant qu'il en reste, l'accueil demande de
+ * les décider **avant** les courses du samedi : ce qu'ils demandent doit être
+ * acheté le matin même.
+ */
+export function countUndecidedWeekendMeals(plan: WeeklyPlan): number {
+  return plan.days
+    .slice(0, BATCH_DAY_INDEX + 1)
+    .flatMap((day) => [day.lunch, day.dinner])
+    .filter((meal) => meal.kind === 'undecided').length;
 }

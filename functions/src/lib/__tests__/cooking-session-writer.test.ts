@@ -3,7 +3,7 @@ import { CookingSessionSchema, paths } from '@dimanche-batch/shared';
 import { clearFirestore } from '../../__tests__/emulator';
 import { ALICE, HOUSEHOLD_ID, MODEL, WEEK_START } from '../../__tests__/fixtures';
 import { db } from '../firestore';
-import { readCookingSession, writeCookingSession } from '../batch-schedule-writer';
+import { readCookingSession, writeCookingSession } from '../cooking-session-writer';
 
 /**
  * La session de cuisson est lue par les deux téléphones : ce qui s'écrit doit

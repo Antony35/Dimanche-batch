@@ -4,7 +4,7 @@ import { CookingSessionSchema, paths, type CookingSession } from '@dimanche-batc
 import { db } from '@/lib/firebase';
 import { subscribeWithRetry } from '@/lib/firestore-subscribe';
 
-export interface BatchScheduleState {
+export interface CookingSessionState {
   session: CookingSession | null;
   isLoading: boolean;
   error: Error | null;
@@ -21,9 +21,9 @@ interface SnapshotState {
  *
  * Écoutée plutôt que lue : si l'autre téléphone la compose, elle apparaît ici
  * sans rien toucher. Qu'elle soit à jour ou non se décide ailleurs —
- * `isScheduleCurrent` la compare au plan au moment de l'afficher.
+ * `isCookingSessionCurrent` la compare au plan au moment de l'afficher.
  */
-export function useBatchSchedule(householdId: string | null, weekId: string): BatchScheduleState {
+export function useCookingSession(householdId: string | null, weekId: string): CookingSessionState {
   const key = householdId ? `${householdId}/${weekId}` : null;
   const [state, setState] = useState<SnapshotState>({ key: null, session: null, error: null });
 

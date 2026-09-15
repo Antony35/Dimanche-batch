@@ -25,7 +25,7 @@ interface ThemePreferenceValue {
 const ThemePreferenceContext = createContext<ThemePreferenceValue | null>(null);
 
 function isThemePreference(value: unknown): value is ThemePreference {
-  return THEME_PREFERENCES.includes(value as ThemePreference);
+  return THEME_PREFERENCES.some((preference) => preference === value);
 }
 
 /**

@@ -286,7 +286,7 @@ Une responsabilité par function, nommage `verbeNom`.
 | `swapMeals`             | Échange deux repas du batch. L'app dit quel plat elle veut sur un créneau ; `findSwapCounterpart` choisit le créneau qui cède sa place — le plus éloigné dans la semaine, sans jamais envoyer en fin de semaine un plat qui ne se congèle pas. Chaque plat sert le même nombre de repas : la liste de courses ne change pas. Ni Gemini ni quota.                                                            |
 | `regenerateMeal`        | Compose une recette pour un repas du **samedi ou du dimanche** seulement — on ne cuisine plus en semaine. Style `one-pot` (une casserole, 45 min) ou `elaborate`. Passe par le même écrivain que la génération complète : la liste de courses est intégralement recalculée, jamais rapiécée.                                                                                                                |
 | `replaceBatchRecipe`    | Remplace un plat du batch, et avec lui **tous les repas qu'il servait**. Callable à part et non un paramètre de `regenerateMeal` : un plat du batch n'occupe pas un créneau mais plusieurs, et le remplacer repas par repas coûterait autant de générations qu'il sert de repas, en laissant la semaine incohérente entre deux appels. Seul écrivain du dépôt à muter `batchRecipeIds` sur un plan existant |
-| `generateBatchSchedule` | Compose la session de cuisson du dimanche — la découpe de chaque ingrédient et les étapes de cuisson de chaque plat —, **à la demande puis conservée** : une génération par batch, jamais une par consultation. Si une session à jour existe, elle est rendue sans rien décompter — vérification faite sous le verrou, sans quoi deux téléphones ouvrant l'onglet ensemble paieraient deux fois             |
+| `composeCookingSession` | Compose la session de cuisson du dimanche — la découpe de chaque ingrédient et les étapes de cuisson de chaque plat —, **à la demande puis conservée** : une génération par batch, jamais une par consultation. Si une session à jour existe, elle est rendue sans rien décompter — vérification faite sous le verrou, sans quoi deux téléphones ouvrant l'onglet ensemble paieraient deux fois             |
 | `joinHousehold`         | Consomme un code d'invitation et ajoute l'uid aux `members`. Côté serveur pour que le code reste à usage unique.                                                                                                                                                                                                                                                                                            |
 
 Contrat Gemini :
@@ -376,7 +376,7 @@ deçà c'est un geste surveillé — si elle dépasse le temps déclaré de plus
 10 %. La règle joue à la génération de la semaine, au remplacement d'un plat
 et à la recette du week-end ; la session de cuisson rend en plus son propre
 temps par plat (`timings`), seul lu par l'écran du dimanche
-(`sessionCookMinutes`), avec la recette pour repli.
+(`orderCookingSession`, `sessionCookMinutes`), avec la recette pour repli.
 
 **Ce qui est acheté est ce qui est cuisiné.** `batchRecipeIds` liste les plats
 cuisinés le dimanche. `buildGroceryList` les compte **une fois chacun, au
@@ -444,7 +444,7 @@ cuisson » suit une vraie session de batch :
    `orderForCooking` — du temps de cuisson le plus long au plus court — et un
    plat qui cuit seul invite à passer au suivant.
 
-`validateBatchSession` refuse un plat sans étape, une étape qui **commence**
+`validateCookingSession` refuse un plat sans étape, une étape qui **commence**
 par un geste de découpe (« Ajouter les oignons émincés » passe), et une découpe
 d'un ingrédient que la recette ne contient pas, et un temps de cuisson que les
 étapes démentent. Le modèle n'ordonne rien et ne
@@ -453,7 +453,7 @@ tromper.
 
 Une session composée puis un plat remplacé : elle décrit un batch qui n'existe
 plus. Plutôt que de compter sur chaque écrivain pour l'effacer, le document
-fige `sourceRecipeIds`, et `isScheduleCurrent` le compare au plan au moment de
+fige `sourceRecipeIds`, et `isCookingSessionCurrent` le compare au plan au moment de
 l'afficher. La mise en place, calculée, est toujours à jour ; seules les
 découpes et les étapes demandent d'être recomposées. « Recette par recette »
 reste la vue par défaut.
@@ -726,7 +726,7 @@ npm run test:functions           # Guards et écritures Firestore, sur émulateu
 npm run test:rules               # Security Rules sur émulateur
 npm run test:all                 # les quatre, dans cet ordre
 GEMINI_API_KEY=… npm run gemini:probe   # chaînes de génération, sans déployer
-#   -- plan | meal | batch | schedule pour n'en tester qu'une
+#   -- plan | meal | batch | session pour n'en tester qu'une
 npm run typecheck                # tsc --noEmit sur tous les workspaces
 npm run lint                     # oxlint, les quatre workspaces
 npm run knip                     # code mort : fichiers, exports, dépendances
@@ -741,7 +741,7 @@ npm run build:android:prod       # EAS, profil production : l'APK du foyer
 
 `gemini:probe` envoie à Gemini les payloads réels des quatre callables qui
 l'appellent, puis fait traverser chaque réponse les deux mêmes filtres que la
-function correspondante (`-- plan`, `-- meal`, `-- batch` ou `-- schedule` pour
+function correspondante (`-- plan`, `-- meal`, `-- batch` ou `-- session` pour
 n'en tester qu'une). **À lancer avant tout changement de modèle ou de
 `responseSchema`** : l'API refuse certaines
 constructions de schéma avec un `INVALID_ARGUMENT` qui ne nomme aucun champ, et

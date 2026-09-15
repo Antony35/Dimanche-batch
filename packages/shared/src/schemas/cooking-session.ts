@@ -66,12 +66,12 @@ export const CookingSessionSchema = GeneratedCookingSessionSchema.extend({
   promptVersion: z.number().int().min(1),
 });
 
-export const GenerateBatchScheduleInputSchema = z.object({
+export const ComposeCookingSessionInputSchema = z.object({
   householdId: z.string().min(1),
   weekId: WeekIdSchema,
 });
 
-export const GenerateBatchScheduleResultSchema = z.object({
+export const ComposeCookingSessionResultSchema = z.object({
   weekId: WeekIdSchema,
   stepCount: z.number().int().min(0),
   /** Faux si une session à jour existait déjà : rien n'a été généré ni décompté. */
@@ -83,5 +83,5 @@ export type BatchCookStep = z.infer<typeof BatchCookStepSchema>;
 export type BatchTiming = z.infer<typeof BatchTimingSchema>;
 export type GeneratedCookingSession = z.infer<typeof GeneratedCookingSessionSchema>;
 export type CookingSession = z.infer<typeof CookingSessionSchema>;
-export type GenerateBatchScheduleInput = z.infer<typeof GenerateBatchScheduleInputSchema>;
-export type GenerateBatchScheduleResult = z.infer<typeof GenerateBatchScheduleResultSchema>;
+export type ComposeCookingSessionInput = z.infer<typeof ComposeCookingSessionInputSchema>;
+export type GenerateCookingSessionResult = z.infer<typeof ComposeCookingSessionResultSchema>;

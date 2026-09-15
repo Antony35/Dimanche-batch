@@ -13,7 +13,7 @@ import { buildRetryPrompt } from './prompt';
  * explicites ne se corrigera pas à la troisième. La reprise n'est pas une
  * répétition — elle renvoie au modèle la liste exacte de ses erreurs.
  *
- * Les quatre chaînes de génération — semaine, repas, plat du batch, déroulé —
+ * Les quatre chaînes de génération — semaine, repas, plat du batch, session de cuisson —
  * ne diffèrent que par leur schéma et leur validateur. Elles portaient chacune
  * une copie de cette boucle ; une politique de reprise écrite quatre fois
  * finit par en être quatre.

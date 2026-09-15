@@ -1,8 +1,8 @@
-import type { BatchCut } from '../schemas/batch-schedule';
+import type { BatchCut } from '../schemas/cooking-session';
 import type { Aisle, Unit } from '../schemas/common';
 import type { Recipe } from '../schemas/recipe';
 import { scaleIngredients } from './batch';
-import { normalizeName } from './text';
+import { normalizeName, singularizeWords } from './text';
 import { toBaseQuantity } from './units';
 
 /**
@@ -92,10 +92,7 @@ function aromaticRank(name: string): number {
  * c'est le même légume : il doit tomber sur la même ligne.
  */
 export function singularIngredientName(name: string): string {
-  return normalizeName(name)
-    .split(' ')
-    .map((word) => (word.length > 3 && /[sx]$/.test(word) ? word.slice(0, -1) : word))
-    .join(' ');
+  return singularizeWords(normalizeName(name));
 }
 
 function firstWord(name: string): string {

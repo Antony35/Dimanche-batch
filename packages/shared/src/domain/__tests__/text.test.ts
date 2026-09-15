@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { capitalize, normalizeName } from '../text';
+import { capitalize, normalizeName, singularizeWords } from '../text';
 
 describe('capitalize', () => {
   it('met la première lettre en majuscule sans toucher au reste', () => {
@@ -35,5 +35,18 @@ describe('normalizeName', () => {
   it('garde distincts deux noms seulement voisins', () => {
     expect(normalizeName('Curry de lentilles')).not.toBe(normalizeName('Curry de pois chiches'));
     expect(normalizeName('Soupe de poireaux')).not.toBe(normalizeName('Soupe de poireaux au lard'));
+  });
+});
+
+describe('singularizeWords', () => {
+  it('retire un pluriel simple, mot par mot', () => {
+    expect(singularizeWords('petits pois')).toBe('petit poi');
+    expect(singularizeWords('oignons')).toBe('oignon');
+    expect(singularizeWords('choux')).toBe('chou');
+  });
+
+  it('laisse intacts les mots courts', () => {
+    expect(singularizeWords('ail')).toBe('ail');
+    expect(singularizeWords('riz')).toBe('riz');
   });
 });

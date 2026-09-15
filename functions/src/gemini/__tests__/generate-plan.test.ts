@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeGeneratedRecipe, makeValidGeneratedPlan } from '../../__tests__/fixtures';
 import {
-  BatchScheduleGenerationError,
-  generateBatchScheduleFromGemini,
-} from '../generate-batch-schedule';
+  CookingSessionGenerationError,
+  generateCookingSessionFromGemini,
+} from '../generate-cooking-session';
 import { PlanGenerationError, generateWeeklyPlanFromGemini } from '../generate-plan';
 import { MealGenerationError, generateMealRecipeFromGemini } from '../regenerate-meal';
 
@@ -144,7 +144,7 @@ describe('generateMealRecipeFromGemini', () => {
   });
 });
 
-describe('generateBatchScheduleFromGemini', () => {
+describe('generateCookingSessionFromGemini', () => {
   const recipes = [
     makeRecipeIngredients('curry', ['oignon']),
     makeRecipeIngredients('chili', ['poivron']),
@@ -179,7 +179,7 @@ describe('generateBatchScheduleFromGemini', () => {
       })
       .mockResolvedValueOnce({ data: good, model: 'gemini-test' });
 
-    const result = await generateBatchScheduleFromGemini(input, recipes);
+    const result = await generateCookingSessionFromGemini(input, recipes);
 
     expect(result.attempts).toBe(2);
     const secondPrompt: string = generateJson.mock.calls[1]?.[0].prompt;
@@ -197,7 +197,7 @@ describe('generateBatchScheduleFromGemini', () => {
       })
       .mockResolvedValueOnce({ data: good, model: 'gemini-test' });
 
-    const result = await generateBatchScheduleFromGemini(input, recipes);
+    const result = await generateCookingSessionFromGemini(input, recipes);
 
     expect(result.attempts).toBe(2);
     const secondPrompt: string = generateJson.mock.calls[1]?.[0].prompt;
@@ -210,8 +210,8 @@ describe('generateBatchScheduleFromGemini', () => {
       model: 'gemini-test',
     });
 
-    await expect(generateBatchScheduleFromGemini(input, recipes)).rejects.toBeInstanceOf(
-      BatchScheduleGenerationError,
+    await expect(generateCookingSessionFromGemini(input, recipes)).rejects.toBeInstanceOf(
+      CookingSessionGenerationError,
     );
     expect(generateJson).toHaveBeenCalledTimes(2);
   });

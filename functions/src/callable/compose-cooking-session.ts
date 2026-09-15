@@ -1,13 +1,13 @@
 import { onCall } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions';
 import {
-  GenerateBatchScheduleInputSchema,
+  ComposeCookingSessionInputSchema,
   getBatchPortions,
-  isScheduleCurrent,
+  isCookingSessionCurrent,
   miseEnPlaceGroup,
   scaleIngredients,
-  type GenerateBatchScheduleInput,
-  type GenerateBatchScheduleResult,
+  type ComposeCookingSessionInput,
+  type GenerateCookingSessionResult,
   type WeeklyPlan,
 } from '@dimanche-batch/shared';
 import {
@@ -28,12 +28,12 @@ import {
   requireHouseholdMember,
 } from '../lib/guards';
 import { readPlanRecipes } from '../lib/plan-writer';
-import { readCookingSession, writeCookingSession } from '../lib/batch-schedule-writer';
+import { readCookingSession, writeCookingSession } from '../lib/cooking-session-writer';
 import { rethrowIfUnavailable, readPlanOrFail } from '../lib/callable-support';
 import {
-  BatchScheduleGenerationError,
-  generateBatchScheduleFromGemini,
-} from '../gemini/generate-batch-schedule';
+  CookingSessionGenerationError,
+  generateCookingSessionFromGemini,
+} from '../gemini/generate-cooking-session';
 
 /**
  * Compose la session de cuisson du dimanche, à la demande : la découpe de
@@ -45,7 +45,7 @@ import {
  * rien décompter. La vérification se fait **sous le verrou** : sans lui, deux
  * téléphones qui ouvrent l'onglet en même temps paieraient deux fois.
  */
-export const generateBatchSchedule = onCall(
+export const composeCookingSession = onCall(
   {
     region: REGION,
     memory: DEFAULT_MEMORY,
@@ -53,14 +53,14 @@ export const generateBatchSchedule = onCall(
     maxInstances: MAX_INSTANCES,
     secrets: [GEMINI_API_KEY],
   },
-  async (request): Promise<GenerateBatchScheduleResult> => {
-    logger.info('generateBatchSchedule appelée', { authentifie: Boolean(request.auth) });
+  async (request): Promise<GenerateCookingSessionResult> => {
+    logger.info('composeCookingSession appelée', { authentifie: Boolean(request.auth) });
 
     const uid = requireAuth(request);
-    const input: GenerateBatchScheduleInput = parseInput(
-      GenerateBatchScheduleInputSchema,
+    const input: ComposeCookingSessionInput = parseInput(
+      ComposeCookingSessionInputSchema,
       request.data,
-      'generateBatchSchedule',
+      'composeCookingSession',
     );
 
     await requireHouseholdMember(uid, input.householdId);
@@ -73,21 +73,21 @@ export const generateBatchSchedule = onCall(
     await acquireGenerationLock(input.householdId, input.weekId, uid);
     try {
       const existing = await readCookingSession(input.householdId, input.weekId);
-      if (existing && isScheduleCurrent(existing, plan)) {
+      if (existing && isCookingSessionCurrent(existing, plan)) {
         return { weekId: input.weekId, stepCount: existing.steps.length, generated: false };
       }
-      return await composeSchedule(input, plan, uid);
+      return await composeSession(input, plan, uid);
     } finally {
       await releaseGenerationLock(input.householdId, input.weekId);
     }
   },
 );
 
-async function composeSchedule(
-  input: GenerateBatchScheduleInput,
+async function composeSession(
+  input: ComposeCookingSessionInput,
   plan: WeeklyPlan,
   uid: string,
-): Promise<GenerateBatchScheduleResult> {
+): Promise<GenerateCookingSessionResult> {
   await consumeGenerationQuota(input.householdId);
 
   const known = await readPlanRecipes(input.householdId, plan);
@@ -102,7 +102,7 @@ async function composeSchedule(
 
   let generated;
   try {
-    generated = await generateBatchScheduleFromGemini(
+    generated = await generateCookingSessionFromGemini(
       {
         recipes: recipes.map((recipe) => ({
           id: recipe.id,
@@ -131,8 +131,8 @@ async function composeSchedule(
     );
   } catch (error) {
     await rethrowIfUnavailable(error, input.householdId);
-    if (error instanceof BatchScheduleGenerationError) {
-      logger.error('déroulé abandonné', {
+    if (error instanceof CookingSessionGenerationError) {
+      logger.error('session de cuisson abandonnée', {
         violations: error.violations.map((violation) => violation.code),
       });
       throw internal(

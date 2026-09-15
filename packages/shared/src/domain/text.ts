@@ -45,3 +45,18 @@ export function parseList(value: string): string[] {
     .map((entry) => entry.trim())
     .filter(Boolean);
 }
+
+/**
+ * Retire un pluriel simple, mot par mot : « petits pois » devient « petit poi »,
+ * « oignons » devient « oignon ».
+ *
+ * Ce n'est pas une grammaire : « pois » y perd son s, et c'est sans importance
+ * tant que **les deux côtés d'une comparaison** passent par ici. Les mots de
+ * trois lettres ou moins restent intacts — « ail » ne perd rien.
+ */
+export function singularizeWords(value: string): string {
+  return value
+    .split(' ')
+    .map((word) => (word.length > 3 && /[sx]$/.test(word) ? word.slice(0, -1) : word))
+    .join(' ');
+}

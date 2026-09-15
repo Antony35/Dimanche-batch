@@ -1,5 +1,6 @@
 import type { Aisle } from '../schemas/common';
-import { normalizeName, parseList } from './text';
+import { AISLES } from '../schemas/common';
+import { normalizeName, parseList, singularizeWords } from './text';
 
 /**
  * Rayon d'un article, deviné depuis son nom.
@@ -219,8 +220,8 @@ function buildIndex(): AisleIndex {
   const byName = new Map<string, Aisle>();
   let writtenCount = 0;
 
-  for (const [aisle, entries] of Object.entries(CATALOG) as [Aisle, string][]) {
-    for (const entry of parseList(entries)) {
+  for (const aisle of AISLES) {
+    for (const entry of parseList(CATALOG[aisle])) {
       const key = lookupKey(entry);
       if (!key) continue;
 
@@ -235,7 +236,7 @@ function buildIndex(): AisleIndex {
       // dépluraliser la recherche seule ne suffit pas : « petits pois » devient
       // « petit poi », qui ne ressemble à aucune entrée. En dépluralisant les
       // deux côtés, les deux tombent sur la même clé.
-      const singular = singularize(key);
+      const singular = singularizeWords(key);
       if (!byName.has(singular)) byName.set(singular, aisle);
     }
   }
@@ -244,14 +245,6 @@ function buildIndex(): AisleIndex {
 }
 
 const INDEX = buildIndex();
-
-/** Retire un pluriel simple. « petits pois » doit trouver « petit pois ». */
-function singularize(gram: string): string {
-  return gram
-    .split(' ')
-    .map((word) => (word.length > 3 && /[sx]$/.test(word) ? word.slice(0, -1) : word))
-    .join(' ');
-}
 
 /**
  * Rayon connu pour ce nom, ou `null`.
@@ -267,7 +260,7 @@ export function lookupAisle(name: string, overrides?: ReadonlyMap<string, Aisle>
   for (let size = tokens.length; size > 0; size -= 1) {
     for (let start = 0; start + size <= tokens.length; start += 1) {
       const gram = tokens.slice(start, start + size).join(' ');
-      const singular = singularize(gram);
+      const singular = singularizeWords(gram);
 
       // Le lexique du foyer passe devant la table livrée, à longueur égale : une
       // correction de l'utilisateur n'a pas à être discutée.

@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
-  BATCH_SCHEDULE_SYSTEM_INSTRUCTION,
+  COOKING_SESSION_SYSTEM_INSTRUCTION,
   MEAL_REPLACEMENT_SYSTEM_INSTRUCTION,
   PROMPT_VERSION,
   SYSTEM_INSTRUCTION,
   buildBatchRecipePrompt,
-  buildBatchSchedulePrompt,
+  buildCookingSessionPrompt,
   buildMealReplacementPrompt,
   buildPlanPrompt,
   buildRetryPrompt,
@@ -246,8 +246,8 @@ describe('instructions système', () => {
   });
 });
 
-describe('buildBatchSchedulePrompt', () => {
-  const prompt = buildBatchSchedulePrompt({
+describe('buildCookingSessionPrompt', () => {
+  const prompt = buildCookingSessionPrompt({
     recipes: [
       {
         id: 'bourguignon',
@@ -294,14 +294,14 @@ describe('buildBatchSchedulePrompt', () => {
   });
 
   it('interdit de redemander une découpe et d’écrire des quantités', () => {
-    expect(BATCH_SCHEDULE_SYSTEM_INSTRUCTION).toContain('Tout est déjà coupé');
-    expect(BATCH_SCHEDULE_SYSTEM_INSTRUCTION).toContain("N'écris aucune quantité");
-    expect(BATCH_SCHEDULE_SYSTEM_INSTRUCTION).toContain('EXACTEMENT comme la recette');
+    expect(COOKING_SESSION_SYSTEM_INSTRUCTION).toContain('Tout est déjà coupé');
+    expect(COOKING_SESSION_SYSTEM_INSTRUCTION).toContain("N'écris aucune quantité");
+    expect(COOKING_SESSION_SYSTEM_INSTRUCTION).toContain('EXACTEMENT comme la recette');
   });
 
   it('demande un temps par plat, qui concorde avec ses étapes', () => {
-    expect(BATCH_SCHEDULE_SYSTEM_INSTRUCTION).toContain('"timings"');
-    expect(BATCH_SCHEDULE_SYSTEM_INSTRUCTION).toContain('concorde avec les durées');
+    expect(COOKING_SESSION_SYSTEM_INSTRUCTION).toContain('"timings"');
+    expect(COOKING_SESSION_SYSTEM_INSTRUCTION).toContain('concorde avec les durées');
     expect(SYSTEM_INSTRUCTION).toContain('CONCORDENT avec "cookMinutes"');
   });
 });

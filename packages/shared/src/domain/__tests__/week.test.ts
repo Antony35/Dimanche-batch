@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   BATCH_DAY_INDEX,
   addDays,
-  formatDate,
   formatDateLong,
+  formatDuration,
   formatWeekRange,
   getComposableWeekId,
   getCurrentWeekId,
@@ -13,7 +13,6 @@ import {
   getWeekDates,
   getWeekId,
   isComposableWeek,
-  isWeekday,
   parseIsoDate,
   requiresFreezing,
   toIsoDate,
@@ -114,18 +113,6 @@ describe('noms de jours', () => {
   });
 });
 
-describe('isWeekday', () => {
-  it('couvre les jours nourris par le batch, lundi à vendredi', () => {
-    expect(isWeekday(2)).toBe(true); // lundi
-    expect(isWeekday(6)).toBe(true); // vendredi
-  });
-
-  it('exclut le week-end, seul moment où l’on cuisine le jour même', () => {
-    expect(isWeekday(0)).toBe(false); // samedi
-    expect(isWeekday(1)).toBe(false); // dimanche, le batch
-  });
-});
-
 /**
  * Cette règle gouverne deux choses à la fois : la contrainte qui refuse un plan,
  * et la mention « à congeler » de l'écran du batch. Elle était écrite deux fois
@@ -178,11 +165,6 @@ describe('conversion date <-> ISO', () => {
  * endroits — jusqu'à « DIMANCHE 2026-09-20 » sur l'écran de préparation.
  */
 describe('dates en français', () => {
-  it('rend une date numérique lisible', () => {
-    expect(formatDate('2026-09-14')).toBe('14/09/2026');
-    expect(formatDate('2026-01-02')).toBe('02/01/2026');
-  });
-
   it('rend une date longue avec son jour de la semaine', () => {
     expect(formatDateLong('2026-09-12')).toBe('samedi 12 septembre');
     expect(formatDateLong('2026-08-01')).toBe('samedi 1 août');
@@ -230,5 +212,13 @@ describe('semaine composable', () => {
   it('refuse la semaine d’après, et une date qui n’est pas un samedi', () => {
     expect(isComposableWeek('2026-09-26', '2026-09-15')).toBe(false);
     expect(isComposableWeek('2026-09-21', '2026-09-15')).toBe(false);
+  });
+});
+
+describe('formatDuration', () => {
+  it('dit une durée comme on la dit en cuisine', () => {
+    expect(formatDuration(45)).toBe('45 min');
+    expect(formatDuration(120)).toBe('2 h');
+    expect(formatDuration(150)).toBe('2 h 30');
   });
 });

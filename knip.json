@@ -21,7 +21,6 @@
       "project": ["src/**/*.ts"]
     }
   },
-  "ignoreBinaries": ["eas"],
   "ignoreDependencies": ["expo-updates"],
   "vitest": true,
   "rules": {
