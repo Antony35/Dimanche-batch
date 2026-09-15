@@ -115,6 +115,22 @@ describe('getMiseEnPlace', () => {
     ]);
   });
 
+  it('trie par ordre alphabétique au sein d’un même groupe', () => {
+    const ratatouille = makeRecipe({
+      id: 'ratatouille',
+      ingredients: [
+        { name: 'poivron', qty: 2, unit: 'piece', aisle: 'fruits-legumes' },
+        { name: 'persil', qty: 1, unit: 'botte', aisle: 'fruits-legumes' },
+        { name: 'aubergine', qty: 1, unit: 'piece', aisle: 'fruits-legumes' },
+        { name: 'basilic', qty: 1, unit: 'botte', aisle: 'fruits-legumes' },
+      ],
+    });
+    // Deux herbes de même rang, puis deux légumes : l'alphabet départage.
+    expect(getMiseEnPlace([{ recipe: ratatouille, portions: 2 }]).map((line) => line.name)).toEqual(
+      ['basilic', 'persil', 'aubergine', 'poivron'],
+    );
+  });
+
   it('n’affiche ni huile, ni beurre, ni épices', () => {
     const names = lines.map((line) => line.name.toLowerCase());
     expect(names).not.toContain('huile d’olive');
