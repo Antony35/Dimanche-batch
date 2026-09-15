@@ -1,8 +1,9 @@
 import {
-  GeneratedBatchScheduleSchema,
-  validateBatchSchedule,
+  GeneratedCookingSessionSchema,
+  validateBatchSession,
   type ConstraintViolation,
-  type GeneratedBatchSchedule,
+  type GeneratedCookingSession,
+  type Recipe,
 } from '@dimanche-batch/shared';
 import {
   BATCH_SCHEDULE_SYSTEM_INSTRUCTION,
@@ -13,7 +14,7 @@ import { BATCH_SCHEDULE_RESPONSE_SCHEMA } from './response-schema';
 import { generateWithContentRetry } from './content-retry';
 
 export interface BatchScheduleResult {
-  schedule: GeneratedBatchSchedule;
+  session: GeneratedCookingSession;
   model: string;
   attempts: number;
 }
@@ -29,33 +30,33 @@ export class BatchScheduleGenerationError extends Error {
 }
 
 /**
- * Compose le déroulé entrelacé, ou échoue clairement. La faute la plus
- * probable est un plat oublié en route, précisément celle qu'on ne peut pas
- * laisser passer.
+ * Compose la session de cuisson, ou échoue clairement. Les fautes guettées : un
+ * plat sans étape, une étape qui redemande de couper, une découpe pour un
+ * ingrédient absent de la recette.
  */
 export async function generateBatchScheduleFromGemini(
   input: BatchSchedulePromptInput,
+  recipes: readonly Pick<Recipe, 'id' | 'name' | 'ingredients'>[],
   onAttempt?: (attempt: number) => void,
 ): Promise<BatchScheduleResult> {
-  const batchRecipeIds = input.recipes.map((recipe) => recipe.id);
   const outcome = await generateWithContentRetry({
-    subject: 'déroulé',
+    subject: 'session de cuisson',
     systemInstruction: BATCH_SCHEDULE_SYSTEM_INSTRUCTION,
     prompt: buildBatchSchedulePrompt(input),
     responseSchema: BATCH_SCHEDULE_RESPONSE_SCHEMA,
-    // Réordonner n'appelle pas d'invention : on veut le même déroulé deux fois.
+    // Réécrire n'appelle pas d'invention : on veut le même résultat deux fois.
     temperature: 0.3,
-    schema: GeneratedBatchScheduleSchema,
-    validate: (schedule) => validateBatchSchedule(schedule, batchRecipeIds),
-    describe: (schedule) => ({ etapes: schedule.steps.length }),
+    schema: GeneratedCookingSessionSchema,
+    validate: (session) => validateBatchSession(session, recipes),
+    describe: (session) => ({ etapes: session.steps.length, decoupes: session.cuts.length }),
     onAttempt,
   });
 
   if (!outcome.ok) {
     throw new BatchScheduleGenerationError(
-      'Le déroulé proposé oubliait un plat, même après correction.',
+      'Les étapes de cuisson proposées ne tenaient pas, même après correction.',
       outcome.violations,
     );
   }
-  return { schedule: outcome.value, model: outcome.model, attempts: outcome.attempts };
+  return { session: outcome.value, model: outcome.model, attempts: outcome.attempts };
 }

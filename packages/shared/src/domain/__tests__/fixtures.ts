@@ -8,6 +8,7 @@ export function makeRecipe(overrides: Partial<Recipe> & Pick<Recipe, 'id'>): Rec
     name: 'Recette test',
     servings: 2,
     prepMinutes: 25,
+    cookMinutes: 0,
     tags: ['one-pot'],
     ingredients: [{ name: 'lentilles corail', qty: 250, unit: 'g', aisle: 'epicerie' }],
     steps: ['Tout mettre dans la cocotte.'],
@@ -60,6 +61,7 @@ export function makeGeneratedRecipe(
     name: 'Recette générée',
     servings: 2,
     prepMinutes: 25,
+    cookMinutes: 0,
     tags: ['one-pot', 'healthy'],
     ingredients: [{ name: 'lentilles corail', qty: 250, unit: 'g', aisle: 'epicerie' }],
     steps: ['Tout mettre dans la cocotte.'],
@@ -67,79 +69,65 @@ export function makeGeneratedRecipe(
   };
 }
 
+/** Quel plat sert quel créneau, du lundi (2) au vendredi (6). */
+export type WeekdayServing = Record<2 | 3 | 4 | 5 | 6, [lunch: string, dinner: string]>;
+
+export function makeGeneratedDays(serving: WeekdayServing): GeneratedPlan['days'] {
+  return ([2, 3, 4, 5, 6] as const).map((dayIndex) => {
+    const [lunch, dinner] = serving[dayIndex];
+    const meal = (recipeSlug: string) => ({
+      recipeSlug,
+      kind: 'batch-leftover' as const,
+      withStarter: false,
+      withDessert: false,
+    });
+    return { dayIndex, lunch: meal(lunch), dinner: meal(dinner) };
+  });
+}
+
 /**
  * Plan généré conforme à toutes les contraintes — base des tests de violation.
  *
- * Semaine du samedi au vendredi : 0 = samedi, 1 = dimanche, 2 à 6 = lundi à
- * vendredi. Le week-end se cuisine le jour même ; les dix repas de semaine sont
- * des portions de trois plats préparés le dimanche.
- *
- * Les portions sont calibrées au plus juste : chaque plat sert quatre repas
- * pour huit portions, sauf le dernier qui en sert deux. Les plats servis en fin
- * de semaine portent « congelable », comme la contrainte l'exige.
+ * Le modèle ne décrit que le lundi au vendredi. Trois plats nourrissent les dix
+ * repas, répartis 4, 3 et 3 — donc 8, 6 et 6 portions. Le curry mijote, ce qui
+ * tient la règle du dimanche ; le chili et la soupe, servis jeudi ou vendredi,
+ * portent « congelable ».
  */
 export function makeValidGeneratedPlan(): GeneratedPlan {
   const recipes: GeneratedRecipe[] = [
     makeGeneratedRecipe({
       slug: 'batch-curry',
-      tags: ['batch', 'healthy'],
+      name: 'Curry de lentilles',
+      tags: ['batch', 'healthy', 'mijote'],
       servings: 8,
       prepMinutes: 50,
+      cookMinutes: 90,
     }),
     makeGeneratedRecipe({
       slug: 'chili-sin-carne',
+      name: 'Chili sin carne',
       tags: ['batch', 'congelable'],
-      servings: 8,
+      servings: 6,
       prepMinutes: 50,
     }),
     makeGeneratedRecipe({
       slug: 'soupe-poireaux',
+      name: 'Soupe de poireaux',
       tags: ['batch', 'congelable'],
-      servings: 4,
+      servings: 6,
       prepMinutes: 30,
     }),
-    makeGeneratedRecipe({ slug: 'risotto-weekend', tags: ['weekend'], prepMinutes: 60 }),
   ];
-
-  /** Lundi et mardi le curry, mercredi et jeudi le chili, vendredi la soupe. */
-  const weekdaySlug = (dayIndex: number): string => {
-    if (dayIndex <= 3) return 'batch-curry';
-    if (dayIndex <= 5) return 'chili-sin-carne';
-    return 'soupe-poireaux';
-  };
-
-  const days = [0, 1, 2, 3, 4, 5, 6].map((dayIndex) => {
-    if (dayIndex >= 2) {
-      const portion = {
-        recipeSlug: weekdaySlug(dayIndex),
-        kind: 'batch-leftover' as const,
-        withStarter: false,
-        withDessert: false,
-      };
-      return { dayIndex, lunch: portion, dinner: { ...portion } };
-    }
-
-    // Samedi et dimanche : un plat frais le soir, rien de prévu le midi.
-    return {
-      dayIndex,
-      lunch: {
-        recipeSlug: null,
-        kind: 'eat-out' as const,
-        withStarter: false,
-        withDessert: false,
-      },
-      dinner: {
-        recipeSlug: 'risotto-weekend',
-        kind: 'cooked' as const,
-        withStarter: false,
-        withDessert: true,
-      },
-    };
-  });
 
   return {
     recipes,
     batchRecipeSlugs: ['batch-curry', 'chili-sin-carne', 'soupe-poireaux'],
-    days,
+    days: makeGeneratedDays({
+      2: ['batch-curry', 'batch-curry'],
+      3: ['batch-curry', 'batch-curry'],
+      4: ['chili-sin-carne', 'chili-sin-carne'],
+      5: ['chili-sin-carne', 'soupe-poireaux'],
+      6: ['soupe-poireaux', 'soupe-poireaux'],
+    }),
   };
 }

@@ -3,12 +3,14 @@ import {
   RecipeSchema,
   WeeklyPlanSchema,
   buildGroceryList,
+  collectRecipeIds,
   countMealsServing,
   getWeekDates,
-  mergePreservingChecked,
+  mergeGroceryLists,
   paths,
   replaceBatchRecipeInPlan,
   replaceMealInPlan,
+  swapMealsInPlan,
   type GeneratedMeal,
   type GeneratedPlan,
   type GeneratedRecipe,
@@ -16,6 +18,7 @@ import {
   type GroceryItem,
   type GroceryList,
   type Meal,
+  type MealSlotRef,
   type MealSlot,
   type Recipe,
   type RegenerateMealResult,
@@ -176,6 +179,32 @@ export async function replaceBatchRecipe(
   return { weekId, recipeId: nextRecipe.id, recipeName: nextRecipe.name, mealCount, itemCount };
 }
 
+export interface SwapPlanMealsParams {
+  householdId: string;
+  plan: WeeklyPlan;
+  first: MealSlotRef;
+  second: MealSlotRef;
+}
+
+/**
+ * Échange deux repas du batch.
+ *
+ * Passe par `commitPlan` comme toute modification : la liste de courses est
+ * recalculée, et elle revient identique — chaque plat sert le même nombre de
+ * repas. La recalculer quand même coûte une lecture et garantit qu'aucun
+ * chemin d'écriture ne la laisse désaccordée du plan.
+ */
+export async function swapPlanMeals(params: SwapPlanMealsParams): Promise<{ itemCount: number }> {
+  const { householdId, plan, first, second } = params;
+  const known = await readPlanRecipes(householdId, plan);
+  return commitPlan({
+    householdId,
+    plan: swapMealsInPlan(plan, first, second),
+    recipesToWrite: [],
+    allRecipes: [...known.values()],
+  });
+}
+
 export interface SetPlanMealParams {
   householdId: string;
   plan: WeeklyPlan;
@@ -272,7 +301,7 @@ async function commitPlan(params: CommitPlanParams): Promise<{ itemCount: number
 
   const items = buildGroceryList(plan, allRecipes);
   const previous = await readExistingGroceryItems(householdId, weekId);
-  const mergedItems = mergePreservingChecked(items, previous.items);
+  const mergedItems = mergeGroceryLists(items, previous.items);
 
   const batch = db.batch();
 
@@ -385,6 +414,7 @@ function toRecipe(
     name: generated.name,
     servings: generated.servings,
     prepMinutes: generated.prepMinutes,
+    cookMinutes: generated.cookMinutes,
     tags: generated.tags,
     ingredients: generated.ingredients,
     steps: generated.steps,
@@ -408,29 +438,30 @@ function toWeeklyPlan(
   },
 ): WeeklyPlan {
   const byIndex = new Map(plan.days.map((day) => [day.dayIndex, day]));
-  const referenced = new Set<string>();
+
+  // Le modèle ne décrit que le lundi au vendredi. Le samedi et le dimanche
+  // restent à décider : les générer achèterait un repas qu'on prendra peut-être
+  // dehors.
+  const undecided: Meal = { recipeId: null, kind: 'undecided', withStarter: false, withDessert: false };
+  const toMeal = (meal: GeneratedMeal): Meal => ({
+    recipeId: meal.recipeSlug,
+    kind: meal.kind,
+    withStarter: meal.withStarter,
+    withDessert: meal.withDessert,
+  });
 
   const days = context.dates.map((date, index) => {
     const day = byIndex.get(index);
-    const toMeal = (meal: GeneratedMeal): Meal => {
-      if (meal.recipeSlug) referenced.add(meal.recipeSlug);
-      return {
-        recipeId: meal.recipeSlug,
-        kind: meal.kind,
-        withStarter: meal.withStarter,
-        withDessert: meal.withDessert,
-      };
-    };
-
-    // `day` est toujours défini : validateGeneratedPlan a vérifié les 7 index.
-    return { date, lunch: toMeal(day!.lunch), dinner: toMeal(day!.dinner) };
+    // `day` est défini pour les index 2 à 6 : validateGeneratedPlan les a vérifiés.
+    if (!day) return { date, lunch: { ...undecided }, dinner: { ...undecided } };
+    return { date, lunch: toMeal(day.lunch), dinner: toMeal(day.dinner) };
   });
 
   return {
     id: context.weekId,
     weekStart: context.weekStart,
     days,
-    recipeIds: [...referenced],
+    recipeIds: [...new Set([...collectRecipeIds(days), ...plan.batchRecipeSlugs])],
     batchRecipeIds: plan.batchRecipeSlugs,
     generatedAt: Date.now(),
     generatedBy: context.generatedBy,

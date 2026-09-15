@@ -1,8 +1,10 @@
 import { onCall } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions';
 import {
+  BATCH_DAY_INDEX,
   RegenerateMealInputSchema,
   findMeal,
+  isLastMealOfBatchDish,
   type RegenerateMealInput,
   type RegenerateMealResult,
   type WeeklyPlan,
@@ -64,6 +66,18 @@ export const regenerateMeal = onCall(
     if (dayIndex === -1) {
       throw invalidArgument('Ce jour ne fait pas partie de la semaine planifiée.');
     }
+    // Refusé avant le verrou et le quota : on ne cuisine que le samedi et le
+    // dimanche, et un appel qui vise un jour de semaine ne doit rien coûter.
+    if (dayIndex > BATCH_DAY_INDEX) {
+      throw invalidArgument(
+        'Du lundi au vendredi, les repas viennent du batch : échange-les ou pose un reste plutôt que de cuisiner.',
+      );
+    }
+    if (isLastMealOfBatchDish(plan, input.date, input.slot)) {
+      throw invalidArgument(
+        'C’est le dernier repas de ce plat du batch : remplace plutôt le plat depuis l’écran du dimanche.',
+      );
+    }
 
     // Le verrou est celui de la semaine, pas du repas : deux régénérations
     // simultanées sur deux créneaux différents recalculeraient toutes deux la
@@ -105,7 +119,6 @@ async function replaceOneMeal(
           .filter(([id]) => id !== current?.recipeId)
           .map(([, name]) => name),
         bannedRecipeNames,
-        notes: input.notes,
       },
       (attempt) => {
         void reportGenerationStep(

@@ -1,11 +1,13 @@
 # Dimanche Batch
 
 Application mobile de batch cooking pour un foyer de deux personnes. **On cuisine
-le dimanche, on ne cuisine pas de la semaine.** Un plan de 7 jours est généré par
-l'API Gemini : trois à six plats préparés le dimanche nourrissent les dix repas
-du lundi au vendredi, le samedi et le dimanche se cuisinent le jour même. Le plan
-devient une liste de courses groupée par rayon, partageable. Les deux téléphones
-partagent le même foyer et voient les mêmes données en temps réel.
+le dimanche, on ne cuisine pas de la semaine.** Le foyer choisit combien de plats
+préparer (trois à six) et combien sont végétariens ; l'API Gemini compose ce
+batch, qui nourrit les dix repas du lundi au vendredi. Le samedi et le dimanche
+ne sont pas générés : le foyer les décide ensuite — un reste, un repas dehors, un
+plat cuisiné. Le plan devient la liste de courses du foyer, groupée par rayon,
+où l'on ajoute aussi ses produits ménagers. Les deux téléphones partagent le
+même foyer et voient les mêmes données en temps réel.
 
 **La semaine va du samedi au vendredi**, et c'est structurant : les courses se
 font le samedi matin, le batch le dimanche, et tout ce qui se cuisine frais l'est
@@ -15,7 +17,7 @@ dernier jour aurait attendu huit jours au frigo.
 **Statut : v1 en cours — J1 à J6 livrés, modèle du batch refondu.** Le monorepo, le domaine partagé, les
 Security Rules, l'authentification, le foyer partagé, la génération Gemini, le
 planning des 7 jours, la régénération d'un repas isolé, la liste de courses, la
-fiche recette, l'historique et le fonctionnement hors ligne ; 366 tests couvrent
+fiche recette, l'historique et le fonctionnement hors ligne ; 459 tests couvrent
 le domaine, les schémas, les callables et les règles. Reste le build (J7). Ce
 document fait autorité sur l'architecture ; il est mis à jour en même temps que
 le code, jamais après.
@@ -94,8 +96,8 @@ dimanche-batch/
 │     ├─ schemas/             # Zod : common, household, recipe, weeklyPlan,
 │     │                       #       groceryList, gemini (contrat du modèle)
 │     ├─ domain/              # logique pure : semaine, unités, agrégation des
-│     │                       #   courses, export Listonic, contraintes de plan,
-│     │                       #   édition d'un repas, batch, déroulé,
+│     │                       #   courses, rayons, saisons, contraintes de plan,
+│     │                       #   édition d'un repas, batch, session,
 │     │                       #   mise en place, goûts, texte
 │     └─ firestore-paths.ts   # chemins Firestore, définis une seule fois
 │
@@ -205,7 +207,9 @@ households/{hid}/groceryLists/{weekId}
 
 households/{hid}/groceryLists/{weekId}/items/{itemId}
   name, qty, unit, aisle, checked, fromRecipeIds[]
+  origin: 'batch' | 'fresh' | 'manual'
   # itemId dérivé du nom normalisé + dimension d'unité (domain/grocery.ts)
+  # préfixé `manual--` pour un article ajouté à la main
 
 households/{hid}/usage/{yyyy-mm-dd}        # rate limiting
   generations: number
@@ -214,11 +218,23 @@ households/{hid}/locks/{weekId}            # une génération à la fois par sem
   startedAt: number                        # ms epoch ; repris au-delà du TTL
   by: string                               # uid
 
-households/{hid}/batchSchedules/{weekId}  # déroulé entrelacé du dimanche
-  sourceRecipeIds: string[]              # batch à partir duquel il a été composé
-  steps: { recipeIds: string[], text }[] # chaque étape nomme ses plats
+households/{hid}/batchSessions/{weekId}   # session de cuisson du dimanche
+  sourceRecipeIds: string[]              # batch à partir duquel elle a été composée
+  cuts: { recipeId, ingredient, cut }[]  # « oignon » → « émincé », plat par plat
+  steps: { recipeId, text }[]            # cuisson et mélange, dans l'ordre du plat
+  timings: { recipeId, cookMinutes }[]   # cuisson seule, concordant avec les étapes
   generatedAt, generatedBy, model, promptVersion
+
+households/{hid}/lexicon/overrides        # rayons attribués par le foyer
+  entries: { [aisleOverrideKey(nom)]: Aisle }
 ```
+
+Un repas porte l'un de cinq `kind` : `batch-leftover` (portion du batch de la
+semaine), `cooked` (cuisiné le samedi ou le dimanche), `freezer-backup` (reste du
+batch de la semaine précédente, n'achète rien), `eat-out`, et `undecided` — le
+samedi et le dimanche tels que la génération les laisse. Une recette porte
+`prepMinutes` (présence en cuisine) **et** `cookMinutes` (cuisson sans
+surveillance) : le budget du dimanche ne compte que le premier.
 
 **Security Rules** — l'intention à implémenter :
 
@@ -230,19 +246,28 @@ households/{hid}/batchSchedules/{weekId}  # déroulé entrelacé du dimanche
   garanti par `diff().affectedKeys().hasOnly(['checked'])`. C'est la raison d'être
   de la sous-collection : sur un tableau d'items, cocher une case imposerait de
   réécrire tout le document et la règle ne garantirait plus rien. Bénéfice
-  secondaire, deux personnes cochent en même temps sans s'écraser.
+  secondaire, deux personnes cochent en même temps sans s'écraser. Le client peut aussi
+  **créer et supprimer un article ajouté à la main**, et seulement celui-là :
+  identifiant sous `manual--`, `origin == 'manual'`, champs bornés. La borne est
+  l'espace de noms — elle empêche de fabriquer un faux article du batch comme de
+  supprimer un article calculé. Les rayons et unités y sont recopiés du schéma,
+  et un test compare les deux listes.
 - `recipes` : même mécanisme, limité à `isFavorite` et `isDisliked`. Les deux
   partent ensemble parce qu'ils s'excluent — mettre en favori lève le
   bannissement — et la règle ne peut borner que les champs, jamais leur
   cohérence : celle-ci s'écrit une seule fois, dans `use-recipe-verdict.ts`.
+- `lexicon/overrides` : un membre écrit le seul champ `entries`, dont les valeurs
+  sont restreintes aux rayons connus. L'app l'écrit en fusion, pour que deux
+  téléphones qui corrigent en même temps ne s'écrasent pas.
 - `households` : `members` est immuable côté client — on ne s'ajoute pas à un
   foyer, et on n'en exclut pas l'autre personne. Seule `joinHousehold` y touche.
 - `usage` et `locks` : lecture seule côté client. Voir un verrou permet
   d'afficher « génération en cours » ; pouvoir en poser un permettrait de
   bloquer l'autre téléphone indéfiniment.
-- `batchSchedules` : lecture seule côté client. Le déroulé est composé par
-  Gemini dans une callable ; pouvoir l'écrire permettrait de réécrire la
-  session du dimanche de l'autre téléphone.
+- `batchSessions` : lecture seule côté client. La session est composée par
+  Gemini dans une callable ; pouvoir l'écrire permettrait de réécrire le
+  dimanche de l'autre téléphone. Les anciens documents `batchSchedules`,
+  d'une autre forme, ne sont plus lus ni autorisés.
 
 Les règles sont testées avec l'émulateur (`npm run test:rules`, dans
 `packages/rules-tests`). Une règle non testée est une règle fausse. Ajouter une
@@ -256,11 +281,12 @@ Une responsabilité par function, nommage `verbeNom`.
 
 | Function                | Rôle                                                                                                                                                                                                                                                                                                                                                                                                        |
 | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `generateWeeklyPlan`    | Génère le plan de la semaine. Vérifie l'appartenance au foyer et le rate limit, construit le prompt avec l'historique des 3 dernières semaines, appelle Gemini, valide via Zod, écrit `weeklyPlans` + `recipes` + `groceryLists` dans un batch, incrémente `usage`.                                                                                                                                         |
-| `setMeal`               | Pose un repas choisi par l'utilisateur : une portion d'un plat du batch, ou un repas à l'extérieur. **Aucun appel Gemini, donc aucun quota décompté** — mais le verrou de semaine est pris, car la liste de courses est intégralement recalculée.                                                                                                                                                           |
-| `regenerateMeal`        | Remplace un seul repas d'un plan existant. Même chemin de validation, mais des contraintes **locales au jour visé** — voir §9. Passe par le même écrivain que la génération complète : la liste de courses est intégralement recalculée, jamais rapiécée.                                                                                                                                                   |
+| `generateWeeklyPlan`    | Compose le batch d'une semaine **qui n'a pas commencé** — la semaine prochaine, et elle seule (`isComposableWeek`, date du jour prise à Paris). Reçoit le nombre de plats et de plats végétariens, construit le prompt avec l'historique des 3 dernières semaines, appelle Gemini, valide via Zod, écrit `weeklyPlans` + `recipes` + `groceryLists` dans un batch, incrémente `usage`.                      |
+| `setMeal`               | Pose un repas choisi par l'utilisateur : une portion d'un plat du batch, un repas à l'extérieur, ou un reste du batch de la **semaine précédente** — vérifié contre son `batchRecipeIds`. **Aucun appel Gemini, donc aucun quota décompté** — mais le verrou de semaine est pris, car la liste de courses est intégralement recalculée. Refuse de vider le dernier repas d'un plat du batch.                |
+| `swapMeals`             | Échange deux repas du batch. L'app dit quel plat elle veut sur un créneau ; `findSwapCounterpart` choisit le créneau qui cède sa place — le plus éloigné dans la semaine, sans jamais envoyer en fin de semaine un plat qui ne se congèle pas. Chaque plat sert le même nombre de repas : la liste de courses ne change pas. Ni Gemini ni quota.                                                            |
+| `regenerateMeal`        | Compose une recette pour un repas du **samedi ou du dimanche** seulement — on ne cuisine plus en semaine. Style `one-pot` (une casserole, 45 min) ou `elaborate`. Passe par le même écrivain que la génération complète : la liste de courses est intégralement recalculée, jamais rapiécée.                                                                                                                |
 | `replaceBatchRecipe`    | Remplace un plat du batch, et avec lui **tous les repas qu'il servait**. Callable à part et non un paramètre de `regenerateMeal` : un plat du batch n'occupe pas un créneau mais plusieurs, et le remplacer repas par repas coûterait autant de générations qu'il sert de repas, en laissant la semaine incohérente entre deux appels. Seul écrivain du dépôt à muter `batchRecipeIds` sur un plan existant |
-| `generateBatchSchedule` | Compose le déroulé entrelacé du dimanche, **à la demande puis conservé** : une génération par batch, jamais une par consultation. Si un déroulé à jour existe, il est rendu sans rien décompter — vérification faite sous le verrou, sans quoi deux téléphones ouvrant l'onglet ensemble paieraient deux fois                                                                                               |
+| `generateBatchSchedule` | Compose la session de cuisson du dimanche — la découpe de chaque ingrédient et les étapes de cuisson de chaque plat —, **à la demande puis conservée** : une génération par batch, jamais une par consultation. Si une session à jour existe, elle est rendue sans rien décompter — vérification faite sous le verrou, sans quoi deux téléphones ouvrant l'onglet ensemble paieraient deux fois             |
 | `joinHousehold`         | Consomme un code d'invitation et ajoute l'uid aux `members`. Côté serveur pour que le code reste à usage unique.                                                                                                                                                                                                                                                                                            |
 
 Contrat Gemini :
@@ -286,7 +312,7 @@ testable sans réseau, car elle repose sur la forme des erreurs d'un SDK tiers,
 qui n'expose pas son statut HTTP de façon stable.
 
 La reprise de contenu vit en un seul endroit, `gemini/content-retry.ts`. Les
-quatre chaînes — semaine, repas, plat du batch, déroulé — ne diffèrent que par
+quatre chaînes — semaine, repas, plat du batch, session de cuisson — ne diffèrent que par
 leur schéma et leur validateur, et en portaient chacune une copie de quarante
 lignes : une politique de reprise écrite quatre fois finit par en être quatre.
 Même chose pour ce que les callables partagent — lire le plan ou dire qu'il
@@ -302,16 +328,74 @@ Les messages d'erreur remontés à l'app disent ce qui s'est passé **et** ce qu
 l'utilisateur peut faire. Un message qui dit seulement « erreur interne » oblige
 à ouvrir les logs pour répondre à quelqu'un qui est devant son téléphone.
 
-Contraintes métier que le prompt doit garantir (voir la semaine type) : au moins
-3 recettes distinctes, one-pot et healthy en semaine, weekend sans contrainte one-pot,
-au moins 2 recettes qui se congèlent bien, portions pour 2, ingrédients quantifiés avec
-un rayon de supermarché.
+**Ce que la génération produit, et ce qu'elle ne produit plus.** Le modèle ne
+décrit que le batch et les jours du lundi au vendredi (`dayIndex` 2 à 6, tous
+`batch-leftover`) ; `toWeeklyPlan` pose le samedi et le dimanche en `undecided`.
+Ce qu'il ne peut pas décrire, il ne peut pas le rater — et on n'achète plus un
+repas que le foyer prendra peut-être dehors. `validateGeneratedPlan` exige
+(prompt version 8) :
 
-**Le batch, et ce qu'il implique pour les courses.** `batchRecipeIds` liste les
-plats cuisinés le dimanche. `buildGroceryList` les compte **une fois chacun**,
-aux portions déclarées, puis ajoute les repas cuisinés le jour même — samedi et
-dimanche. Compter chaque repas qui sert un plat du batch achèterait la semaine
-dix fois. Un repas `cooked` citant un plat du batch est ignoré : la contrainte
+- exactement le nombre de plats demandé, et rien d'autre dans `recipes` ;
+- **la répartition annoncée** : `distributeMeals` répartit les dix repas au plus
+  égal — 4/3/3 pour trois plats, donc 8/6/6 portions — et chaque plat déclare
+  **exactement** deux portions par repas servi. Le modèle ne calcule plus rien :
+  diviser 20 portions par 3 donnait des plats à 7 portions, donc des
+  demi-assiettes ;
+- `congelable` pour un plat servi jeudi ou vendredi ;
+- 240 minutes de **présence** au plus, la cuisson sans surveillance exclue ;
+- un plat `mijote` ou `four-lent` pour 3 ou 4 plats, un de chaque dès 5, avec au
+  moins 60 minutes de cuisson — le plat qui cuit seul pendant qu'on prépare les
+  autres ;
+- exactement le nombre de plats `vegetarien` choisi, et aucun d'eux avec un
+  ingrédient des rayons boucherie ou poissonnerie ;
+- aucun plat banni.
+
+Le prompt reçoit en outre les fruits et légumes du mois visé
+(`domain/seasonality.ts`, région Centre-Val de Loire). C'est une consigne, pas un
+filet : un validateur de saison ferait refuser des plans légitimes.
+
+**On ne compose jamais une semaine entamée.** Elle a commencé samedi : un plan
+composé maintenant arriverait après les courses et le batch qu'il devait
+organiser. Le samedi et le dimanche, la semaine suivante reste composable — elle
+commence dans six ou sept jours. Pas plus loin : composer deux semaines d'avance,
+c'est choisir des plats avant de savoir ce qui reste du batch précédent. La
+règle vit dans `getComposableWeekId`, lue
+par l'accueil comme par la callable ; celle-ci prend la date du jour à Paris
+(`lib/clock.ts`), les functions tournant en UTC.
+
+**Un plat du batch ne se vide jamais.** Le dernier repas d'un plat
+(`isLastMealOfBatchDish`) ne se remplace ni par un reste, ni par un repas dehors,
+ni par une recette : le plat serait cuisiné sans être mangé. On l'échange, ou on
+remplace le plat lui-même.
+
+**Un temps de cuisson, une seule vérité.** `cookMinutes` et le texte des étapes
+sont produits séparément, et une fiche a annoncé 60 minutes de cuisson en
+disant « mijoter 1 h 30 ». `cookTimeViolations` lit les durées écrites dans les
+étapes (`parseDurations`) et refuse la plus longue — au-delà de 20 minutes, en
+deçà c'est un geste surveillé — si elle dépasse le temps déclaré de plus de
+10 %. La règle joue à la génération de la semaine, au remplacement d'un plat
+et à la recette du week-end ; la session de cuisson rend en plus son propre
+temps par plat (`timings`), seul lu par l'écran du dimanche
+(`sessionCookMinutes`), avec la recette pour repli.
+
+**Ce qui est acheté est ce qui est cuisiné.** `batchRecipeIds` liste les plats
+cuisinés le dimanche. `buildGroceryList` les compte **une fois chacun, au
+prorata des repas qu'ils servent réellement** — `getBatchPortions`, qui rend
+deux portions par repas `batch-leftover`, avec un plancher d'un repas. L'écran
+du dimanche lit la même fonction : l'égalité est vraie par construction. Les
+quantités de la recette sont mises à l'échelle depuis `servings`, additionnées
+en flottant, puis arrondies **une seule fois, vers le haut** (`roundUpQuantity`) :
+arrondir par recette empilerait les erreurs, et arrondir vers le bas ferait
+manquer en cuisinant. Le document recette n'est jamais réécrit — il est partagé
+entre les semaines. Un repas dehors, un reste d'une semaine précédente
+(`freezer-backup`) et un créneau à décider n'achètent rien. Les repas cuisinés
+le samedi et le dimanche s'ajoutent pour deux portions par repas, en origine
+`fresh`.
+
+**Le recalcul est intégral, les ajouts à la main survivent.** `commitPlan`
+supprime tout article absent de la liste recalculée ; `mergeGroceryLists` y
+reporte donc les cases cochées **et** les articles `manual`, qu'aucune recette
+ne reproduit. Un repas `cooked` citant un plat du batch est ignoré : la contrainte
 de génération l'interdit, mais un plan édité repas par repas peut produire ce
 cas, et il ne doit pas coûter le double.
 
@@ -337,31 +421,42 @@ l'après-midi une fois les autres plats comptés. Elles sont nécessaires parce 
 déclarées** : un remplaçant qui en produit trop peu et le foyer sous-achète, sans
 un mot.
 
-**Le déroulé entrelacé, et ce qu'il ne doit jamais perdre.** Le modèle ne
-crée rien : il réordonne des étapes qui existent déjà. La faute à craindre est
-donc un plat oublié en route — on s'en apercevrait devant les fourneaux. D'où
-`validateBatchSchedule`, qui exige que chaque plat du batch apparaisse et que
-chaque étape vise un plat du batch. Chaque étape nomme ses plats : c'est ce qui
-répond à la crainte qui avait fait différer cette vue, celle d'une liste qu'on
-ne rattache plus à un plat quand on s'y perd.
+**Le dimanche en deux temps : mise en place, puis cuisson.** Le premier
+déroulé fondait les étapes de tous les plats en une séquence rédigée par
+Gemini ; à l'usage, illisible les mains prises. La vue « Mise en place puis
+cuisson » suit une vraie session de batch :
 
-Un déroulé composé puis un plat remplacé : le déroulé décrit un batch qui
-n'existe plus. Plutôt que de compter sur chaque écrivain pour l'effacer, le
-document fige `sourceRecipeIds`, et `isScheduleCurrent` le compare au plan au
-moment de l'afficher. La vue recette par recette reste la vue par défaut.
+1. **La mise en place se calcule** (`getMiseEnPlace`) : tout ce qui se coupe,
+   groupé dans l'ordre de la planche — aromates (oignons, ail, herbes à
+   ciseler), légumes, viande, poisson —, qui est aussi l'ordre d'hygiène. Les
+   herbes en branche (thym, romarin, laurier…) n'y figurent pas. Une ligne par plat, avec la
+   quantité des portions réellement cuisinées (`scaleIngredients`). Ce qui ne se
+   coupe pas sort par son **rayon** : épicerie, crèmerie et les autres ne
+   figurent pas, ce qui écarte l'huile, le beurre et les épices sans liste à
+   tenir. Une ligne par ingrédient, reconnu à son nom au singulier : « oignons »
+   et « oignon », 300 g de carotte et deux carottes font une ligne, chaque part
+   gardant son unité — rien ne s'additionne entre plats, contrairement aux
+   courses. Elle s'affiche avant toute génération.
+2. **La cuisson se génère, une fois** : Gemini rend, pour chaque plat, la
+   découpe de chaque ingrédient à couper et les étapes restantes, sans découpe
+   ni quantité. Sans la découpe, l'information « émincé » ou « en dés »
+   disparaîtrait avec les étapes qui la portaient. Les fiches suivent
+   `orderForCooking` — du temps de cuisson le plus long au plus court — et un
+   plat qui cuit seul invite à passer au suivant.
 
-**La mise en place se calcule, elle ne se génère pas.** Le déroulé regroupe
-les gestes semblables — « émincer les oignons des deux plats » —, mais une fois
-tout coupé il faut répartir. Les quantités existent déjà, exactes, recette par
-recette : `getSharedIngredients` refait l'agrégation de la liste de courses, avec
-la **même clé** (`ingredientKey`, exportée de `grocery.ts` pour ne pas être
-réécrite), en gardant la part de chaque plat. Le demander au modèle serait moins
-sûr — il peut se tromper en comptant — et coûterait une génération ; le calcul,
-lui, vaut aussi pour les déroulés composés avant. Des grammes et des pièces du
-même légume restent deux lignes. Sous chaque étape, `ingredientsForStep` ne
-montre que les ingrédients qu'elle nomme, reconnus par préfixe de mots
-(« oignon » dans « oignons ») ; une étape qui dit « échalote » pour « oignon »
-n'affiche rien, et c'est pour ce cas que la carte « Mise en place » existe en tête.
+`validateBatchSession` refuse un plat sans étape, une étape qui **commence**
+par un geste de découpe (« Ajouter les oignons émincés » passe), et une découpe
+d'un ingrédient que la recette ne contient pas, et un temps de cuisson que les
+étapes démentent. Le modèle n'ordonne rien et ne
+compte rien : l'ordre et les quantités se calculent, là où il pourrait se
+tromper.
+
+Une session composée puis un plat remplacé : elle décrit un batch qui n'existe
+plus. Plutôt que de compter sur chaque écrivain pour l'effacer, le document
+fige `sourceRecipeIds`, et `isScheduleCurrent` le compare au plan au moment de
+l'afficher. La mise en place, calculée, est toujours à jour ; seules les
+découpes et les étapes demandent d'être recomposées. « Recette par recette »
+reste la vue par défaut.
 
 **Une règle, un seul endroit.** `requiresFreezing(dayIndex)` dit qu'un plat servi
 jeudi ou vendredi doit se congeler — cuisiné le dimanche, il aurait attendu cinq
@@ -431,17 +526,20 @@ refuserait des recettes légitimes, et chaque refus coûte une reprise.
 - Composants fonctionnels, un composant par fichier, nommage `PascalCase.tsx`.
 - Les hooks de données vivent dans `features/<x>/api/`, préfixés `use` — un composant
   ne consomme jamais le SDK Firestore en direct.
-- **Cinq écritures Firestore partent du client, et cinq seulement.** Toute
-  autre passe par une Cloud Function ; en ajouter une sixième demande d'abord
+- **Huit écritures Firestore partent du client, et huit seulement.** Toute
+  autre passe par une Cloud Function ; en ajouter une neuvième demande d'abord
   sa règle et son test.
 
-  | Écriture                           | Pourquoi elle est sûre                                                                                                |
-  | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-  | `useToggleGroceryItem` → `checked` | La règle borne l'écriture à ce seul champ. Passer par une callable n'ajouterait qu'une latence au milieu d'un magasin |
-  | `useToggleFavorite` → `isFavorite` | Même mécanisme, même raison : le geste doit répondre à l'instant                                                      |
-  | `useToggleDislike` → `isDisliked`  | Même règle, même fichier : les deux verdicts s'excluent et s'écrivent ensemble                                        |
-  | `createHousehold`                  | La règle exige `members == [uid]` et `createdBy == uid` : on ne peut créer qu'un foyer dont on est le seul membre     |
-  | `refreshInviteCode`                | `onlyChanges(['name', 'inviteCode'])` : `members` reste inaccessible au client                                        |
+  | Écriture                           | Pourquoi elle est sûre                                                                                                       |
+  | ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+  | `useToggleGroceryItem` → `checked` | La règle borne l'écriture à ce seul champ. Passer par une callable n'ajouterait qu'une latence au milieu d'un magasin        |
+  | `useToggleFavorite` → `isFavorite` | Même mécanisme, même raison : le geste doit répondre à l'instant                                                             |
+  | `useToggleDislike` → `isDisliked`  | Même règle, même fichier : les deux verdicts s'excluent et s'écrivent ensemble                                               |
+  | `createHousehold`                  | La règle exige `members == [uid]` et `createdBy == uid` : on ne peut créer qu'un foyer dont on est le seul membre            |
+  | `refreshInviteCode`                | `onlyChanges(['name', 'inviteCode'])` : `members` reste inaccessible au client                                               |
+  | `useAddGroceryItem`                | Identifiant sous `manual--`, `origin == 'manual'`, champs et valeurs bornés : on ajoute du sac poubelle debout dans un rayon |
+  | `useDeleteGroceryItem`             | Seul un article `manual` est supprimable : un article calculé reviendrait au recalcul, et le retirer ferait sous-acheter     |
+  | `useSaveAisleCorrection`           | Un seul document, le seul champ `entries`, des rayons connus ; écrit en fusion pour que deux téléphones ne s'écrasent pas    |
 
 - Pas d'état optimiste écrit à la main sur une donnée Firestore : le SDK
   applique l'écriture localement avant de la confirmer, et le listener la
@@ -483,7 +581,7 @@ refuserait des recettes légitimes, et chaque refus coûte une reprise.
   document. Elle refuse, et sans reprise le planning, la progression de
   génération et les courses restent morts jusqu'au prochain montage, alors que
   tout est en ordre une seconde plus tard. Un `onSnapshot` posé en direct est
-  donc une erreur ; il y en a sept, tous enveloppés.
+  donc une erreur ; il y en a huit, tous enveloppés.
 - **Ce qui vient du cache local n'est jamais persisté.** `metadata.fromCache`
   distingue un snapshot confirmé par le serveur d'un snapshot qui reflète nos
   propres écritures en attente. Persister le second figerait une vue partielle
@@ -635,9 +733,10 @@ npm run knip                     # code mort : fichiers, exports, dépendances
 npm run format                   # oxfmt sur tout le dépôt
 npm run format:check             # échoue si un fichier n'est pas formaté
 npm run test:coverage           # couverture du domaine partagé
-npm run deploy:rules
-npm run deploy:functions
-npm run build:android            # EAS, profil preview : un APK à installer
+npm run deploy:dev               # règles, index et functions sur dimanche-batch-dev
+npm run deploy:prod              # la même chose sur dimanche-batch, la prod
+npm run build:android            # EAS, profil preview : APK de test, base de dev
+npm run build:android:prod       # EAS, profil production : l'APK du foyer
 ```
 
 `gemini:probe` envoie à Gemini les payloads réels des quatre callables qui
@@ -651,19 +750,42 @@ figurent dans `GET /models`. Dans les deux cas, seul un appel réel tranche, et
 diagnostiquer depuis une function déployée coûte un cycle de déploiement plus
 l'attente d'ingestion des logs.
 
-**Développer contre l'émulateur par défaut** (`EXPO_PUBLIC_USE_EMULATORS=1` dans
-`app/.env`). Ne pointer vers le projet Firebase réel que pour un test de bout en
-bout explicite — un appel Gemini réel consomme du quota. Sur téléphone physique,
-`EXPO_PUBLIC_EMULATOR_HOST` doit valoir l'IP locale de la machine ; la valeur par
-défaut `10.0.2.2` ne vaut que pour l'émulateur Android.
+**Deux projets Firebase, et la prod n'est jamais la cible par défaut.**
+
+| Projet               | Rôle                           | Qui s'en sert                                                  |
+| -------------------- | ------------------------------ | -------------------------------------------------------------- |
+| `dimanche-batch-dev` | base de test, données jetables | `npm run dev`, builds EAS `development` et `preview`, `-P dev` |
+| `dimanche-batch`     | les vraies données du foyer    | build EAS `production`, `-P prod`                              |
+
+Tester contre la prod, c'est risquer d'effacer la semaine du foyer en essayant
+une régénération. D'où trois garde-fous :
+
+- `.firebaserc` fait de `dev` le projet **par défaut** : une commande `firebase`
+  lancée sans `-P` touche la base de test. Les scripts de déploiement nomment
+  toujours leur cible — `deploy:dev`, `deploy:prod` — et il n'existe plus de
+  script de déploiement sans cible.
+- `app/.env.development` porte la configuration du projet de dev. Expo le
+  charge en développement et le fait passer devant `app/.env`, qui pointe sur
+  la prod : `npm run dev` écrit en test sans qu'on ait rien à changer. Tant
+  qu'il est vide, l'app refuse de démarrer plutôt que de retomber sur la prod.
+- Un bandeau « BASE DE TEST » s'affiche en haut de chaque écran dès que l'app
+  ne parle pas à la prod (`isProduction`, `lib/env.ts`).
+
+Le projet de dev porte les mêmes règles, les mêmes functions et son propre
+secret `GEMINI_API_KEY` (la même clé convient, elle vit sur le projet Google
+Cloud sans facturation). Les émulateurs restent utilisables
+(`EXPO_PUBLIC_USE_EMULATORS=1`), mais sous WSL2 avec un téléphone physique ils
+demandent de relayer les ports vers Windows ; le projet de dev évite ce
+détour.
 
 **Le build EAS ne lit pas `app/.env`.** EAS n'envoie au serveur de build que ce
 que git suit, et `.env` est ignoré : sans autre source, l'APK serait compilé
 avec une configuration Firebase vide, et l'app ne pourrait pas se connecter.
 Les six `EXPO_PUBLIC_FIREBASE_*` vivent donc aussi dans les variables
-d'environnement du projet EAS (`@devwanderer/dimanche-batch`), en `preview` et
-en `production`, que les profils de `eas.json` désignent par leur champ
-`environment`. Elles n'y sont pas au titre de secrets — elles sont lisibles
+d'environnement du projet EAS (`@devwanderer/dimanche-batch`), que les profils
+de `eas.json` désignent par leur champ `environment` : `development` pour les
+profils `development` et `preview` (valeurs du projet de dev), `production`
+pour le profil `production` (valeurs de la prod). Elles n'y sont pas au titre de secrets — elles sont lisibles
 dans l'APK — mais pour rester hors d'un dépôt public. Si l'une change dans
 `.env`, la reporter avec `eas env:update`. `EXPO_PUBLIC_USE_EMULATORS=0` est
 fixé par `eas.json` : un APK ne parle jamais aux émulateurs.
@@ -674,24 +796,25 @@ fixé par `eas.json` : un APK ne parle jamais aux émulateurs.
 
 Ce qui est **délibérément** simple en v1, et où brancher la suite :
 
-| Raccourci v1                                                 | Pourquoi                                                                                                                                                                                                                                                | Extension v2                                                                                                                                                                                                                                                 |
-| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Un seul foyer par utilisateur                                | Usage à deux, pas de cas multi-foyer                                                                                                                                                                                                                    | `members` est déjà un tableau ; ajouter un sélecteur de foyer                                                                                                                                                                                                |
-| Auth email + mot de passe                                    | Zéro dépendance native, build simple                                                                                                                                                                                                                    | Ajouter Google Sign-In (provider Firebase, pas de migration de données)                                                                                                                                                                                      |
-| Partage Listonic via le share sheet texte                    | Vérifié le 2026-09-09 sur le téléphone : Listonic n'apparaît pas comme cible de partage, mais son import par suggestion accepte le texte collé et en tire chaque article — en-têtes de rayon compris. Aucune intégration à écrire                       | Le formatage est isolé dans `shared/domain/grocery-export.ts` : une vraie API s'y brancherait sans toucher à l'écran                                                                                                                                         |
-| Pas de saisie manuelle de recette                            | L'IA couvre le besoin initial                                                                                                                                                                                                                           | Les `recipes` sont déjà une collection à part entière ; il suffit d'un écran d'édition                                                                                                                                                                       |
-| Pas de gestion des restes du frigo                           | Hors périmètre                                                                                                                                                                                                                                          | Nouveau champ d'entrée du prompt, pas de changement de schéma                                                                                                                                                                                                |
-| App Check désactivé                                          | L'auth suffit pour deux utilisateurs                                                                                                                                                                                                                    | Activer et exiger le token dans les callables                                                                                                                                                                                                                |
-| Foyer de deux personnes en dur (`SERVINGS_PER_MEAL`)         | La v1 sert un seul foyer connu                                                                                                                                                                                                                          | Un champ `size` sur `Household`, lu par les contraintes de portions et par le prompt                                                                                                                                                                         |
-| Le déroulé n'est comparé au plan que par ses identifiants    | Un plat régénéré sous le même slug garde son identifiant : ses étapes peuvent changer sans que le déroulé soit déclaré périmé. Cas rare — `replaceBatchRecipe` produit en pratique un nouveau slug                                                      | Figer une empreinte des étapes dans `sourceRecipeIds`, ou effacer le déroulé depuis chaque écrivain du plan                                                                                                                                                  |
-| Le déroulé n'est pas dans le cache hors ligne                | Il se consulte chez soi, le dimanche, réseau disponible ; le cache mémoire de Firestore suffit tant que l'app est ouverte                                                                                                                               | L'ajouter à `offline-cache.ts` comme le plan et les recettes                                                                                                                                                                                                 |
-| Les règles propres à Expo ne sont plus appliquées            | `eslint-plugin-expo` apportait `no-dynamic-env-var`, `no-env-var-destructuring` et `use-dom-exports`, sans équivalent oxlint. Les deux premières gardaient un seul fichier, `app/src/lib/env.ts`, qui lit ses variables statiquement et ne bouge jamais | Relire `env.ts` à la main si on y touche : Expo **inline** les `EXPO_PUBLIC_*` à la construction, donc un accès destructuré ou dynamique vaudrait `undefined` dans l'APK, en silence                                                                         |
-| oxfmt est en 0.x                                             | Choisi en connaissance de cause : petit projet, enjeu faible, et l'occasion d'essayer l'outil pendant qu'il se construit. Même famille qu'oxlint                                                                                                        | `npm run format:check` en CI est ce qui rend le pari tenable : si une version change ses règles, la CI le dit d'un coup au lieu de laisser le formatage dériver fichier par fichier. En secours, `oxfmt --migrate` sait convertir depuis une config Prettier |
-| Les composants de `app/` ne sont pas testés                  | Aucun renderer React ni environnement DOM installé, pas de configuration Babel dans `app/`, et les modules React Native sont en Flow — inconsommables tels quels par Vitest. La logique sans rendu, elle, est couverte                                  | Ajouter un environnement DOM et un renderer, en acceptant que `reactCompiler` ne s'applique pas sous test : ce qu'on mesurerait ne serait pas tout à fait ce qui tourne                                                                                      |
-| Renovate ne suit pas les paquets du SDK Expo                 | Leur version est dictée par le SDK, pas par le semver npm : une montée faite hors d'`expo install` casse le build de façon pénible à diagnostiquer                                                                                                      | La CI lance `npx expo install --check` à chaque exécution et signale la dérive. Au changement de SDK, `npx expo install --fix` réaligne tout le bloc d'un coup                                                                                               |
-| 200 plats bannis lus au plus (`BANNED_READ_LIMIT`)           | Un foyer en bannit quelques-uns par an ; la borne protège le coût de lecture avant d'être une limite réelle                                                                                                                                             | Paginer la lecture, ou porter un `dislikedAt` pour ne garder que les plus récents dans le prompt                                                                                                                                                             |
-| `regenerateMeal` ne vérifie que les contraintes du jour visé | Réappliquer les contraintes d'ensemble ferait refuser un remplacement légitime : la recette écartée pouvait être l'une des deux congelables                                                                                                             | Recomposer le plan après remplacement et signaler — sans bloquer — les contraintes globales devenues fausses                                                                                                                                                 |
-| Android uniquement                                           | Les deux téléphones sont Android                                                                                                                                                                                                                        | Expo est cross-platform : ne jamais écrire de code Android-spécifique sans garde `Platform`                                                                                                                                                                  |
+| Raccourci v1                                                                                  | Pourquoi                                                                                                                                                                                                                                                | Extension v2                                                                                                                                                                                                                                                 |
+| --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Un seul foyer par utilisateur                                                                 | Usage à deux, pas de cas multi-foyer                                                                                                                                                                                                                    | `members` est déjà un tableau ; ajouter un sélecteur de foyer                                                                                                                                                                                                |
+| Auth email + mot de passe                                                                     | Zéro dépendance native, build simple                                                                                                                                                                                                                    | Ajouter Google Sign-In (provider Firebase, pas de migration de données)                                                                                                                                                                                      |
+| Pas de saisie manuelle de recette                                                             | L'IA couvre le besoin initial                                                                                                                                                                                                                           | Les `recipes` sont déjà une collection à part entière ; il suffit d'un écran d'édition                                                                                                                                                                       |
+| Pas de gestion des restes du frigo                                                            | Hors périmètre                                                                                                                                                                                                                                          | Nouveau champ d'entrée du prompt, pas de changement de schéma                                                                                                                                                                                                |
+| App Check désactivé                                                                           | L'auth suffit pour deux utilisateurs                                                                                                                                                                                                                    | Activer et exiger le token dans les callables                                                                                                                                                                                                                |
+| Foyer de deux personnes en dur (`SERVINGS_PER_MEAL`)                                          | La v1 sert un seul foyer connu                                                                                                                                                                                                                          | Un champ `size` sur `Household`, lu par les contraintes de portions et par le prompt                                                                                                                                                                         |
+| La session de cuisson n'est comparée au plan que par ses identifiants                         | Un plat régénéré sous le même slug garde son identifiant : ses étapes peuvent changer sans que la session soit déclarée périmée. Cas rare — `replaceBatchRecipe` produit en pratique un nouveau slug                                                    | Figer une empreinte des étapes dans `sourceRecipeIds`, ou effacer la session depuis chaque écrivain du plan                                                                                                                                                  |
+| La session de cuisson n'est pas dans le cache hors ligne                                      | Il se consulte chez soi, le dimanche, réseau disponible ; le cache mémoire de Firestore suffit tant que l'app est ouverte                                                                                                                               | L'ajouter à `offline-cache.ts` comme le plan et les recettes                                                                                                                                                                                                 |
+| Les règles propres à Expo ne sont plus appliquées                                             | `eslint-plugin-expo` apportait `no-dynamic-env-var`, `no-env-var-destructuring` et `use-dom-exports`, sans équivalent oxlint. Les deux premières gardaient un seul fichier, `app/src/lib/env.ts`, qui lit ses variables statiquement et ne bouge jamais | Relire `env.ts` à la main si on y touche : Expo **inline** les `EXPO_PUBLIC_*` à la construction, donc un accès destructuré ou dynamique vaudrait `undefined` dans l'APK, en silence                                                                         |
+| oxfmt est en 0.x                                                                              | Choisi en connaissance de cause : petit projet, enjeu faible, et l'occasion d'essayer l'outil pendant qu'il se construit. Même famille qu'oxlint                                                                                                        | `npm run format:check` en CI est ce qui rend le pari tenable : si une version change ses règles, la CI le dit d'un coup au lieu de laisser le formatage dériver fichier par fichier. En secours, `oxfmt --migrate` sait convertir depuis une config Prettier |
+| Les composants de `app/` ne sont pas testés                                                   | Aucun renderer React ni environnement DOM installé, pas de configuration Babel dans `app/`, et les modules React Native sont en Flow — inconsommables tels quels par Vitest. La logique sans rendu, elle, est couverte                                  | Ajouter un environnement DOM et un renderer, en acceptant que `reactCompiler` ne s'applique pas sous test : ce qu'on mesurerait ne serait pas tout à fait ce qui tourne                                                                                      |
+| Renovate ne suit pas les paquets du SDK Expo                                                  | Leur version est dictée par le SDK, pas par le semver npm : une montée faite hors d'`expo install` casse le build de façon pénible à diagnostiquer                                                                                                      | La CI lance `npx expo install --check` à chaque exécution et signale la dérive. Au changement de SDK, `npx expo install --fix` réaligne tout le bloc d'un coup                                                                                               |
+| 200 plats bannis lus au plus (`BANNED_READ_LIMIT`)                                            | Un foyer en bannit quelques-uns par an ; la borne protège le coût de lecture avant d'être une limite réelle                                                                                                                                             | Paginer la lecture, ou porter un `dislikedAt` pour ne garder que les plus récents dans le prompt                                                                                                                                                             |
+| La règle du plat qui mijote n'est rejouée au remplacement d'un plat que si le batch la tenait | Les plans composés avant elle n'ont aucun plat marqué : l'exiger rendrait ces semaines impossibles à modifier                                                                                                                                           | Retirer la condition quand plus aucun plan antérieur à la version 8 du prompt n'est modifiable                                                                                                                                                               |
+| Le compte végétarien n'est pas mémorisé avec le plan                                          | Remplacer un plat du batch est un choix du foyer : lui imposer un compte qu'il a choisi une semaine plus tôt le surprendrait                                                                                                                            | Stocker `vegetarianCount` sur le plan et le passer au remplacement                                                                                                                                                                                           |
+| Le rayon d'un article manuel se devine par une table livrée (~740 articles)                   | Zéro coût, hors ligne, testable ; les manques sont corrigés par le foyer et listés dans les réglages                                                                                                                                                    | Reverser le lexique du foyer dans la table à chaque version                                                                                                                                                                                                  |
+| Android uniquement                                                                            | Les deux téléphones sont Android                                                                                                                                                                                                                        | Expo est cross-platform : ne jamais écrire de code Android-spécifique sans garde `Platform`                                                                                                                                                                  |
 
 ---
 
@@ -710,30 +833,34 @@ Ce qui est **délibérément** simple en v1, et où brancher la suite :
 
 ## 11. Avancement
 
-| Jour          | État     | Contenu                                                                                                                                                                                                                                                                                                                                                     |
-| ------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| J1            | **fait** | Monorepo, domaine partagé (30 tests), Security Rules + leurs tests, `joinHousehold`, auth e-mail, écran de foyer partagé, navigation des 6 écrans, thème clair/sombre                                                                                                                                                                                       |
-| J2            | **fait** | `generateWeeklyPlan` déployée : prompt versionné, `responseSchema`, validation Zod puis contraintes métier, unique retry, écriture Firestore en batch, écran d'accueil avec repas du jour                                                                                                                                                                   |
-| J3            | **fait** | Écran planning des 7 jours, `regenerateMeal` : contraintes locales au jour, recalcul complet des courses, `MealCard` partagé entre accueil et planning                                                                                                                                                                                                      |
-| J4            | **fait** | Liste de courses : rendu dans l'ordre de parcours du magasin, cases à cocher synchronisées entre les deux téléphones, partage par le share sheet — lisible par un humain comme par l'import de Listonic                                                                                                                                                     |
-| J5            | **fait** | Fiche recette, historique des 12 dernières semaines, favoris branchés sur le prompt, réglages sortis des onglets                                                                                                                                                                                                                                            |
-| Batch         | **fait** | Semaine du samedi au vendredi, `batchRecipeIds`, contraintes de portions et de congélation, callable `setMeal`, écran de préparation, sélecteurs de semaine, carte d'action sur l'accueil                                                                                                                                                                   |
-| J6            | **fait** | Cache offline du plan, des recettes et des courses ; indicateur « hors ligne » ; verrou empêchant deux générations simultanées sur une même semaine                                                                                                                                                                                                         |
-| Dislike       | **fait** | Bannissement d'un plat par son nom : `isDisliked`, mémoire du foyer à trois listes, filet de validation, boutons sur la fiche recette et la feuille de choix                                                                                                                                                                                                |
-| Goûts         | **fait** | Favoris et plats bannis réunis sur un écran unique atteint des réglages — ce sont les deux valeurs d'un même champ, les séparer cachait le lien. `SegmentedSwitch` extrait de `WeekSwitch`, `splitByVerdict` dans le domaine                                                                                                                                |
-| CI            | **fait** | GitHub Actions sur chaque push et chaque PR ; `.nvmrc` comme source unique de la version de Node ; Renovate en tableau de bord, les paquets du SDK Expo exclus au profit d'`expo install --check`                                                                                                                                                           |
-| Montées       | **fait** | `firebase-tools` 15, `firebase-admin` 14, Vitest 5 (par la v4), `@google/genai` 2. Seuil de couverture appliqué par la CI. Plus aucune faille critique ni élevée                                                                                                                                                                                            |
-| Audit final   | **fait** | La reprise de contenu vivait en quatre copies, une par chaîne de génération : réunie dans `content-retry.ts`. Le bloc « saturé, génération rendue » en quatre copies identiques, `readPlanOrFail` en trois, la lecture de recettes en quatre variantes dont une copie exacte : tout réuni. CLAUDE.md remis d'aplomb sur les quatre suites de tests          |
-| Mise en place | **fait** | Le partage des ingrédients coupés d'un coup, calculé depuis les recettes : une carte en tête du déroulé, et une ligne sous chaque étape qui mêle plusieurs plats                                                                                                                                                                                            |
-| Déroulé       | **fait** | Vue « tout en parallèle » sur l'écran de préparation : les étapes des plats fondues par Gemini, chacune nommant son plat, composées à la demande puis conservées. Un déroulé périmé par un remplacement de plat est détecté au plan, pas effacé par chaque écrivain                                                                                         |
-| Plat du batch | **fait** | Remplacer un plat met à jour tous les repas qu'il servait, depuis l'écran de préparation. Callable, prompt et validation dédiés                                                                                                                                                                                                                             |
-| Décongélation | **fait** | Rappel sur l'accueil le soir où il sert, plutôt que sur l'écran de préparation trois jours trop tôt                                                                                                                                                                                                                                                         |
-| Tests app     | **fait** | Première suite sur `app/` : reprise des abonnements, stockage local, contrat des callables. Ce qu'elle ne couvre pas est écrit au §9 plutôt que passé sous silence                                                                                                                                                                                          |
-| Dimanche      | **fait** | Écran maintenu allumé pendant le batch, étapes cochables et persistées localement. Et deux restes de la migration vers la semaine du samedi : le prompt de remplacement annonçait au modèle « dayIndex 0 à 4 » pour les jours de semaine, et la sonde exerçait le jour 1 en croyant tester un mardi                                                         |
-| Outillage     | **fait** | knip contre le code mort (7 dépendances mortes trouvées d'emblée), sept paquets `expo-*` retirés de l'APK, TypeScript exclu du contrôle de version d'Expo pour que son alerte reste vraie                                                                                                                                                                   |
-| Audit         | **fait** | Le domaine déclarait trois règles que ses consommateurs réimplémentaient : `requiresFreezing` unifie deux copies de `[5, 6]`, `describeViolations` était morte pendant que le prompt de reprise recopiait son corps, `BATCH_DAY_INDEX` existait pendant que `batch.ts` codait `1` en dur. Lint et knip silencieux, faux positifs justifiés dans les configs |
-| Lint          | **fait** | oxlint remplace ESLint : les quatre workspaces couverts au lieu d'un seul, trois imports morts trouvés d'emblée, et TypeScript 7 débloqué — `@typescript-eslint` plafonnait le projet sous TS 6                                                                                                                                                             |
-| J7            | à faire  | Build EAS, installation, premier vrai dimanche                                                                                                                                                                                                                                                                                                              |
+| Jour          | État     | Contenu                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| J1            | **fait** | Monorepo, domaine partagé (30 tests), Security Rules + leurs tests, `joinHousehold`, auth e-mail, écran de foyer partagé, navigation des 6 écrans, thème clair/sombre                                                                                                                                                                                                                                                     |
+| J2            | **fait** | `generateWeeklyPlan` déployée : prompt versionné, `responseSchema`, validation Zod puis contraintes métier, unique retry, écriture Firestore en batch, écran d'accueil avec repas du jour                                                                                                                                                                                                                                 |
+| J3            | **fait** | Écran planning des 7 jours, `regenerateMeal` : contraintes locales au jour, recalcul complet des courses, `MealCard` partagé entre accueil et planning                                                                                                                                                                                                                                                                    |
+| J4            | **fait** | Liste de courses : rendu dans l'ordre de parcours du magasin, cases à cocher synchronisées entre les deux téléphones, partage par le share sheet — lisible par un humain comme par l'import de Listonic                                                                                                                                                                                                                   |
+| J5            | **fait** | Fiche recette, historique des 12 dernières semaines, favoris branchés sur le prompt, réglages sortis des onglets                                                                                                                                                                                                                                                                                                          |
+| Batch         | **fait** | Semaine du samedi au vendredi, `batchRecipeIds`, contraintes de portions et de congélation, callable `setMeal`, écran de préparation, sélecteurs de semaine, carte d'action sur l'accueil                                                                                                                                                                                                                                 |
+| J6            | **fait** | Cache offline du plan, des recettes et des courses ; indicateur « hors ligne » ; verrou empêchant deux générations simultanées sur une même semaine                                                                                                                                                                                                                                                                       |
+| Dislike       | **fait** | Bannissement d'un plat par son nom : `isDisliked`, mémoire du foyer à trois listes, filet de validation, boutons sur la fiche recette et la feuille de choix                                                                                                                                                                                                                                                              |
+| Goûts         | **fait** | Favoris et plats bannis réunis sur un écran unique atteint des réglages — ce sont les deux valeurs d'un même champ, les séparer cachait le lien. `SegmentedSwitch` extrait de `WeekSwitch`, `splitByVerdict` dans le domaine                                                                                                                                                                                              |
+| CI            | **fait** | GitHub Actions sur chaque push et chaque PR ; `.nvmrc` comme source unique de la version de Node ; Renovate en tableau de bord, les paquets du SDK Expo exclus au profit d'`expo install --check`                                                                                                                                                                                                                         |
+| Montées       | **fait** | `firebase-tools` 15, `firebase-admin` 14, Vitest 5 (par la v4), `@google/genai` 2. Seuil de couverture appliqué par la CI. Plus aucune faille critique ni élevée                                                                                                                                                                                                                                                          |
+| Audit final   | **fait** | La reprise de contenu vivait en quatre copies, une par chaîne de génération : réunie dans `content-retry.ts`. Le bloc « saturé, génération rendue » en quatre copies identiques, `readPlanOrFail` en trois, la lecture de recettes en quatre variantes dont une copie exacte : tout réuni. CLAUDE.md remis d'aplomb sur les quatre suites de tests                                                                        |
+| Mise en place | **fait** | Le partage des ingrédients coupés d'un coup, calculé depuis les recettes : une carte en tête du déroulé, et une ligne sous chaque étape qui mêle plusieurs plats                                                                                                                                                                                                                                                          |
+| Déroulé       | **fait** | Vue « tout en parallèle » sur l'écran de préparation : les étapes des plats fondues par Gemini, chacune nommant son plat, composées à la demande puis conservées. Un déroulé périmé par un remplacement de plat est détecté au plan, pas effacé par chaque écrivain                                                                                                                                                       |
+| Plat du batch | **fait** | Remplacer un plat met à jour tous les repas qu'il servait, depuis l'écran de préparation. Callable, prompt et validation dédiés                                                                                                                                                                                                                                                                                           |
+| Décongélation | **fait** | Rappel sur l'accueil le soir où il sert, plutôt que sur l'écran de préparation trois jours trop tôt                                                                                                                                                                                                                                                                                                                       |
+| Tests app     | **fait** | Première suite sur `app/` : reprise des abonnements, stockage local, contrat des callables. Ce qu'elle ne couvre pas est écrit au §9 plutôt que passé sous silence                                                                                                                                                                                                                                                        |
+| Dimanche      | **fait** | Écran maintenu allumé pendant le batch, étapes cochables et persistées localement. Et deux restes de la migration vers la semaine du samedi : le prompt de remplacement annonçait au modèle « dayIndex 0 à 4 » pour les jours de semaine, et la sonde exerçait le jour 1 en croyant tester un mardi                                                                                                                       |
+| Outillage     | **fait** | knip contre le code mort (7 dépendances mortes trouvées d'emblée), sept paquets `expo-*` retirés de l'APK, TypeScript exclu du contrôle de version d'Expo pour que son alerte reste vraie                                                                                                                                                                                                                                 |
+| Audit         | **fait** | Le domaine déclarait trois règles que ses consommateurs réimplémentaient : `requiresFreezing` unifie deux copies de `[5, 6]`, `describeViolations` était morte pendant que le prompt de reprise recopiait son corps, `BATCH_DAY_INDEX` existait pendant que `batch.ts` codait `1` en dur. Lint et knip silencieux, faux positifs justifiés dans les configs                                                               |
+| Lint          | **fait** | oxlint remplace ESLint : les quatre workspaces couverts au lieu d'un seul, trois imports morts trouvés d'emblée, et TypeScript 7 débloqué — `@typescript-eslint` plafonnait le projet sous TS 6                                                                                                                                                                                                                           |
+| Courses       | **fait** | « Acheté = cuisiné » : liste au prorata des repas servis, arrondi une fois vers le haut, même fonction que l'écran du dimanche. Origine des articles et légende, ajout et suppression à la main bornés par leur règle, rayons `entretien` et `hygiene`, table de ~740 articles pour deviner le rayon. Export Listonic retiré. Socle de la refonte : répartition 8/6/6, dates en français, saisons du Centre               |
+| Refonte       | **fait** | Plan réduit au batch : portions imposées et vérifiées, végétariens comptés, plat qui cuit seul, `cookMinutes`, saisons dans le prompt (v8). Samedi et dimanche à décider ; restes de la semaine précédente, échange de deux repas, plat jamais vidé ; `regenerateMeal` limité au week-end. Composition limitée à la semaine prochaine, jamais entamée. Lexique des rayons partagé par le foyer. Dates en français partout |
+| Dimanche 2    | **fait** | « Tout en parallèle » remplacé par « Mise en place puis cuisson » : mise en place calculée dans l'ordre de la planche, sans placard, quantités des portions cuisinées ; découpes et étapes de cuisson réécrites par Gemini (prompt v9), fiches du plus long au plus court. Collection `batchSessions`. Les quatre chaînes sondées contre Gemini                                                                           |
+| Dimanche 3    | **fait** | Mise en place : groupe Aromates en tête, herbes en branche exclues, une ligne par ingrédient quelle que soit l'unité. Temps de cuisson : concordance vérifiée entre `cookMinutes` et les durées des étapes, à la génération comme dans la session, qui rend son temps par plat (prompt v10)                                                                                                                               |
+| J7            | à faire  | Build EAS, installation, premier vrai dimanche                                                                                                                                                                                                                                                                                                                                                                            |
 
 Ce qui reste à faire hors code, dans l'ordre :
 
@@ -745,8 +872,15 @@ Ce qui reste à faire hors code, dans l'ordre :
    `firebase functions:artifacts:setpolicy --location europe-west1 --days 7` :
    les images de plus de 7 jours sont supprimées automatiquement.
 5. ~~Installer un JRE pour faire tourner la suite d'émulateurs.~~ Fait
-   (OpenJDK 21). `npm run test:all` passe en entier — plus aucun point ouvert
-   hors code.
+   (OpenJDK 21). `npm run test:all` passe en entier.
+6. **Projet de dev `dimanche-batch-dev`** : le créer, activer l'Auth e-mail,
+   Firestore en `europe-west1`, le plan Blaze avec une alerte de budget, les
+   deux rôles du compte de service ci-dessous ; ajouter une app Android et
+   reporter sa configuration dans `app/.env.development` et dans l'environnement
+   EAS `development` ; `firebase functions:secrets:set GEMINI_API_KEY -P dev` ;
+   `npm run deploy:dev`.
+7. **Environnement EAS `development`** : y créer les six `EXPO_PUBLIC_FIREBASE_*`
+   du projet de dev — le profil `preview` s'y rattache désormais.
 
 Le compte de service `<numéro>-compute@developer.gserviceaccount.com` doit porter
 **deux rôles** que Google n'accorde plus par défaut sur les projets récents :

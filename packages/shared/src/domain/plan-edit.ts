@@ -1,5 +1,7 @@
 import type { IsoDate } from '../schemas/common';
 import type { Meal, MealSlot, WeeklyPlan } from '../schemas/weekly-plan';
+import { countBatchMealsServing } from './batch';
+import { requiresFreezing } from './week';
 
 /**
  * Édition d'un plan existant, sans passer par une régénération complète.
@@ -124,4 +126,112 @@ export function countMealsServing(plan: WeeklyPlan, recipeId: string): number {
     }
   }
   return count;
+}
+
+/** Un créneau du plan : une date et un repas du jour. */
+export interface MealSlotRef {
+  date: IsoDate;
+  slot: MealSlot;
+}
+
+/**
+ * Vrai si ce créneau est le dernier repas que sert son plat du batch.
+ *
+ * Le remplacer par autre chose — un repas dehors, un reste, un autre plat —
+ * laisserait un plat cuisiné le dimanche que plus personne ne mange : on
+ * l'achèterait sans raison, ou la liste l'oublierait. Pour faire disparaître un
+ * plat, on remplace le plat lui-même.
+ */
+export function isLastMealOfBatchDish(plan: WeeklyPlan, date: IsoDate, slot: MealSlot): boolean {
+  const meal = findMeal(plan, date, slot);
+  if (!meal || meal.kind !== 'batch-leftover' || meal.recipeId === null) return false;
+  if (!plan.batchRecipeIds.includes(meal.recipeId)) return false;
+  return countBatchMealsServing(plan, meal.recipeId) === 1;
+}
+
+/** Position d'un créneau dans la semaine : deux par jour, le midi d'abord. */
+function slotPosition(plan: WeeklyPlan, ref: MealSlotRef): number {
+  const dayIndex = plan.days.findIndex((day) => day.date === ref.date);
+  return dayIndex * 2 + (ref.slot === 'lunch' ? 0 : 1);
+}
+
+/**
+ * Le créneau qui cède sa place quand on veut manger `targetRecipeId` à la
+ * place de ce qui est prévu en `ref` — ou `null` si l'échange est impossible.
+ *
+ * Les portions sont comptées : manger le chili mardi midi, c'est en retirer une
+ * portion ailleurs. Le créneau choisi est **le plus éloigné dans la semaine**
+ * de ceux qui servent le chili, et il reçoit en retour le plat qu'on a quitté.
+ * Chaque plat sert donc le même nombre de repas qu'avant, et la liste de
+ * courses ne change pas d'un gramme.
+ *
+ * Un échange ne doit pas envoyer en fin de semaine un plat qui ne se congèle
+ * pas : ces créneaux-là sont sautés, et le suivant le plus éloigné est essayé.
+ * L'interface ne propose que les échanges pour lesquels un créneau existe.
+ */
+export function findSwapCounterpart(
+  plan: WeeklyPlan,
+  ref: MealSlotRef,
+  targetRecipeId: string,
+  isFreezable: (recipeId: string) => boolean,
+): MealSlotRef | null {
+  const current = findMeal(plan, ref.date, ref.slot);
+  if (!current || current.kind !== 'batch-leftover' || current.recipeId === null) return null;
+  if (current.recipeId === targetRecipeId) return null;
+  if (!plan.batchRecipeIds.includes(targetRecipeId)) return null;
+
+  const movingRecipeId = current.recipeId;
+  const refDayIndex = plan.days.findIndex((day) => day.date === ref.date);
+  if (refDayIndex === -1) return null;
+  // Le plat qu'on veut manger arrive sur ce jour : il doit pouvoir y attendre.
+  if (requiresFreezing(refDayIndex) && !isFreezable(targetRecipeId)) return null;
+
+  const origin = slotPosition(plan, ref);
+  const candidates: { ref: MealSlotRef; dayIndex: number; distance: number }[] = [];
+
+  plan.days.forEach((day, dayIndex) => {
+    for (const slot of ['lunch', 'dinner'] as const) {
+      const meal = day[slot];
+      if (meal.kind !== 'batch-leftover' || meal.recipeId !== targetRecipeId) continue;
+      const candidate = { date: day.date, slot };
+      candidates.push({
+        ref: candidate,
+        dayIndex,
+        distance: Math.abs(slotPosition(plan, candidate) - origin),
+      });
+    }
+  });
+
+  candidates.sort((a, b) => b.distance - a.distance);
+  const legal = candidates.find(
+    (candidate) => !requiresFreezing(candidate.dayIndex) || isFreezable(movingRecipeId),
+  );
+  return legal?.ref ?? null;
+}
+
+/** Plats du batch qu'on peut servir en `ref` par échange, dans l'ordre du batch. */
+export function listSwapTargets(
+  plan: WeeklyPlan,
+  ref: MealSlotRef,
+  isFreezable: (recipeId: string) => boolean,
+): string[] {
+  return plan.batchRecipeIds.filter(
+    (recipeId) => findSwapCounterpart(plan, ref, recipeId, isFreezable) !== null,
+  );
+}
+
+/** Échange les repas de deux créneaux. `recipeIds` ne change pas : les mêmes plats sont servis. */
+export function swapMealsInPlan(plan: WeeklyPlan, a: MealSlotRef, b: MealSlotRef): WeeklyPlan {
+  const mealA = findMeal(plan, a.date, a.slot);
+  const mealB = findMeal(plan, b.date, b.slot);
+  if (!mealA) throw new MealNotFoundError(a.date);
+  if (!mealB) throw new MealNotFoundError(b.date);
+
+  const days = plan.days.map((day) => {
+    let next = day;
+    if (day.date === a.date) next = { ...next, [a.slot]: mealB };
+    if (day.date === b.date) next = { ...next, [b.slot]: mealA };
+    return next;
+  });
+  return { ...plan, days };
 }

@@ -1,7 +1,14 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { paths, type GeneratedPlan, type GeneratedRecipe } from '@dimanche-batch/shared';
 import { clearFirestore } from '../../__tests__/emulator';
-import { ALICE, HOUSEHOLD_ID, MODEL, WEEK_START, makeGeneratedRecipe } from '../../__tests__/fixtures';
+import {
+  ALICE,
+  HOUSEHOLD_ID,
+  MODEL,
+  WEEK_START,
+  makeGeneratedRecipe,
+  portion,
+} from '../../__tests__/fixtures';
 import { db } from '../firestore';
 import { PlanNotFoundError, replaceMeal, writeWeeklyPlan } from '../plan-writer';
 
@@ -51,47 +58,33 @@ const chili = makeGeneratedRecipe({
  */
 function basePlan(): GeneratedPlan {
   return {
-    recipes: [curry, soupe],
+    recipes: [curry],
     batchRecipeSlugs: ['batch-curry'],
-    days: [0, 1, 2, 3, 4, 5, 6].map((dayIndex) => ({
+    days: [2, 3, 4, 5, 6].map((dayIndex) => ({
       dayIndex,
-      lunch:
-        dayIndex >= 2
-          ? {
-              recipeSlug: 'batch-curry',
-              kind: 'batch-leftover' as const,
-              withStarter: false,
-              withDessert: false,
-            }
-          : { recipeSlug: null, kind: 'eat-out' as const, withStarter: false, withDessert: false },
-      dinner:
-        dayIndex === 0
-          ? {
-              recipeSlug: 'soupe-poireaux',
-              kind: 'cooked' as const,
-              withStarter: false,
-              withDessert: false,
-            }
-          : dayIndex >= 2
-            ? {
-                recipeSlug: 'batch-curry',
-                kind: 'batch-leftover' as const,
-                withStarter: false,
-                withDessert: false,
-              }
-            : { recipeSlug: null, kind: 'eat-out' as const, withStarter: false, withDessert: false },
+      lunch: portion('batch-curry'),
+      dinner: portion('batch-curry'),
     })),
   };
 }
 
+/** Le batch, puis la soupe cuisinée samedi soir — comme le foyer la poserait. */
 async function seedPlan(plan: GeneratedPlan = basePlan()) {
-  return writeWeeklyPlan({
+  const result = await writeWeeklyPlan({
     householdId: HOUSEHOLD_ID,
     weekStart: WEEK_START,
     generatedBy: ALICE,
     plan,
     model: MODEL,
   });
+  await replaceMeal({
+    householdId: HOUSEHOLD_ID,
+    weekId: WEEK_START,
+    date: SAMEDI,
+    slot: 'dinner',
+    recipe: soupe,
+  });
+  return result;
 }
 
 /** Remplace le seul repas cuisiné de la semaine : le samedi soir. */
@@ -191,14 +184,43 @@ describe('replaceMeal', () => {
     expect(ids).toContain('oignon--piece');
   });
 
+  /**
+   * Le recalcul est intégral et l'écrivain supprime tout article absent de la
+   * nouvelle liste. Un article ajouté à la main ne sort d'aucune recette : sans
+   * report explicite, poser un repas le samedi l'effacerait.
+   */
+  it('n’efface pas un article ajouté à la main', async () => {
+    await seedPlan();
+    const manual = db.doc(
+      paths.groceryItem(HOUSEHOLD_ID, WEEK_START, 'manual--sac-poubelle--piece'),
+    );
+    await manual.set({
+      name: 'sac poubelle',
+      qty: 1,
+      unit: 'piece',
+      aisle: 'entretien',
+      checked: true,
+      origin: 'manual',
+      fromRecipeIds: [],
+    });
+
+    await swapSamediDinner();
+
+    const after = await manual.get();
+    expect(after.exists).toBe(true);
+    expect(after.get('checked')).toBe(true);
+  });
+
   it('garde un ingrédient encore nécessaire à une autre recette', async () => {
     await seedPlan();
     await swapSamediDinner();
 
-    // L'oignon vient aussi du curry, plat du batch : il reste, compté une fois.
+    // L'oignon vient aussi du curry, plat du batch : il reste. Le curry sert les
+    // dix repas de la semaine, soit 20 portions pour une recette conçue pour 2 —
+    // dix fois ses 2 oignons. La soupe remplacée n'en ajoute plus aucun.
     const oignon = await db.doc(paths.groceryItem(HOUSEHOLD_ID, WEEK_START, 'oignon--piece')).get();
     expect(oignon.exists).toBe(true);
-    expect(oignon.get('qty')).toBe(2);
+    expect(oignon.get('qty')).toBe(20);
   });
 
   it('conserve les cases cochées des articles qui survivent', async () => {

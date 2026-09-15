@@ -5,6 +5,11 @@ import { z } from 'zod';
  * partie du contrat imposé à Gemini : chaque ingrédient doit porter un rayon.
  * L'ordre du tableau est l'ordre d'affichage dans la liste de courses — il suit
  * un parcours de magasin classique, pas l'ordre alphabétique.
+ *
+ * `entretien` et `hygiene` ne viennent jamais d'une recette : ils existent parce
+ * que la liste de courses est celle du foyer et non celle du batch. Un sac
+ * poubelle ajouté à la main doit tomber quelque part, et le faire tomber dans
+ * `autre` obligerait à traverser le magasin deux fois.
  */
 export const AISLES = [
   'fruits-legumes',
@@ -15,6 +20,8 @@ export const AISLES = [
   'epicerie',
   'surgeles',
   'boissons',
+  'entretien',
+  'hygiene',
   'autre',
 ] as const;
 
@@ -29,6 +36,8 @@ export const AISLE_LABELS: Record<Aisle, string> = {
   epicerie: 'Épicerie',
   surgeles: 'Surgelés',
   boissons: 'Boissons',
+  entretien: 'Entretien',
+  hygiene: 'Hygiène',
   autre: 'Autre',
 };
 
@@ -54,8 +63,16 @@ export const UNITS = [
 export const UnitSchema = z.enum(UNITS);
 
 /**
- * Étiquettes de recette. `congelable` est structurant : la semaine type exige
- * au moins deux recettes congelables comme filet de sécurité.
+ * Étiquettes de recette.
+ *
+ * `congelable` gouverne la fin de semaine, `vegetarien` le compte que le foyer
+ * choisit avant de générer, `mijote` et `four-lent` l'organisation du dimanche :
+ * un plat qui cuit longtemps sans surveillance libère le cuisinier pour les
+ * autres.
+ *
+ * **On n'en retire jamais une valeur** : les recettes déjà en base les portent,
+ * et un document qui ne passe pas son schéma disparaît de l'app. `weekend` n'est
+ * plus demandé au modèle mais reste valide pour cette raison.
  */
 export const RECIPE_TAGS = [
   'one-pot',
@@ -67,6 +84,8 @@ export const RECIPE_TAGS = [
   'weekend',
   'entree',
   'dessert',
+  'mijote',
+  'four-lent',
 ] as const;
 
 export const RecipeTagSchema = z.enum(RECIPE_TAGS);
@@ -76,7 +95,7 @@ export const IsoDateSchema = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, 'Date attendue au format YYYY-MM-DD');
 
-/** Identifiant de semaine : la date ISO du lundi. Sert de clé de document. */
+/** Identifiant de semaine : la date ISO du samedi. Sert de clé de document. */
 export const WeekIdSchema = IsoDateSchema;
 
 export type Aisle = z.infer<typeof AisleSchema>;

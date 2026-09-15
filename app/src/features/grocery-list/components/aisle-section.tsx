@@ -9,13 +9,14 @@ export interface AisleSectionProps {
   aisle: Aisle;
   items: GroceryItem[];
   onToggle: (item: GroceryItem) => void;
+  onDelete: (item: GroceryItem) => void;
 }
 
 /**
  * Un rayon du magasin. L'ordre des rayons est celui d'`AISLES`, qui suit un
  * parcours de magasin — on ne revient pas sur ses pas entre deux articles.
  */
-export function AisleSection({ aisle, items, onToggle }: AisleSectionProps) {
+export function AisleSection({ aisle, items, onToggle, onDelete }: AisleSectionProps) {
   const theme = useTheme();
   const remaining = items.filter((item) => !item.checked).length;
 
@@ -42,7 +43,7 @@ export function AisleSection({ aisle, items, onToggle }: AisleSectionProps) {
                 }}
               />
             ) : null}
-            <GroceryItemRow item={item} onToggle={onToggle} />
+            <GroceryItemRow item={item} onToggle={onToggle} onDelete={onDelete} />
           </Fragment>
         ))}
       </Card>

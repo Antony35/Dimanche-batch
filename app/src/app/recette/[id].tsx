@@ -1,7 +1,13 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useLocalSearchParams } from 'expo-router';
 import { Pressable, View } from 'react-native';
-import { AISLE_LABELS, capitalize, formatQuantity, type Ingredient } from '@dimanche-batch/shared';
+import {
+  AISLE_LABELS,
+  capitalize,
+  formatQuantity,
+  formatWeekRange,
+  type Ingredient,
+} from '@dimanche-batch/shared';
 import { Card, EmptyState, ErrorState, LoadingState, Screen, Tag, Text } from '@/components/ui';
 import { useHousehold } from '@/features/household/api/use-household';
 import { useRecipes } from '@/features/meal-plan/api/use-recipes';
@@ -107,8 +113,10 @@ export default function RecipeScreen() {
         ) : null}
 
         <Text tone="soft">
-          {recipe.prepMinutes} min · {recipe.servings} portions
-          {recipe.lastUsedAt ? ` · servie la semaine du ${recipe.lastUsedAt}` : ''}
+          {recipe.prepMinutes} min
+          {recipe.cookMinutes > 0 ? ` + ${recipe.cookMinutes} min de cuisson` : ''} ·{' '}
+          {recipe.servings} portions
+          {recipe.lastUsedAt ? ` · servie la semaine ${formatWeekRange(recipe.lastUsedAt)}` : ''}
         </Text>
 
         {recipe.tags.length > 0 ? (

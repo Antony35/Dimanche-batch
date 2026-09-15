@@ -17,9 +17,15 @@ import { useTheme } from '@/theme';
 const KIND_LABELS: Record<Meal['kind'], string | null> = {
   cooked: null,
   'batch-leftover': 'Portion du batch',
-  'freezer-backup': 'Sorti du congélateur',
+  'freezer-backup': 'Reste de la semaine dernière',
   'eat-out': 'Repas à l’extérieur',
+  undecided: 'À décider',
 };
+
+/** Titre d'un repas qui ne cite aucune recette. */
+function emptyTitle(kind: Meal['kind']): string {
+  return kind === 'undecided' ? 'À décider' : 'Repas à l’extérieur';
+}
 
 export interface MealCardProps {
   label: string;
@@ -44,21 +50,33 @@ export function MealCard({
   const router = useRouter();
   const recipe = meal.recipeId ? recipesById.get(meal.recipeId) : undefined;
   const kindLabel = KIND_LABELS[meal.kind];
+  const isUndecided = meal.kind === 'undecided';
 
   return (
-    <Card onPress={recipe ? () => router.push(`/recette/${recipe.id}`) : undefined}>
+    <Card
+      onPress={recipe ? () => router.push(`/recette/${recipe.id}`) : undefined}
+      style={isUndecided ? { borderColor: theme.colors.spice, borderWidth: 1 } : undefined}
+    >
       <Text variant="overline" tone="faint">
         {label.toUpperCase()}
       </Text>
-      <Text variant="heading">{recipe?.name ?? KIND_LABELS['eat-out']}</Text>
+      <Text variant="heading" tone={isUndecided ? 'soft' : 'default'}>
+        {recipe?.name ?? emptyTitle(meal.kind)}
+      </Text>
 
-      {kindLabel ? (
+      {isUndecided ? (
+        <Text variant="caption" tone="soft">
+          Décide-le avant les courses du samedi : ce qu’il demande s’ajoute à la liste.
+        </Text>
+      ) : kindLabel && recipe ? (
         <Text variant="caption" tone="soft">
           {kindLabel}
         </Text>
       ) : recipe ? (
         <Text variant="caption" tone="soft">
-          {recipe.prepMinutes} min · {recipe.servings} portions
+          {recipe.prepMinutes} min
+          {recipe.cookMinutes > 0 ? ` + ${recipe.cookMinutes} min de cuisson` : ''} ·{' '}
+          {recipe.servings} portions
         </Text>
       ) : null}
 
@@ -86,8 +104,8 @@ export function MealCard({
         </View>
       ) : onChangeMeal ? (
         <Button
-          label="Changer ce repas"
-          variant="ghost"
+          label={isUndecided ? 'Décider ce repas' : 'Changer ce repas'}
+          variant={isUndecided ? 'secondary' : 'ghost'}
           onPress={onChangeMeal}
           style={{ marginTop: theme.spacing.xs }}
         />

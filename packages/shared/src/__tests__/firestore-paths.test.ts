@@ -43,7 +43,8 @@ describe('forme des chemins', () => {
       paths.groceryItem(HID, WEEK, 'lentilles--mass'),
       paths.usageDay(HID, '2026-09-14'),
       paths.generationLock(HID, WEEK),
-      paths.batchSchedule(HID, WEEK),
+      paths.batchSession(HID, WEEK),
+      paths.aisleLexicon(HID),
     ]) {
       expect(segments(document) % 2, `${document} devrait être un document`).toBe(0);
     }
@@ -56,7 +57,8 @@ describe('forme des chemins', () => {
     expect(paths.groceryList(HID, WEEK)).toBe(`${paths.groceryLists(HID)}/${WEEK}`);
     expect(paths.usageDay(HID, WEEK)).toBe(`${paths.usage(HID)}/${WEEK}`);
     expect(paths.generationLock(HID, WEEK)).toBe(`${paths.locks(HID)}/${WEEK}`);
-    expect(paths.batchSchedule(HID, WEEK)).toBe(`households/${HID}/batchSchedules/${WEEK}`);
+    expect(paths.batchSession(HID, WEEK)).toBe(`households/${HID}/batchSessions/${WEEK}`);
+    expect(paths.aisleLexicon(HID)).toBe(`households/${HID}/lexicon/overrides`);
   });
 
   it('imbrique les articles sous la liste de la semaine', () => {

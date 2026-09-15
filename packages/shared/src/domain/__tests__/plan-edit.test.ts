@@ -5,10 +5,16 @@ import {
   collectRecipeIds,
   countMealsServing,
   findMeal,
+  findSwapCounterpart,
+  isLastMealOfBatchDish,
+  listSwapTargets,
   replaceBatchRecipeInPlan,
   replaceMealInPlan,
+  swapMealsInPlan,
 } from '../plan-edit';
-import { makeMeal, makePlan } from './fixtures';
+import { countBatchMealsServing } from '../batch';
+import { buildGroceryList } from '../grocery';
+import { makeMeal, makePlan, makeRecipe } from './fixtures';
 
 const WEEK = '2026-09-14';
 const MARDI = '2026-09-15';
@@ -231,5 +237,128 @@ describe('countMealsServing', () => {
 
     expect(countMealsServing(plan, 'curry')).toBe(3);
     expect(countMealsServing(plan, 'inconnu')).toBe(0);
+  });
+});
+
+/**
+ * Semaine type pour l'échange : curry lundi et mardi (4 repas), chili mercredi
+ * et jeudi (4 repas), soupe vendredi (2 repas). Le chili et la soupe se
+ * congèlent, pas le curry.
+ */
+function swapWeek() {
+  const portion = (recipeId: string) => ({ recipeId, kind: 'batch-leftover' as const });
+  return makePlan(
+    [
+      {},
+      {},
+      { lunch: portion('curry'), dinner: portion('curry') },
+      { lunch: portion('curry'), dinner: portion('curry') },
+      { lunch: portion('chili'), dinner: portion('chili') },
+      { lunch: portion('chili'), dinner: portion('chili') },
+      { lunch: portion('soupe'), dinner: portion('soupe') },
+    ],
+    '2026-09-12',
+    ['curry', 'chili', 'soupe'],
+  );
+}
+
+const freezable = (recipeId: string) => recipeId !== 'curry';
+const LUNDI = '2026-09-14';
+const MERCREDI = '2026-09-16';
+const JEUDI = '2026-09-17';
+
+describe('échange de deux repas du batch', () => {
+  it('prend au plat voulu son créneau le plus éloigné dans la semaine', () => {
+    // Lundi midi on veut du chili : le chili du jeudi soir, le plus loin,
+    // cède sa place et reçoit le curry — sauf que le curry ne se congèle pas,
+    // donc jeudi est sauté et c'est mercredi soir qui cède.
+    const plan = swapWeek();
+    expect(findSwapCounterpart(plan, { date: LUNDI, slot: 'lunch' }, 'chili', freezable)).toEqual({
+      date: MERCREDI,
+      slot: 'dinner',
+    });
+  });
+
+  it('prend le créneau le plus éloigné quand rien ne l’interdit', () => {
+    // Mercredi midi on veut du curry : le chili qu'on quitte se congèle, donc
+    // il peut partir n'importe où ; le curry le plus loin est lundi midi.
+    const plan = swapWeek();
+    expect(
+      findSwapCounterpart(plan, { date: MERCREDI, slot: 'lunch' }, 'curry', freezable),
+    ).toEqual({ date: LUNDI, slot: 'lunch' });
+  });
+
+  it('refuse d’amener en fin de semaine un plat qui ne se congèle pas', () => {
+    const plan = swapWeek();
+    expect(
+      findSwapCounterpart(plan, { date: JEUDI, slot: 'lunch' }, 'curry', freezable),
+    ).toBeNull();
+  });
+
+  it('ne garde les mêmes comptes que si l’échange est appliqué', () => {
+    const plan = swapWeek();
+    const ref = { date: LUNDI, slot: 'lunch' as const };
+    const counterpart = findSwapCounterpart(plan, ref, 'chili', freezable);
+    expect(counterpart).not.toBeNull();
+
+    const next = swapMealsInPlan(plan, ref, counterpart!);
+    for (const recipeId of ['curry', 'chili', 'soupe']) {
+      expect(countBatchMealsServing(next, recipeId)).toBe(countBatchMealsServing(plan, recipeId));
+    }
+    expect(findMeal(next, LUNDI, 'lunch')?.recipeId).toBe('chili');
+    expect(findMeal(next, MERCREDI, 'dinner')?.recipeId).toBe('curry');
+  });
+
+  it('ne change pas la liste de courses', () => {
+    const recipes = ['curry', 'chili', 'soupe'].map((id) =>
+      makeRecipe({
+        id,
+        servings: 4,
+        ingredients: [{ name: id, qty: 400, unit: 'g', aisle: 'epicerie' }],
+      }),
+    );
+    const plan = swapWeek();
+    // Le chili quitté se congèle : il peut partir le vendredi à la place de la soupe.
+    const ref = { date: MERCREDI, slot: 'lunch' as const };
+    const next = swapMealsInPlan(plan, ref, findSwapCounterpart(plan, ref, 'soupe', freezable)!);
+
+    expect(buildGroceryList(next, recipes)).toEqual(buildGroceryList(plan, recipes));
+  });
+
+  it('ne propose pas le plat déjà servi, ni un plat hors du batch', () => {
+    const plan = swapWeek();
+    const ref = { date: LUNDI, slot: 'lunch' as const };
+    expect(findSwapCounterpart(plan, ref, 'curry', freezable)).toBeNull();
+    expect(findSwapCounterpart(plan, ref, 'inconnu', freezable)).toBeNull();
+    // La soupe n'est servie que vendredi : l'échanger enverrait le curry, qui
+    // ne se congèle pas, attendre cinq jours au frigo. Elle n'est pas proposée.
+    expect(listSwapTargets(plan, ref, freezable)).toEqual(['chili']);
+  });
+
+  it('ne propose rien sur un créneau qui n’est pas une portion du batch', () => {
+    const plan = swapWeek();
+    expect(listSwapTargets(plan, { date: '2026-09-12', slot: 'lunch' }, freezable)).toEqual([]);
+  });
+});
+
+describe('isLastMealOfBatchDish', () => {
+  it('reconnaît le dernier repas d’un plat, qu’on ne peut pas vider', () => {
+    const plan = makePlan(
+      [
+        {},
+        {},
+        {
+          lunch: { recipeId: 'curry', kind: 'batch-leftover' },
+          dinner: { recipeId: 'chili', kind: 'batch-leftover' },
+        },
+        { lunch: { recipeId: 'curry', kind: 'batch-leftover' } },
+      ],
+      '2026-09-12',
+      ['curry', 'chili'],
+    );
+
+    expect(isLastMealOfBatchDish(plan, LUNDI, 'dinner')).toBe(true);
+    expect(isLastMealOfBatchDish(plan, LUNDI, 'lunch')).toBe(false);
+    expect(isLastMealOfBatchDish(plan, '2026-09-12', 'lunch')).toBe(false);
   });
 });

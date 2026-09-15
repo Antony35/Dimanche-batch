@@ -2,37 +2,64 @@ import { z } from 'zod';
 import { WeekIdSchema } from './common';
 
 /**
- * Déroulé entrelacé du dimanche : les étapes des plats du batch, fondues en une
- * seule séquence.
+ * Session du dimanche, en deux temps : la mise en place, puis la cuisson.
  *
- * Chaque étape nomme les plats qu'elle concerne. C'est ce qui répond à la
- * crainte qui avait fait différer cette vue : mêler les gestes de quatre plats
- * produit une liste qu'on ne rattache plus à un plat quand on s'y perd. Une
- * étape peut en concerner plusieurs — c'est même tout l'intérêt : éplucher les
- * oignons des trois plats d'un coup.
+ * Une fois tout coupé d'un coup, il ne reste à chaque plat que ses gestes de
+ * cuisson et de mélange. Le modèle réécrit donc les étapes de chaque recette
+ * sans la découpe, et dit comment couper chaque ingrédient — « émincé », « en
+ * dés » —, sans quoi l'information disparaîtrait avec les étapes qui la
+ * portaient. Les quantités et l'ordre, eux, se calculent : voir
+ * `domain/mise-en-place.ts` et `orderForCooking`.
+ *
+ * Deux listes à plat plutôt qu'un objet par plat : l'API refuse certaines
+ * imbrications de schéma sans nommer le champ fautif (voir
+ * `functions/src/gemini/response-schema.ts`).
  */
-export const BatchScheduleStepSchema = z.object({
-  recipeIds: z.array(z.string().min(1)).min(1).max(6),
+
+/** La façon de couper un ingrédient pour un plat donné. */
+export const BatchCutSchema = z.object({
+  recipeId: z.string().min(1),
+  /** Le nom tel que la recette l'écrit. */
+  ingredient: z.string().min(1).max(80),
+  /** « émincé », « en dés », « haché »… */
+  cut: z.string().min(1).max(40),
+});
+
+/** Une étape de cuisson ou de mélange. L'ordre du tableau est l'ordre du plat. */
+export const BatchCookStepSchema = z.object({
+  recipeId: z.string().min(1),
   text: z.string().min(1).max(400),
 });
 
+/**
+ * Temps de cuisson sans surveillance d'un plat, **tel que ses étapes réécrites
+ * l'indiquent**. C'est la seule source de l'écran : le temps déclaré à la
+ * génération de la semaine et le texte des étapes, produits séparément,
+ * finissaient par se contredire.
+ */
+export const BatchTimingSchema = z.object({
+  recipeId: z.string().min(1),
+  cookMinutes: z.number().int().min(0).max(480),
+});
+
 /** Ce que le modèle rend — les identifiants sont les slugs, donc les `recipeId`. */
-export const GeneratedBatchScheduleSchema = z.object({
-  steps: z.array(BatchScheduleStepSchema).min(3).max(80),
+export const GeneratedCookingSessionSchema = z.object({
+  cuts: z.array(BatchCutSchema).max(120),
+  steps: z.array(BatchCookStepSchema).min(1).max(80),
+  /** `.default` : une session composée avant ce champ reste lisible, et l'écran retombe sur la recette. */
+  timings: z.array(BatchTimingSchema).max(6).default([]),
 });
 
 /**
- * Document `batchSchedules/{weekId}`, écrit par la function.
+ * Document `batchSessions/{weekId}`, écrit par la function.
  *
- * `sourceRecipeIds` fige le batch à partir duquel le déroulé a été composé. Si
- * un plat est remplacé ensuite, le déroulé décrit un batch qui n'existe plus :
- * l'app le compare au plan plutôt que de compter sur chaque écrivain pour
- * penser à l'effacer.
+ * `sourceRecipeIds` fige le batch à partir duquel la session a été composée. Si
+ * un plat est remplacé ensuite, elle décrit un batch qui n'existe plus : l'app
+ * la compare au plan plutôt que de compter sur chaque écrivain pour l'effacer.
  */
-export const BatchScheduleSchema = z.object({
+export const CookingSessionSchema = GeneratedCookingSessionSchema.extend({
   id: WeekIdSchema,
   sourceRecipeIds: z.array(z.string().min(1)),
-  steps: z.array(BatchScheduleStepSchema),
   generatedAt: z.number().int(),
   generatedBy: z.string().min(1),
   model: z.string().min(1),
@@ -47,12 +74,14 @@ export const GenerateBatchScheduleInputSchema = z.object({
 export const GenerateBatchScheduleResultSchema = z.object({
   weekId: WeekIdSchema,
   stepCount: z.number().int().min(0),
-  /** Faux si un déroulé à jour existait déjà : rien n'a été généré ni décompté. */
+  /** Faux si une session à jour existait déjà : rien n'a été généré ni décompté. */
   generated: z.boolean(),
 });
 
-export type BatchScheduleStep = z.infer<typeof BatchScheduleStepSchema>;
-export type GeneratedBatchSchedule = z.infer<typeof GeneratedBatchScheduleSchema>;
-export type BatchSchedule = z.infer<typeof BatchScheduleSchema>;
+export type BatchCut = z.infer<typeof BatchCutSchema>;
+export type BatchCookStep = z.infer<typeof BatchCookStepSchema>;
+export type BatchTiming = z.infer<typeof BatchTimingSchema>;
+export type GeneratedCookingSession = z.infer<typeof GeneratedCookingSessionSchema>;
+export type CookingSession = z.infer<typeof CookingSessionSchema>;
 export type GenerateBatchScheduleInput = z.infer<typeof GenerateBatchScheduleInputSchema>;
 export type GenerateBatchScheduleResult = z.infer<typeof GenerateBatchScheduleResultSchema>;

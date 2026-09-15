@@ -2,10 +2,12 @@ import { useState } from 'react';
 import { useRouter } from 'expo-router';
 import { View } from 'react-native';
 import {
+  BATCH_DAY_INDEX,
+  formatWeekRange,
+  getComposableWeekId,
   getCurrentWeekId,
   getDayNameForDate,
   getThawReminders,
-  getUpcomingWeekId,
   toIsoDate,
   type Recipe,
   type WeeklyPlan,
@@ -24,6 +26,7 @@ import { useHousehold } from '@/features/household/api/use-household';
 import { BatchCountPicker } from '@/features/meal-plan/components/batch-count-picker';
 import { GenerationProgress } from '@/features/meal-plan/components/generation-progress';
 import { MealCard } from '@/features/meal-plan/components/meal-card';
+import { VegetarianCountPicker } from '@/features/meal-plan/components/vegetarian-count-picker';
 import { useGeneratePlan } from '@/features/meal-plan/api/use-generate-plan';
 import { useGenerationProgress } from '@/features/meal-plan/api/use-generation-progress';
 import { useRecipes } from '@/features/meal-plan/api/use-recipes';
@@ -37,11 +40,11 @@ export default function TodayScreen() {
   const today = toIsoDate(new Date());
 
   const currentWeekId = getCurrentWeekId();
-  const upcomingWeekId = getUpcomingWeekId();
+  const nextWeekId = getComposableWeekId(today);
 
   const householdId = household?.id ?? null;
   const current = useWeeklyPlan(householdId, currentWeekId);
-  const upcoming = useWeeklyPlan(householdId, upcomingWeekId);
+  const next = useWeeklyPlan(householdId, nextWeekId);
   const { recipesById } = useRecipes(householdId);
 
   const day = current.plan?.days.find((entry) => entry.date === today) ?? null;
@@ -66,7 +69,7 @@ export default function TodayScreen() {
       ) : day === null ? (
         <EmptyState
           title="Rien de prévu aujourd’hui"
-          description="Compose la semaine ci-dessous : le batch du dimanche la nourrit ensuite en entier."
+          description="On ne compose pas une semaine déjà commencée : prépare la prochaine ci-dessous, le batch du dimanche la nourrira en entier."
         />
       ) : (
         <>
@@ -76,24 +79,17 @@ export default function TodayScreen() {
       )}
 
       <NextStep
-        currentWeekId={currentWeekId}
-        upcomingWeekId={upcomingWeekId}
+        today={today}
         currentPlan={current.plan}
-        upcomingPlan={upcoming.plan}
-        isLoading={current.isLoading || upcoming.isLoading}
+        nextWeekId={nextWeekId}
+        nextPlan={next.plan}
+        isLoading={current.isLoading || next.isLoading}
         householdId={householdId}
       />
     </Screen>
   );
 }
 
-/**
- * Étape suivante du cycle hebdomadaire.
- *
- * L'ordre des cas suit le calendrier réel : on rattrape d'abord une semaine en
- * cours restée vide — typiquement un samedi matin où l'on a oublié la veille —
- * puis on compose la suivante, puis on cuisine.
- */
 /**
  * Ce qu'il faut sortir du congélateur ce soir.
  *
@@ -123,18 +119,39 @@ function ThawReminder({ recipes }: { recipes: Recipe[] }) {
   );
 }
 
+/** Nombre de créneaux du samedi et du dimanche encore à décider. */
+function countUndecidedWeekend(plan: WeeklyPlan): number {
+  return plan.days
+    .slice(0, BATCH_DAY_INDEX + 1)
+    .flatMap((entry) => [entry.lunch, entry.dinner])
+    .filter((meal) => meal.kind === 'undecided').length;
+}
+
+/**
+ * Étape suivante du cycle hebdomadaire, dans l'ordre du calendrier réel.
+ *
+ * 1. Le dimanche, cuisiner le batch de la semaine en cours.
+ * 2. La semaine prochaine est composée mais son week-end reste à décider :
+ *    le faire **avant** les courses du samedi, qui doivent en acheter les
+ *    ingrédients.
+ * 3. Composer la semaine prochaine si elle n'a pas de plan.
+ * 4. Sinon, elle est prête.
+ *
+ * Jamais la semaine en cours : elle a commencé, un plan composé maintenant
+ * arriverait après les courses et le batch qu'il devait organiser.
+ */
 function NextStep({
-  currentWeekId,
-  upcomingWeekId,
+  today,
   currentPlan,
-  upcomingPlan,
+  nextWeekId,
+  nextPlan,
   isLoading,
   householdId,
 }: {
-  currentWeekId: string;
-  upcomingWeekId: string;
+  today: string;
   currentPlan: WeeklyPlan | null;
-  upcomingPlan: WeeklyPlan | null;
+  nextWeekId: string;
+  nextPlan: WeeklyPlan | null;
   isLoading: boolean;
   householdId: string | null;
 }) {
@@ -142,31 +159,66 @@ function NextStep({
   const router = useRouter();
   const generate = useGeneratePlan();
   const [batchRecipeCount, setBatchRecipeCount] = useState(4);
+  const [vegetarianChoice, setVegetarianChoice] = useState(0);
+  // Ramené au nombre de plats au rendu : baisser le nombre de plats ne doit
+  // jamais laisser plus de végétariens que de plats.
+  const vegetarianCount = Math.min(vegetarianChoice, batchRecipeCount);
 
-  const missingWeekId =
-    currentPlan === null ? currentWeekId : upcomingPlan === null ? upcomingWeekId : null;
-  const progress = useGenerationProgress(householdId, missingWeekId ?? currentWeekId);
+  const progress = useGenerationProgress(householdId, nextWeekId);
 
   if (isLoading || !householdId) return null;
 
-  if (missingWeekId !== null) {
-    const isCatchUp = missingWeekId === currentWeekId;
+  const isSunday = getDayNameForDate(today) === 'dimanche';
+  if (isSunday && currentPlan && currentPlan.batchRecipeIds.length > 0) {
+    return (
+      <Card style={{ gap: theme.spacing.md }}>
+        <Text variant="heading">C’est le jour du batch</Text>
+        <Text tone="soft">
+          Les plats de la semaine se préparent aujourd’hui, en une seule session.
+        </Text>
+        <Button
+          label="Préparer le batch"
+          onPress={() => router.push(`/batch?week=${currentPlan.id}`)}
+        />
+      </Card>
+    );
+  }
 
+  const undecided = nextPlan ? countUndecidedWeekend(nextPlan) : 0;
+  if (nextPlan && undecided > 0) {
+    return (
+      <Card style={{ gap: theme.spacing.md, borderColor: theme.colors.spice, borderWidth: 1 }}>
+        <Text variant="heading">Décider le samedi et le dimanche</Text>
+        <Text tone="soft">
+          Le batch de la semaine {formatWeekRange(nextWeekId)} est prêt. Il reste {undecided} repas
+          du week-end à décider : un reste, un repas dehors ou un plat cuisiné. Fais-le avant les
+          courses du samedi — ce qu’ils demandent s’ajoute à la liste.
+        </Text>
+        <Button label="Décider le week-end" onPress={() => router.push('/planning?week=1')} />
+        <Button
+          label="Voir le batch du dimanche"
+          variant="ghost"
+          onPress={() => router.push(`/batch?week=${nextWeekId}`)}
+        />
+      </Card>
+    );
+  }
+
+  if (!nextPlan) {
     return (
       <Card style={{ gap: theme.spacing.lg }}>
-        <Text variant="heading">
-          {isCatchUp ? 'Composer cette semaine' : 'Composer la semaine prochaine'}
-        </Text>
+        <Text variant="heading">Composer la semaine {formatWeekRange(nextWeekId)}</Text>
         <Text tone="soft">
-          {isCatchUp
-            ? 'Cette semaine n’a pas encore de plan. La composer maintenant donne la liste de courses à faire au plus vite.'
-            : 'Compose-la avant le week-end : les courses se font le samedi, le batch le dimanche.'}
-        </Text>
-        <Text variant="caption" tone="faint">
-          Semaine du {missingWeekId}
+          Choisis le nombre de plats et combien sont végétariens : le batch du dimanche nourrit
+          ensuite les dix repas du lundi au vendredi. Le samedi et le dimanche se décident après.
         </Text>
 
         <BatchCountPicker value={batchRecipeCount} onChange={setBatchRecipeCount} />
+        <VegetarianCountPicker
+          value={vegetarianCount}
+          batchRecipeCount={batchRecipeCount}
+          onChange={setVegetarianChoice}
+        />
 
         {generate.error ? <Text tone="danger">{generate.error.message}</Text> : null}
 
@@ -176,7 +228,12 @@ function NextStep({
           <Button
             label="Composer la semaine"
             onPress={() => {
-              generate.mutate({ householdId, weekStart: missingWeekId, batchRecipeCount });
+              generate.mutate({
+                householdId,
+                weekStart: nextWeekId,
+                batchRecipeCount,
+                vegetarianCount,
+              });
             }}
           />
         )}
@@ -184,22 +241,14 @@ function NextStep({
     );
   }
 
-  const isSunday = new Date().getDay() === 0;
-
   return (
     <Card style={{ gap: theme.spacing.md }}>
-      <Text variant="heading">
-        {isSunday ? 'C’est le jour du batch' : 'La semaine prochaine est prête'}
-      </Text>
-      <Text tone="soft">
-        {isSunday
-          ? 'Les plats de la semaine se préparent aujourd’hui, en une seule session.'
-          : 'Il reste à faire les courses, puis à cuisiner dimanche.'}
-      </Text>
+      <Text variant="heading">La semaine prochaine est prête</Text>
+      <Text tone="soft">Il reste à faire les courses, puis à cuisiner dimanche.</Text>
       <Button
-        label={isSunday ? 'Préparer le batch' : 'Voir le batch du dimanche'}
-        variant={isSunday ? 'primary' : 'secondary'}
-        onPress={() => router.push(`/batch?week=${upcomingWeekId}`)}
+        label="Voir le batch du dimanche"
+        variant="secondary"
+        onPress={() => router.push(`/batch?week=${nextWeekId}`)}
       />
     </Card>
   );

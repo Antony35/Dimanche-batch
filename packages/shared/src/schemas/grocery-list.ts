@@ -2,6 +2,21 @@ import { z } from 'zod';
 import { AisleSchema, UnitSchema, WeekIdSchema } from './common';
 
 /**
+ * D'où vient un article, et ce que la liste en fait à l'écran.
+ *
+ * `batch` est le gros des courses : ce qui sera cuisiné le dimanche. `fresh` est
+ * ce qu'un repas du samedi ou du dimanche demande en plus. `manual` est ce que
+ * le foyer a ajouté lui-même, et c'est le seul qu'il puisse supprimer.
+ *
+ * Champ explicite plutôt que déduit de `fromRecipeIds` à l'écran : l'origine est
+ * une règle métier — un article qui sert les deux compte comme `batch` — et une
+ * règle métier ne se rejoue pas dans un composant.
+ */
+export const GROCERY_ORIGINS = ['batch', 'fresh', 'manual'] as const;
+
+export const GroceryOriginSchema = z.enum(GROCERY_ORIGINS);
+
+/**
  * Un article de courses est un document à part entière, pas une entrée d'un
  * tableau. Deux raisons, dans cet ordre :
  *
@@ -19,6 +34,13 @@ export const GroceryItemSchema = z.object({
   unit: UnitSchema,
   aisle: AisleSchema,
   checked: z.boolean(),
+  /**
+   * `.default` et non un champ requis : les articles écrits avant l'origine ne
+   * la portent pas, et un document qui ne passe pas son schéma est écarté — la
+   * liste de courses du foyer se serait vidée à la mise à jour. La sortie reste
+   * `GroceryOrigin`, donc `Omit<GroceryItem, 'id'>` force quand même à l'écrire.
+   */
+  origin: GroceryOriginSchema.default('batch'),
   /** Recettes à l'origine de cet article, pour expliquer une quantité à l'écran. */
   fromRecipeIds: z.array(z.string().min(1)),
 });
@@ -30,5 +52,20 @@ export const GroceryListSchema = z.object({
   generatedAt: z.number().int(),
 });
 
+/**
+ * Rayons que le foyer a lui-même attribués, un seul document par foyer.
+ *
+ * Quand la table livrée ne connaît pas un article, ou le range mal, la
+ * correction de l'utilisateur est gardée ici : elle vaut pour les deux
+ * téléphones, survit à une réinstallation, et repasse devant la table à la
+ * prochaine saisie. C'est aussi la liste des manques à reverser dans la table
+ * livrée. La clé est `aisleOverrideKey(nom)`.
+ */
+export const AisleLexiconSchema = z.object({
+  entries: z.record(z.string().min(1), AisleSchema),
+});
+
+export type AisleLexicon = z.infer<typeof AisleLexiconSchema>;
+export type GroceryOrigin = z.infer<typeof GroceryOriginSchema>;
 export type GroceryItem = z.infer<typeof GroceryItemSchema>;
 export type GroceryList = z.infer<typeof GroceryListSchema>;

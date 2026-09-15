@@ -15,8 +15,12 @@ export const COLLECTIONS = {
   groceryItems: 'items',
   usage: 'usage',
   locks: 'locks',
-  batchSchedules: 'batchSchedules',
+  batchSessions: 'batchSessions',
+  lexicon: 'lexicon',
 } as const;
+
+/** Identifiant de l'unique document de lexique d'un foyer. */
+export const AISLE_LEXICON_DOC_ID = 'overrides';
 
 export const paths = {
   households: () => COLLECTIONS.households,
@@ -50,8 +54,11 @@ export const paths = {
   generationLock: (householdId: string, weekId: string) =>
     `${COLLECTIONS.households}/${householdId}/${COLLECTIONS.locks}/${weekId}`,
 
-  batchSchedule: (householdId: string, weekId: string) =>
-    `${COLLECTIONS.households}/${householdId}/${COLLECTIONS.batchSchedules}/${weekId}`,
+  batchSession: (householdId: string, weekId: string) =>
+    `${COLLECTIONS.households}/${householdId}/${COLLECTIONS.batchSessions}/${weekId}`,
+
+  aisleLexicon: (householdId: string) =>
+    `${COLLECTIONS.households}/${householdId}/${COLLECTIONS.lexicon}/${AISLE_LEXICON_DOC_ID}`,
 } as const;
 
 /** Plafond de générations Gemini par foyer et par jour. Voir CLAUDE.md §4. */

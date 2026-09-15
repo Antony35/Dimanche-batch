@@ -1,6 +1,8 @@
-import type { Recipe } from '../schemas/recipe';
+import type { Ingredient, Recipe } from '../schemas/recipe';
 import type { IsoDate } from '../schemas/common';
 import type { WeeklyPlan } from '../schemas/weekly-plan';
+import { SERVINGS_PER_MEAL } from './plan-constraints';
+import { roundUpQuantity } from './units';
 import { addDays, getWeekDates, requiresFreezing, BATCH_DAY_INDEX } from './week';
 
 /**
@@ -15,6 +17,11 @@ export interface BatchRecipe {
   recipe: Recipe;
   /** Index des jours où ce plat est servi, 0 = samedi. */
   servedDayIndexes: number[];
+  /**
+   * Portions à cuisiner. Celles qu'on a achetées, pas celles que la recette
+   * déclare : voir `getBatchPortions`.
+   */
+  portions: number;
   /**
    * Vrai si le plat est servi jeudi ou vendredi : cuisiné dimanche, il aurait
    * passé cinq jours au frigo. L'app dit alors de le congeler et de le sortir
@@ -59,6 +66,7 @@ export function getBatchSession(plan: WeeklyPlan, recipesById: Map<string, Recip
     recipes.push({
       recipe,
       servedDayIndexes,
+      portions: getBatchPortions(plan, recipeId),
       needsFreezing: servedDayIndexes.some(requiresFreezing),
     });
   }
@@ -106,4 +114,81 @@ export function getThawReminders(
   }
 
   return [...reminders.values()];
+}
+
+/**
+ * Repas de la semaine réellement servis par un plat du batch.
+ *
+ * Ne comptent que les portions du batch : un repas pris à l'extérieur ne mange
+ * rien, et un reste d'une semaine précédente (`freezer-backup`) a été acheté et
+ * cuisiné une autre semaine. Distinct de `countMealsServing`, qui compte les
+ * créneaux quel qu'en soit le type — c'est ce qu'il faut pour annoncer combien
+ * de repas un remplacement va toucher, jamais pour décider quoi acheter.
+ */
+export function countBatchMealsServing(plan: WeeklyPlan, recipeId: string): number {
+  let count = 0;
+  for (const day of plan.days) {
+    for (const meal of [day.lunch, day.dinner]) {
+      if (meal.kind === 'batch-leftover' && meal.recipeId === recipeId) count += 1;
+    }
+  }
+  return count;
+}
+
+/**
+ * Portions à cuisiner pour un plat du batch — **et donc à acheter**.
+ *
+ * Seule autorité du dépôt sur la question. La liste de courses et l'écran du
+ * dimanche l'appellent tous les deux, ce qui rend « ce qui est acheté est ce
+ * qui est cuisiné » vrai par construction plutôt que par vigilance. Les deux
+ * l'ont lue ailleurs autrefois, et c'est précisément ainsi qu'on achetait pour
+ * huit un plat qu'on ne servait plus que six fois.
+ *
+ * Le plancher d'un repas n'est pas une commodité : un plat du batch est cuisiné
+ * le dimanche, donc acheté, même si l'utilisateur a vidé tous les créneaux qu'il
+ * occupait. L'interface interdit d'en arriver là — on remplace le plat plutôt
+ * que de le vider — mais un plan écrit avant cette règle peut exister, et il ne
+ * doit pas se traduire par une liste de courses qui oublie un plat entier.
+ */
+export function getBatchPortions(plan: WeeklyPlan, recipeId: string): number {
+  return Math.max(1, countBatchMealsServing(plan, recipeId)) * SERVINGS_PER_MEAL;
+}
+
+/**
+ * Ingrédients d'une recette pour le nombre de portions qu'on cuisine
+ * réellement.
+ *
+ * La recette déclare ses quantités pour ses propres portions ; quand un repas
+ * est passé au reste ou dehors, le dimanche en cuisine moins, et l'écran doit
+ * dire les quantités de la liste de courses, pas celles de la recette. Arrondi
+ * vers le haut, comme les courses : on ne manque jamais.
+ */
+export function scaleIngredients(recipe: Recipe, portions: number): Ingredient[] {
+  if (portions === recipe.servings) return recipe.ingredients;
+  const factor = portions / recipe.servings;
+  return recipe.ingredients.map((ingredient) => ({
+    ...ingredient,
+    qty: roundUpQuantity(ingredient.qty * factor, ingredient.unit),
+  }));
+}
+
+/**
+ * Ordre des fiches de cuisson : du plus long au plus court.
+ *
+ * Le plat qui mijote deux heures se lance en premier, et c'est pendant sa
+ * cuisson qu'on prépare les autres. À cuisson égale, le plus long à préparer
+ * d'abord ; à égalité parfaite, l'ordre du batch.
+ */
+export function orderForCooking<T extends { recipe: Pick<Recipe, 'cookMinutes' | 'prepMinutes'> }>(
+  entries: readonly T[],
+): T[] {
+  return entries
+    .map((entry, index) => ({ entry, index }))
+    .sort(
+      (a, b) =>
+        b.entry.recipe.cookMinutes - a.entry.recipe.cookMinutes ||
+        b.entry.recipe.prepMinutes - a.entry.recipe.prepMinutes ||
+        a.index - b.index,
+    )
+    .map(({ entry }) => entry);
 }

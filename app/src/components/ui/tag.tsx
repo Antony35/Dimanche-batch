@@ -1,7 +1,5 @@
-import { View } from 'react-native';
 import type { RecipeTag } from '@dimanche-batch/shared';
-import { useTheme } from '@/theme';
-import { Text } from './text';
+import { Badge, type BadgeTone } from './badge';
 
 const TAG_LABELS: Record<RecipeTag, string> = {
   'one-pot': 'one-pot',
@@ -13,35 +11,28 @@ const TAG_LABELS: Record<RecipeTag, string> = {
   weekend: 'week-end',
   entree: 'entrée',
   dessert: 'dessert',
+  mijote: 'mijoté',
+  'four-lent': 'four',
+};
+
+/**
+ * Ce qu'une étiquette de recette vaut en couleur.
+ *
+ * `congelable` est ambre : il porte une conséquence pratique, sortir le plat la
+ * veille. `mijote` et `four-lent` sont violets : ils disent quel plat lancer en
+ * premier le dimanche. Le reste est vert.
+ */
+const TAG_TONES: Partial<Record<RecipeTag, BadgeTone>> = {
+  congelable: 'spice',
+  weekend: 'weekend',
+  mijote: 'weekend',
+  'four-lent': 'weekend',
 };
 
 export interface TagProps {
   tag: RecipeTag;
 }
 
-/** Les trois familles de couleur reprennent la légende du plan de projet. */
 export function Tag({ tag }: TagProps) {
-  const theme = useTheme();
-
-  const scheme =
-    tag === 'congelable'
-      ? { bg: theme.colors.spiceSoft, fg: theme.colors.spiceInk }
-      : tag === 'weekend'
-        ? { bg: theme.colors.weekendSoft, fg: theme.colors.weekend }
-        : { bg: theme.colors.accentSoft, fg: theme.colors.accent };
-
-  return (
-    <View
-      style={{
-        backgroundColor: scheme.bg,
-        borderRadius: theme.radius.sm,
-        paddingHorizontal: theme.spacing.sm,
-        paddingVertical: 3,
-      }}
-    >
-      <Text variant="overline" style={{ color: scheme.fg }}>
-        {TAG_LABELS[tag].toUpperCase()}
-      </Text>
-    </View>
-  );
+  return <Badge label={TAG_LABELS[tag]} tone={TAG_TONES[tag] ?? 'accent'} />;
 }

@@ -1,10 +1,12 @@
 import type { Aisle } from '../schemas/common';
 import { AISLES } from '../schemas/common';
-import type { GroceryItem } from '../schemas/grocery-list';
+import type { GroceryItem, GroceryOrigin } from '../schemas/grocery-list';
 import type { Recipe } from '../schemas/recipe';
 import type { WeeklyPlan } from '../schemas/weekly-plan';
+import { getBatchPortions } from './batch';
+import { SERVINGS_PER_MEAL } from './plan-constraints';
 import { normalizeName } from './text';
-import { dimensionOf, toBaseQuantity } from './units';
+import { dimensionOf, roundUpQuantity, toBaseQuantity } from './units';
 
 /** Nom d'ingrédient ramené à sa clé d'agrégation. */
 export function normalizeIngredientName(name: string): string {
@@ -21,15 +23,41 @@ export function ingredientKey(name: string, unit: string): string {
   return `${normalizeIngredientName(name).replace(/[^a-z0-9]+/g, '-')}--${unit}`;
 }
 
-/** Verse les ingrédients d'une recette dans l'accumulateur, une fois. */
-function addRecipeIngredients(accumulator: Map<string, GroceryItem>, recipe: Recipe): void {
+/** L'origine la plus forte l'emporte : un article du batch le reste. */
+const ORIGIN_RANK: Record<GroceryOrigin, number> = { batch: 2, fresh: 1, manual: 0 };
+
+function strongerOrigin(a: GroceryOrigin, b: GroceryOrigin): GroceryOrigin {
+  return ORIGIN_RANK[a] >= ORIGIN_RANK[b] ? a : b;
+}
+
+/**
+ * Verse les ingrédients d'une recette dans l'accumulateur, mis à l'échelle.
+ *
+ * `portions` est ce qu'on va réellement cuisiner, et non ce que la recette
+ * déclare : un plat conçu pour huit portions mais qui ne sert plus que trois
+ * repas s'achète pour six. La recette, elle, n'est jamais réécrite — son
+ * document est partagé entre les semaines et sert l'historique.
+ *
+ * Les quantités restent en flottant à ce stade. L'arrondi n'a lieu qu'une fois,
+ * sur le total agrégé : arrondir ici empilerait un demi-pas par recette, et
+ * quatre plats du batch suffiraient à acheter un oignon de trop.
+ */
+function addRecipeIngredients(
+  accumulator: Map<string, GroceryItem>,
+  recipe: Recipe,
+  portions: number,
+  origin: GroceryOrigin,
+): void {
+  const factor = portions / recipe.servings;
+
   for (const ingredient of recipe.ingredients) {
-    const base = toBaseQuantity(ingredient.qty, ingredient.unit);
+    const base = toBaseQuantity(ingredient.qty * factor, ingredient.unit);
     const key = ingredientKey(ingredient.name, dimensionOf(ingredient.unit));
     const existing = accumulator.get(key);
 
     if (existing) {
       existing.qty += base.qty;
+      existing.origin = strongerOrigin(existing.origin, origin);
       if (!existing.fromRecipeIds.includes(recipe.id)) {
         existing.fromRecipeIds.push(recipe.id);
       }
@@ -43,6 +71,7 @@ function addRecipeIngredients(accumulator: Map<string, GroceryItem>, recipe: Rec
       unit: base.unit,
       aisle: ingredient.aisle,
       checked: false,
+      origin,
       fromRecipeIds: [recipe.id],
     });
   }
@@ -51,12 +80,20 @@ function addRecipeIngredients(accumulator: Map<string, GroceryItem>, recipe: Rec
 /**
  * Construit la liste de courses d'un plan.
  *
- * Deux sources, et une seule fois chacune :
+ * **Un seul invariant : ce qui est acheté est ce qui est cuisiné.** Tout le
+ * reste en découle.
  *
- * 1. **les plats du batch**, comptés une fois aux portions déclarées. Ils sont
- *    cuisinés le dimanche et couvrent les dix repas du lundi au vendredi ;
- *    compter chaque repas qui les sert reviendrait à acheter la semaine dix fois.
- * 2. **les repas cuisinés le jour même**, samedi et dimanche.
+ * 1. **Les plats du batch**, comptés une fois chacun, au prorata des repas
+ *    qu'ils servent réellement — `getBatchPortions`, la même fonction que celle
+ *    qui dit à l'écran du dimanche combien de portions préparer. Compter chaque
+ *    repas achèterait la semaine dix fois ; compter les portions déclarées
+ *    achèterait pour huit un plat qu'on ne sert plus que six fois.
+ * 2. **Les repas cuisinés le jour même**, samedi et dimanche, pour deux
+ *    portions par repas servi.
+ *
+ * Ce qui n'achète rien : un repas pris à l'extérieur, un créneau encore à
+ * décider, et un reste d'une semaine précédente — celui-là a été acheté et
+ * cuisiné une autre semaine.
  *
  * Un repas `cooked` qui citerait un plat du batch est ignoré : le plat est déjà
  * compté au titre du batch. La contrainte de génération l'interdit, mais un plan
@@ -70,20 +107,35 @@ export function buildGroceryList(plan: WeeklyPlan, recipes: Recipe[]): GroceryIt
 
   for (const recipeId of batchIds) {
     const recipe = recipesById.get(recipeId);
-    if (recipe) addRecipeIngredients(accumulator, recipe);
+    if (recipe)
+      addRecipeIngredients(accumulator, recipe, getBatchPortions(plan, recipeId), 'batch');
   }
 
+  // Un plat frais servi deux fois le même week-end se cuisine en double, donc
+  // s'achète en double : on compte ses créneaux avant de verser ses ingrédients.
+  const freshMeals = new Map<string, number>();
   for (const day of plan.days) {
     for (const meal of [day.lunch, day.dinner]) {
       if (meal.kind !== 'cooked' || meal.recipeId === null) continue;
       if (batchIds.has(meal.recipeId)) continue;
-
-      const recipe = recipesById.get(meal.recipeId);
-      if (recipe) addRecipeIngredients(accumulator, recipe);
+      freshMeals.set(meal.recipeId, (freshMeals.get(meal.recipeId) ?? 0) + 1);
     }
   }
 
-  return sortGroceryItems([...accumulator.values()]);
+  for (const [recipeId, meals] of freshMeals) {
+    const recipe = recipesById.get(recipeId);
+    if (recipe) {
+      addRecipeIngredients(accumulator, recipe, meals * SERVINGS_PER_MEAL, 'fresh');
+    }
+  }
+
+  // L'arrondi, une fois, à la fin, et toujours vers le haut.
+  const items = [...accumulator.values()].map((item) => ({
+    ...item,
+    qty: roundUpQuantity(item.qty, item.unit),
+  }));
+
+  return sortGroceryItems(items);
 }
 
 /** Tri par ordre de parcours du magasin, puis alphabétique dans le rayon. */
@@ -107,15 +159,50 @@ export function groupByAisle(items: GroceryItem[]): Array<{ aisle: Aisle; items:
   return [...groups.entries()].map(([aisle, groupItems]) => ({ aisle, items: groupItems }));
 }
 
+/** Préfixe des articles ajoutés à la main. Voir `manualItemId`. */
+const MANUAL_PREFIX = 'manual--';
+
 /**
- * Fusionne une liste régénérée avec l'existante en conservant les cases déjà
- * cochées. Sans ça, régénérer un repas le mercredi effacerait les courses
- * faites le lundi.
+ * Identifiant d'un article ajouté à la main.
+ *
+ * Préfixé, et c'est ce qui rend la fonctionnalité tenable. D'abord parce que
+ * rien ne collisionne : ajouter « courgette » à la main ne se confond pas avec
+ * les courgettes que le batch demande, et la ligne du foyer ne se fait pas
+ * écraser au prochain recalcul. Ensuite parce que la Security Rule peut borner
+ * le client à ce seul espace de noms — il ne crée ni ne supprime que là.
+ *
+ * Dérivé du nom plutôt que tiré au hasard : ajouter deux fois le même article
+ * met la ligne à jour au lieu d'en créer une seconde.
  */
-export function mergePreservingChecked(
-  next: GroceryItem[],
-  previous: GroceryItem[],
-): GroceryItem[] {
+export function manualItemId(name: string, unit: string): string {
+  return `${MANUAL_PREFIX}${ingredientKey(name, unit)}`;
+}
+
+export function isManualItemId(id: string): boolean {
+  return id.startsWith(MANUAL_PREFIX);
+}
+
+/**
+ * Fusionne une liste recalculée avec celle qui est en base.
+ *
+ * Deux choses à faire survivre à un recalcul, et le recalcul est intégral à
+ * chaque modification d'un repas :
+ *
+ * 1. **les cases cochées** — sans quoi régénérer un repas le mercredi
+ *    effacerait les courses faites le lundi ;
+ * 2. **les articles ajoutés à la main** — ils ne sortent d'aucune recette, donc
+ *    aucun recalcul ne les reproduit. Sans ce report, poser un repas le samedi
+ *    effacerait le sac poubelle, et l'écrivain supprime tout article absent de
+ *    la liste qu'on lui rend.
+ */
+export function mergeGroceryLists(next: GroceryItem[], previous: GroceryItem[]): GroceryItem[] {
   const checkedIds = new Set(previous.filter((item) => item.checked).map((item) => item.id));
-  return next.map((item) => ({ ...item, checked: checkedIds.has(item.id) }));
+  const nextIds = new Set(next.map((item) => item.id));
+
+  const kept = previous.filter((item) => item.origin === 'manual' && !nextIds.has(item.id));
+
+  return sortGroceryItems([
+    ...next.map((item) => ({ ...item, checked: checkedIds.has(item.id) })),
+    ...kept,
+  ]);
 }

@@ -3,8 +3,10 @@ import { logger } from 'firebase-functions';
 import {
   MAX_BATCH_TOTAL_MINUTES,
   ReplaceBatchRecipeInputSchema,
-  countMealsServing,
+  SERVINGS_PER_MEAL,
+  getBatchPortions,
   getBatchSession,
+  requiredSlowCookTag,
   requiresFreezing,
   type ReplaceBatchRecipeInput,
   type ReplaceBatchRecipeResult,
@@ -96,7 +98,12 @@ async function swapBatchRecipe(
     throw notFound('La recette de ce plat est introuvable. Régénère la semaine.');
   }
 
-  const servedMeals = countMealsServing(plan, input.recipeId);
+  // Les repas que le plat nourrit réellement, tels que la liste de courses les
+  // compte : le remplaçant produit exactement ces portions.
+  const servedMeals = getBatchPortions(plan, input.recipeId) / SERVINGS_PER_MEAL;
+  const others = session.recipes
+    .filter((candidate) => candidate.recipe.id !== input.recipeId)
+    .map((candidate) => candidate.recipe);
   const otherBatchMinutes = session.recipes
     .filter((candidate) => candidate.recipe.id !== input.recipeId)
     .reduce((total, candidate) => total + candidate.recipe.prepMinutes, 0);
@@ -113,6 +120,8 @@ async function swapBatchRecipe(
     servedMeals,
     servedDayIndexes: entry.servedDayIndexes,
     otherBatchMinutes,
+    otherBatchRecipes: others,
+    replacedRecipe: current,
     bannedRecipeNames,
   };
 
@@ -127,8 +136,8 @@ async function swapBatchRecipe(
         otherRecipeNames: [...recipes.values()]
           .filter((recipe) => recipe.id !== input.recipeId)
           .map((recipe) => recipe.name),
+        requiredSlowCook: requiredSlowCookTag(others, current),
         bannedRecipeNames,
-        notes: input.notes,
       },
       { ...context, bannedNames: bannedRecipeNames },
       (attempt) => {

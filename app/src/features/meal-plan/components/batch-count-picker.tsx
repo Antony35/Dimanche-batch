@@ -1,7 +1,8 @@
-import { Pressable, View } from 'react-native';
-import { MAX_BATCH_RECIPES, MIN_BATCH_RECIPES } from '@dimanche-batch/shared';
+import { View } from 'react-native';
+import { MAX_BATCH_RECIPES, MIN_BATCH_RECIPES, distributePortions } from '@dimanche-batch/shared';
 import { Text } from '@/components/ui';
 import { useTheme } from '@/theme';
+import { CountSegments } from './count-segments';
 
 export interface BatchCountPickerProps {
   value: number;
@@ -14,22 +15,16 @@ const CHOICES = Array.from(
 );
 
 /**
- * Nombre de plats à préparer le dimanche.
- *
- * C'est le seul réglage de la génération, et il décide de la longueur de
- * l'après-midi : trois plats font un dimanche court mais une semaine répétitive,
- * six font l'inverse.
- */
-/**
- * Dix repas à couvrir, deux portions chacun : le nombre de plats décide de la
- * fréquence à laquelle chacun revient, et de la longueur du dimanche.
+ * « 8, 6 et 6 portions » : ce que le dimanche va produire, annoncé avant de
+ * générer. C'est la même répartition que celle imposée au modèle, lue au même
+ * endroit du domaine.
  */
 function describeChoice(count: number): string {
-  const mealsPerRecipe = Math.round(10 / count);
-  const repetition =
-    mealsPerRecipe >= 3
-      ? `chaque plat revient environ ${mealsPerRecipe} fois dans la semaine`
-      : `chaque plat revient ${mealsPerRecipe} fois seulement`;
+  const portions = distributePortions(count);
+  const list =
+    portions.length > 1
+      ? `${portions.slice(0, -1).join(', ')} et ${portions[portions.length - 1]}`
+      : String(portions[0] ?? 0);
 
   const sunday =
     count <= 3
@@ -38,11 +33,17 @@ function describeChoice(count: number): string {
         ? 'Dimanche raisonnable'
         : count === 5
           ? 'Dimanche chargé'
-          : 'Dimanche long';
+          : 'Dimanche long, et deux plats ne servent qu’un repas';
 
-  return `${count} plats pour les dix repas du lundi au vendredi : ${repetition}. ${sunday}.`;
+  return `${list} portions pour les dix repas du lundi au vendredi. ${sunday}.`;
 }
 
+/**
+ * Nombre de plats à préparer le dimanche.
+ *
+ * Il décide de la longueur de l'après-midi : trois plats font un dimanche court
+ * mais une semaine répétitive, six font l'inverse.
+ */
 export function BatchCountPicker({ value, onChange }: BatchCountPickerProps) {
   const theme = useTheme();
 
@@ -51,38 +52,7 @@ export function BatchCountPicker({ value, onChange }: BatchCountPickerProps) {
       <Text variant="overline" tone="faint">
         PLATS À PRÉPARER DIMANCHE
       </Text>
-
-      <View style={{ flexDirection: 'row', gap: theme.spacing.sm }}>
-        {CHOICES.map((count) => {
-          const active = count === value;
-          return (
-            <Pressable
-              key={count}
-              accessibilityRole="button"
-              accessibilityState={{ selected: active }}
-              accessibilityLabel={`${count} plats`}
-              onPress={() => onChange(count)}
-              style={{
-                flex: 1,
-                alignItems: 'center',
-                paddingVertical: theme.spacing.md,
-                borderRadius: theme.radius.md,
-                borderWidth: 1,
-                borderColor: active ? theme.colors.accent : theme.colors.line,
-                backgroundColor: active ? theme.colors.accentSoft : 'transparent',
-              }}
-            >
-              <Text
-                variant="bodyStrong"
-                style={{ color: active ? theme.colors.accent : theme.colors.inkSoft }}
-              >
-                {count}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
-
+      <CountSegments choices={CHOICES} value={value} onChange={onChange} unit="plats" />
       <Text variant="caption" tone="faint">
         {describeChoice(value)}
       </Text>

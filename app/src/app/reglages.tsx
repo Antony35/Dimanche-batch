@@ -78,6 +78,18 @@ export default function SettingsScreen() {
         )}
       </Card>
 
+      <Card onPress={() => router.push('/rayons')}>
+        <Text variant="overline" tone="faint">
+          RAYONS DES COURSES
+        </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md }}>
+          <Text tone="soft" style={{ flex: 1 }}>
+            Mes corrections de rayon
+          </Text>
+          <Ionicons name="chevron-forward" size={18} color={theme.colors.inkFaint} />
+        </View>
+      </Card>
+
       <Card onPress={() => router.push('/gouts')}>
         <Text variant="overline" tone="faint">
           GOÛTS DU FOYER

@@ -7,6 +7,7 @@ import {
   RegenerateMealResultSchema,
   ReplaceBatchRecipeResultSchema,
   SetMealResultSchema,
+  SwapMealsResultSchema,
   type GenerateBatchScheduleInput,
   type GenerateBatchScheduleResult,
   type GenerateWeeklyPlanInput,
@@ -19,6 +20,8 @@ import {
   type ReplaceBatchRecipeResult,
   type SetMealInput,
   type SetMealResult,
+  type SwapMealsInput,
+  type SwapMealsResult,
 } from '@dimanche-batch/shared';
 import type { z } from 'zod';
 import { functions } from './firebase';
@@ -74,6 +77,10 @@ export function regenerateMeal(input: RegenerateMealInput): Promise<RegenerateMe
 
 export function setMeal(input: SetMealInput): Promise<SetMealResult> {
   return call('setMeal', SetMealResultSchema, input);
+}
+
+export function swapMeals(input: SwapMealsInput): Promise<SwapMealsResult> {
+  return call('swapMeals', SwapMealsResultSchema, input);
 }
 
 export function replaceBatchRecipe(

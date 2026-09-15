@@ -1,5 +1,5 @@
 import { Type, type Schema } from '@google/genai';
-import { AISLES, MEAL_KINDS, RECIPE_TAGS, UNITS } from '@dimanche-batch/shared';
+import { AISLES, RECIPE_TAGS, UNITS } from '@dimanche-batch/shared';
 
 /**
  * Schéma de réponse imposé à Gemini.
@@ -51,9 +51,16 @@ const recipeSchema: Schema = {
     servings: {
       type: Type.INTEGER,
       description:
-        'Portions produites. Un plat du batch doit en produire deux par repas qu’il sert.',
+        'Portions produites. Un plat du batch en produit exactement deux par repas qu’il sert.',
     },
-    prepMinutes: { type: Type.INTEGER },
+    prepMinutes: {
+      type: Type.INTEGER,
+      description: 'Temps de présence en cuisine, en minutes.',
+    },
+    cookMinutes: {
+      type: Type.INTEGER,
+      description: 'Temps de cuisson sans surveillance, en minutes. 0 s’il n’y en a pas.',
+    },
     tags: {
       type: Type.ARRAY,
       items: { type: Type.STRING, enum: [...RECIPE_TAGS] },
@@ -70,8 +77,26 @@ const recipeSchema: Schema = {
       description: 'Cinq à huit étapes courtes, à l’infinitif.',
     },
   },
-  required: ['slug', 'name', 'servings', 'prepMinutes', 'tags', 'ingredients', 'steps'],
-  propertyOrdering: ['slug', 'name', 'servings', 'prepMinutes', 'tags', 'ingredients', 'steps'],
+  required: [
+    'slug',
+    'name',
+    'servings',
+    'prepMinutes',
+    'cookMinutes',
+    'tags',
+    'ingredients',
+    'steps',
+  ],
+  propertyOrdering: [
+    'slug',
+    'name',
+    'servings',
+    'prepMinutes',
+    'cookMinutes',
+    'tags',
+    'ingredients',
+    'steps',
+  ],
 };
 
 const mealSchema: Schema = {
@@ -79,11 +104,13 @@ const mealSchema: Schema = {
   properties: {
     recipeSlug: {
       type: Type.STRING,
-      nullable: true,
-      description:
-        'Slug d’une recette déclarée dans `recipes`, ou null si le repas est pris dehors.',
+      description: 'Slug d’un plat du batch déclaré dans `recipes`.',
     },
-    kind: { type: Type.STRING, enum: [...MEAL_KINDS] },
+    kind: {
+      type: Type.STRING,
+      enum: ['batch-leftover'],
+      description: 'Toujours "batch-leftover" : une portion d’un plat du batch.',
+    },
     withStarter: { type: Type.BOOLEAN, description: 'Entrée légère servie avant le plat.' },
     withDessert: { type: Type.BOOLEAN, description: 'Dessert simple, typiquement un yaourt.' },
   },
@@ -97,7 +124,7 @@ const daySchema: Schema = {
     dayIndex: {
       type: Type.INTEGER,
       description:
-        'La semaine va du samedi au vendredi : 0 = samedi, 1 = dimanche, 2 = lundi, 6 = vendredi.',
+        'Du lundi au vendredi : 2 = lundi, 3 = mardi, 4 = mercredi, 5 = jeudi, 6 = vendredi.',
     },
     lunch: mealSchema,
     dinner: mealSchema,
@@ -112,18 +139,18 @@ export const WEEKLY_PLAN_RESPONSE_SCHEMA: Schema = {
     recipes: {
       type: Type.ARRAY,
       items: recipeSchema,
-      description: 'Entre 3 et 12 recettes, toutes utilisées dans le batch ou par un repas.',
+      description: 'Les plats du batch, et eux seuls : entre 3 et 6, autant que demandé.',
     },
     batchRecipeSlugs: {
       type: Type.ARRAY,
       items: { type: Type.STRING },
       description:
-        'Slugs des plats préparés le dimanche, dans l’ordre où il faut les cuisiner. Ils nourrissent les dix repas du lundi au vendredi.',
+        'Slugs des plats préparés le dimanche, dans l’ordre où il faut les cuisiner — le plat qui cuit le plus longtemps en premier. Ils nourrissent les dix repas du lundi au vendredi.',
     },
     days: {
       type: Type.ARRAY,
       items: daySchema,
-      description: 'Exactement 7 entrées, du samedi au vendredi, dayIndex 0 à 6 sans doublon.',
+      description: 'Exactement 5 entrées, du lundi au vendredi, dayIndex 2 à 6 sans doublon.',
     },
   },
   required: ['recipes', 'batchRecipeSlugs', 'days'],
@@ -138,31 +165,64 @@ export const SINGLE_RECIPE_RESPONSE_SCHEMA: Schema = {
 };
 
 /**
- * Déroulé entrelacé du dimanche. Des étapes plates, chacune rattachée aux plats
- * qu'elle concerne — aucun objet imbriqué de plus, pour la même raison qu'au
- * début de ce fichier : l'API refuse certaines constructions sans nommer le
- * champ fautif. La couverture de chaque plat est vérifiée côté validateur.
+ * Session de cuisson du dimanche : la découpe de chaque ingrédient, puis les
+ * étapes de cuisson de chaque plat. Deux listes à plat, rattachées au plat par
+ * son identifiant — aucun objet imbriqué de plus, pour la même raison qu'au
+ * début de ce fichier. La couverture de chaque plat est vérifiée côté
+ * validateur.
  */
 export const BATCH_SCHEDULE_RESPONSE_SCHEMA: Schema = {
   type: Type.OBJECT,
   properties: {
-    steps: {
+    cuts: {
       type: Type.ARRAY,
-      description: 'Toutes les étapes du dimanche, dans l’ordre où les faire.',
+      description: 'La façon de couper chaque ingrédient marqué « à couper », plat par plat.',
       items: {
         type: Type.OBJECT,
         properties: {
-          recipeIds: {
-            type: Type.ARRAY,
-            items: { type: Type.STRING },
-            description: 'Identifiants des plats que cette étape concerne — un ou plusieurs.',
+          recipeId: { type: Type.STRING, description: 'Identifiant exact du plat.' },
+          ingredient: {
+            type: Type.STRING,
+            description: 'Nom de l’ingrédient, exactement comme la recette l’écrit.',
           },
+          cut: { type: Type.STRING, description: '« émincé », « en dés », « haché »…' },
+        },
+        required: ['recipeId', 'ingredient', 'cut'],
+        propertyOrdering: ['recipeId', 'ingredient', 'cut'],
+      },
+    },
+    steps: {
+      type: Type.ARRAY,
+      description:
+        'Les étapes de cuisson et de mélange de chaque plat, dans l’ordre, sans aucune découpe ni quantité.',
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          recipeId: { type: Type.STRING, description: 'Identifiant exact du plat.' },
           text: { type: Type.STRING, description: 'L’étape, courte, à l’infinitif.' },
         },
-        required: ['recipeIds', 'text'],
-        propertyOrdering: ['recipeIds', 'text'],
+        required: ['recipeId', 'text'],
+        propertyOrdering: ['recipeId', 'text'],
+      },
+    },
+    timings: {
+      type: Type.ARRAY,
+      description:
+        'Pour chaque plat, une entrée : son temps de cuisson sans surveillance, qui concorde avec les durées écrites dans ses étapes.',
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          recipeId: { type: Type.STRING, description: 'Identifiant exact du plat.' },
+          cookMinutes: {
+            type: Type.INTEGER,
+            description: 'Minutes de cuisson sans surveillance ; 0 si le plat ne cuit jamais seul.',
+          },
+        },
+        required: ['recipeId', 'cookMinutes'],
+        propertyOrdering: ['recipeId', 'cookMinutes'],
       },
     },
   },
-  required: ['steps'],
+  required: ['cuts', 'steps', 'timings'],
+  propertyOrdering: ['cuts', 'steps', 'timings'],
 };

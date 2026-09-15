@@ -34,11 +34,26 @@ const parsed = EnvSchema.safeParse({
 if (!parsed.success) {
   const missing = parsed.error.issues.map((issue) => issue.path.join('.')).join(', ');
   throw new Error(
-    `Configuration Firebase incomplète (${missing}). Copie app/.env.example vers app/.env et renseigne les valeurs du projet.`,
+    `Configuration Firebase incomplète (${missing}). En développement, renseigne app/.env.development avec les valeurs du projet dimanche-batch-dev — voir app/.env.example.`,
   );
 }
 
 export const env: Env = parsed.data;
 
+/** Le seul projet qui porte les vraies données du foyer. */
+const PROD_PROJECT_ID = 'dimanche-batch';
+
+/**
+ * Vrai si l'app parle à la base de production.
+ *
+ * Tout le reste est une base de test, et l'app le dit sur chaque écran : se
+ * croire en test alors qu'on écrit en prod est exactement l'erreur que la
+ * séparation des projets doit empêcher.
+ */
+export const isProduction = !env.useEmulators && env.firebaseProjectId === PROD_PROJECT_ID;
+
 /** Hôte des émulateurs vu depuis l'appareil : `localhost` ne sort pas du téléphone. */
 export const EMULATOR_HOST = process.env.EXPO_PUBLIC_EMULATOR_HOST ?? '10.0.2.2';
+
+/** Ce que le bandeau de test affiche : la base réellement visée. */
+export const databaseLabel = env.useEmulators ? 'ÉMULATEURS' : env.firebaseProjectId.toUpperCase();

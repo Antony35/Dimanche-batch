@@ -39,6 +39,7 @@ export async function generateWeeklyPlanFromGemini(
     validate: (plan) =>
       validateGeneratedPlan(plan, {
         expectedBatchCount: input.batchRecipeCount,
+        expectedVegetarianCount: input.vegetarianCount,
         bannedNames: input.bannedRecipeNames,
       }),
     describe: (plan) => ({ recettes: plan.recipes.length }),

@@ -23,11 +23,14 @@ import {
   GeneratedMealReplacementSchema,
   GeneratedPlanSchema,
   addDays,
+  distributePortions,
   getUpcomingWeekId,
+  miseEnPlaceGroup,
+  requiredSlowCookTag,
   validateGeneratedPlan,
-  GeneratedBatchScheduleSchema,
+  GeneratedCookingSessionSchema,
   validateBatchRecipeReplacement,
-  validateBatchSchedule,
+  validateBatchSession,
   validateMealReplacement,
 } from '@dimanche-batch/shared';
 import { GEMINI_MODEL } from '../src/config';
@@ -54,6 +57,11 @@ const model = args.find((arg) => !CHAINS.has(arg)) ?? GEMINI_MODEL;
 const weekStart = getUpcomingWeekId();
 /** Ce que demanderait un foyer par défaut. */
 const BATCH_RECIPE_COUNT = 4;
+/**
+ * Plats végétariens demandés. Non nul à dessein : c'est la consigne que le
+ * modèle a le plus de chances de rater, et un compte à zéro ne l'exercerait pas.
+ */
+const VEGETARIAN_COUNT = 2;
 /**
  * Plats bannis envoyés au modèle. La sonde ne peut pas prouver qu'il les
  * respectera toujours, mais elle prouve que la section part, et un retour qui
@@ -121,6 +129,7 @@ async function probePlan(): Promise<void> {
   const prompt = buildPlanPrompt({
     weekStart,
     batchRecipeCount: BATCH_RECIPE_COUNT,
+    vegetarianCount: VEGETARIAN_COUNT,
     recentRecipeNames: ['Gratin de courgettes', 'Blanquette de veau'],
     favoriteRecipeNames: ['Chili sin carne'],
     bannedRecipeNames: BANNED_RECIPE_NAMES,
@@ -147,6 +156,7 @@ async function probePlan(): Promise<void> {
 
   const violations = validateGeneratedPlan(parsed.data, {
     expectedBatchCount: BATCH_RECIPE_COUNT,
+    expectedVegetarianCount: VEGETARIAN_COUNT,
     bannedNames: BANNED_RECIPE_NAMES,
   });
   if (violations.length > 0) {
@@ -159,29 +169,24 @@ async function probePlan(): Promise<void> {
   }
 
   console.log('✅ Contraintes de la semaine type respectées\n');
-  console.log('   BATCH DU DIMANCHE');
+  console.log(
+    `   BATCH DU DIMANCHE — portions attendues : ${distributePortions(BATCH_RECIPE_COUNT).join(', ')}`,
+  );
   for (const slug of parsed.data.batchRecipeSlugs) {
     const recipe = parsed.data.recipes.find((candidate) => candidate.slug === slug);
     if (recipe) {
       console.log(
-        `   · ${recipe.name} — ${recipe.servings} portions, ${recipe.prepMinutes} min [${recipe.tags.join(', ')}]`,
+        `   · ${recipe.name} — ${recipe.servings} portions, ${recipe.prepMinutes} min de présence + ${recipe.cookMinutes} min de cuisson [${recipe.tags.join(', ')}]`,
       );
     }
-  }
-  console.log('\n   CUISINÉ LE JOUR MÊME');
-  for (const recipe of parsed.data.recipes) {
-    if (parsed.data.batchRecipeSlugs.includes(recipe.slug)) continue;
-    console.log(
-      `   · ${recipe.name} — ${recipe.servings} portions, ${recipe.prepMinutes} min [${recipe.tags.join(', ')}]`,
-    );
   }
 }
 
 async function probeMeal(): Promise<void> {
-  // Un mardi. Sous la semaine du samedi, mardi vaut 3 — la sonde a longtemps
-  // testé le jour 1, c'est-à-dire le dimanche, donc le cas non contraint : elle
-  // affirmait vérifier les contraintes de semaine sans jamais les exercer.
-  const dayIndex = 3;
+  // Un samedi, en one-pot : on ne cuisine plus que le week-end, et le style
+  // one-pot est le seul qui porte des contraintes vérifiables.
+  const dayIndex = 0;
+  const style = 'one-pot' as const;
   const date = addDays(weekStart, dayIndex);
   console.log('\n── regenerateMeal ──');
 
@@ -192,9 +197,10 @@ async function probeMeal(): Promise<void> {
           {
             text: buildMealReplacementPrompt({
               dayIndex,
+              style,
               slot: 'dinner',
               date,
-              currentRecipeName: 'Soupe de poireaux',
+              currentRecipeName: null,
               otherRecipeNames: ['Curry de lentilles corail', 'Chili sin carne'],
               bannedRecipeNames: BANNED_RECIPE_NAMES,
             }),
@@ -220,6 +226,7 @@ async function probeMeal(): Promise<void> {
   console.log(`✅ Schéma : « ${recipe.name} », ${recipe.ingredients.length} ingrédients`);
 
   const violations = validateMealReplacement(recipe, dayIndex, {
+    style,
     bannedNames: BANNED_RECIPE_NAMES,
   });
   if (violations.length > 0) {
@@ -253,10 +260,22 @@ function reportSchemaFailure(issues: Array<{ path: PropertyKey[]; message: strin
 async function probeBatchRecipe(): Promise<void> {
   console.log('\n── replaceBatchRecipe ──');
 
+  // Le plat remplacé est le seul mijoté : le remplaçant doit reprendre ce rôle,
+  // la contrainte la plus récente et la moins éprouvée de cette chaîne.
+  const otherBatchRecipes = [
+    { name: 'Chili sin carne', tags: ['congelable' as const], cookMinutes: 0 },
+  ];
+  const replacedRecipe = {
+    name: 'Curry de lentilles corail',
+    tags: ['mijote' as const],
+    cookMinutes: 90,
+  };
   const context = {
     servedMeals: 4,
     servedDayIndexes: [5, 6],
     otherBatchMinutes: 120,
+    otherBatchRecipes,
+    replacedRecipe,
     bannedNames: BANNED_RECIPE_NAMES,
   };
 
@@ -271,6 +290,7 @@ async function probeBatchRecipe(): Promise<void> {
               needsFreezing: true,
               otherBatchMinutes: context.otherBatchMinutes,
               otherRecipeNames: ['Chili sin carne'],
+              requiredSlowCook: requiredSlowCookTag(otherBatchRecipes, replacedRecipe),
               bannedRecipeNames: BANNED_RECIPE_NAMES,
             }),
           },
@@ -311,50 +331,65 @@ async function probeBatchRecipe(): Promise<void> {
 }
 
 /**
- * Déroulé entrelacé : nouveau `responseSchema`, donc à exercer avant tout
- * déploiement. Le risque propre à cette chaîne est un plat perdu en route.
+ * Session de cuisson : nouveau `responseSchema`, donc à exercer avant tout
+ * déploiement. Les étapes mêlent volontairement découpe et cuisson —
+ * « Émincer l'oignon et le faire revenir » — : c'est exactement ce que le
+ * modèle doit savoir réécrire.
  */
 async function probeSchedule(): Promise<void> {
   console.log('\n── generateBatchSchedule ──');
 
   const recipes = [
     {
+      id: 'bourguignon',
+      name: 'Bœuf bourguignon',
+      cookMinutes: 150,
+      ingredients: [
+        { name: 'bœuf', qty: 800, unit: 'g' as const, aisle: 'boucherie' as const },
+        { name: 'carotte', qty: 4, unit: 'piece' as const, aisle: 'fruits-legumes' as const },
+        { name: 'oignon', qty: 2, unit: 'piece' as const, aisle: 'fruits-legumes' as const },
+        { name: 'vin rouge', qty: 50, unit: 'cl' as const, aisle: 'boissons' as const },
+      ],
+      steps: [
+        'Couper le bœuf en cubes et émincer les oignons.',
+        'Faire dorer la viande dans une cocotte.',
+        'Éplucher les carottes, les couper en rondelles et les ajouter.',
+        'Verser le vin, couvrir et laisser mijoter 2 h 30.',
+      ],
+    },
+    {
       id: 'chili-sin-carne',
       name: 'Chili sin carne',
-      prepMinutes: 60,
-      steps: [
-        'Émincer l’oignon et le poivron.',
-        'Faire revenir.',
-        'Ajouter haricots et tomates.',
-        'Mijoter 40 minutes.',
+      cookMinutes: 40,
+      ingredients: [
+        { name: 'oignon', qty: 1, unit: 'piece' as const, aisle: 'fruits-legumes' as const },
+        { name: 'poivron', qty: 2, unit: 'piece' as const, aisle: 'fruits-legumes' as const },
+        { name: 'haricot rouge', qty: 400, unit: 'g' as const, aisle: 'epicerie' as const },
+        { name: 'huile d’olive', qty: 2, unit: 'cas' as const, aisle: 'epicerie' as const },
       ],
-    },
-    {
-      id: 'curry-lentilles',
-      name: 'Curry de lentilles',
-      prepMinutes: 45,
       steps: [
-        'Émincer l’oignon.',
-        'Faire revenir avec les épices.',
-        'Ajouter lentilles et lait de coco.',
-        'Cuire 25 minutes.',
-      ],
-    },
-    {
-      id: 'gratin-courge',
-      name: 'Gratin de courge',
-      prepMinutes: 70,
-      steps: [
-        'Préchauffer le four à 180 °C.',
-        'Éplucher et trancher la courge.',
-        'Monter le gratin.',
-        'Enfourner 50 minutes.',
+        'Émincer l’oignon et le faire revenir dans l’huile.',
+        'Couper le poivron en dés et l’ajouter.',
+        'Ajouter les haricots et les tomates, mijoter 40 minutes.',
       ],
     },
   ];
 
+  const prompt = buildBatchSchedulePrompt({
+    recipes: recipes.map((recipe) => ({
+      id: recipe.id,
+      name: recipe.name,
+      cookMinutes: recipe.cookMinutes,
+      ingredients: recipe.ingredients.map((ingredient) => ({
+        name: ingredient.name,
+        toCut: miseEnPlaceGroup(ingredient.name, ingredient.aisle) !== null,
+      })),
+      steps: recipe.steps,
+    })),
+  });
+
   const data = await callGemini({
-    contents: [{ parts: [{ text: buildBatchSchedulePrompt({ recipes }) }] }],
+    contents: [{ parts: [{ text: prompt }] }],
     systemInstruction: { parts: [{ text: BATCH_SCHEDULE_SYSTEM_INSTRUCTION }] },
     generationConfig: {
       responseMimeType: 'application/json',
@@ -363,17 +398,16 @@ async function probeSchedule(): Promise<void> {
     },
   });
 
-  const parsed = GeneratedBatchScheduleSchema.safeParse(data);
+  const parsed = GeneratedCookingSessionSchema.safeParse(data);
   if (!parsed.success) {
     reportSchemaFailure(parsed.error.issues);
     process.exit(1);
   }
-  console.log(`✅ Schéma : ${parsed.data.steps.length} étapes`);
-
-  const violations = validateBatchSchedule(
-    parsed.data,
-    recipes.map((recipe) => recipe.id),
+  console.log(
+    `✅ Schéma : ${parsed.data.cuts.length} découpes, ${parsed.data.steps.length} étapes, ${parsed.data.timings.length} temps`,
   );
+
+  const violations = validateBatchSession(parsed.data, recipes);
   if (violations.length > 0) {
     console.error(
       `⚠️  Contraintes : ${violations.length} violation(s) — la reprise serait déclenchée`,
@@ -383,9 +417,16 @@ async function probeSchedule(): Promise<void> {
     process.exit(1);
   }
 
-  console.log('✅ Chaque plat apparaît dans le déroulé\n');
+  console.log('✅ Chaque plat a ses étapes, aucune ne redemande de couper\n');
+  console.log('   DÉCOUPES');
+  for (const cut of parsed.data.cuts)
+    console.log(`   · [${cut.recipeId}] ${cut.ingredient} : ${cut.cut}`);
+  console.log('\n   TEMPS DE CUISSON SEULE');
+  for (const timing of parsed.data.timings)
+    console.log(`   · [${timing.recipeId}] ${timing.cookMinutes} min`);
+  console.log('\n   ÉTAPES');
   parsed.data.steps.forEach((step, index) => {
-    console.log(`   ${String(index + 1).padStart(2)}. [${step.recipeIds.join(', ')}] ${step.text}`);
+    console.log(`   ${String(index + 1).padStart(2)}. [${step.recipeId}] ${step.text}`);
   });
 }
 

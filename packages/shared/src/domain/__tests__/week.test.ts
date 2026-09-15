@@ -2,12 +2,17 @@ import { describe, expect, it } from 'vitest';
 import {
   BATCH_DAY_INDEX,
   addDays,
+  formatDate,
+  formatDateLong,
+  formatWeekRange,
+  getComposableWeekId,
   getCurrentWeekId,
   getDayName,
   getDayNameForDate,
   getUpcomingWeekId,
   getWeekDates,
   getWeekId,
+  isComposableWeek,
   isWeekday,
   parseIsoDate,
   requiresFreezing,
@@ -165,5 +170,65 @@ describe('conversion date <-> ISO', () => {
   it('franchit correctement les bornes de mois et d’année', () => {
     expect(addDays('2026-09-30', 1)).toBe('2026-10-01');
     expect(addDays('2026-12-31', 1)).toBe('2027-01-01');
+  });
+});
+
+/**
+ * Le format ISO reste celui du stockage, mais il s'affichait tel quel à six
+ * endroits — jusqu'à « DIMANCHE 2026-09-20 » sur l'écran de préparation.
+ */
+describe('dates en français', () => {
+  it('rend une date numérique lisible', () => {
+    expect(formatDate('2026-09-14')).toBe('14/09/2026');
+    expect(formatDate('2026-01-02')).toBe('02/01/2026');
+  });
+
+  it('rend une date longue avec son jour de la semaine', () => {
+    expect(formatDateLong('2026-09-12')).toBe('samedi 12 septembre');
+    expect(formatDateLong('2026-08-01')).toBe('samedi 1 août');
+  });
+
+  it('ne répète le mois que s’il change', () => {
+    expect(formatWeekRange('2026-09-12')).toBe('du 12 au 18 septembre');
+    expect(formatWeekRange('2026-09-26')).toBe('du 26 septembre au 2 octobre');
+  });
+
+  it('ajoute les années au passage du 31 décembre', () => {
+    expect(formatWeekRange('2026-12-26')).toBe('du 26 décembre 2026 au 1 janvier 2027');
+  });
+
+  it('couvre une semaine entière, du samedi au vendredi', () => {
+    // La semaine du foyer a sept jours : le dernier est le vendredi.
+    expect(formatWeekRange('2026-09-12')).toContain('18');
+    expect(getDayNameForDate(addDays('2026-09-12', 6))).toBe('vendredi');
+  });
+});
+
+/**
+ * On ne compose que la semaine prochaine : jamais une semaine entamée, et pas
+ * plus loin. Un oubli du vendredi ne coûte pas la semaine suivante : le samedi,
+ * elle commence dans sept jours.
+ */
+describe('semaine composable', () => {
+  it('propose la semaine suivante, jamais la semaine en cours', () => {
+    // Mardi 15 septembre : la semaine en cours a commencé samedi 12.
+    expect(getComposableWeekId('2026-09-15')).toBe('2026-09-19');
+    expect(isComposableWeek('2026-09-12', '2026-09-15')).toBe(false);
+  });
+
+  it('laisse composer la semaine suivante le vendredi, qui commence demain', () => {
+    expect(isComposableWeek('2026-09-19', '2026-09-18')).toBe(true);
+  });
+
+  it('refuse la semaine qui vient de commencer le samedi et le dimanche', () => {
+    for (const today of ['2026-09-19', '2026-09-20']) {
+      expect(isComposableWeek('2026-09-19', today)).toBe(false);
+      expect(isComposableWeek('2026-09-26', today)).toBe(true);
+    }
+  });
+
+  it('refuse la semaine d’après, et une date qui n’est pas un samedi', () => {
+    expect(isComposableWeek('2026-09-26', '2026-09-15')).toBe(false);
+    expect(isComposableWeek('2026-09-21', '2026-09-15')).toBe(false);
   });
 });

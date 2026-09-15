@@ -1,7 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Link, useRouter } from 'expo-router';
 import { Pressable, View } from 'react-native';
-import { type Recipe, type WeeklyPlan } from '@dimanche-batch/shared';
+import { formatWeekRange, type Recipe, type WeeklyPlan } from '@dimanche-batch/shared';
 import { Card, EmptyState, ErrorState, LoadingState, Screen, Text } from '@/components/ui';
 import { useWeekHistory } from '@/features/history/api/use-week-history';
 import { useHousehold } from '@/features/household/api/use-household';
@@ -80,7 +80,7 @@ function WeekCard({ week, recipesById }: { week: WeeklyPlan; recipesById: Map<st
 
   return (
     <Card>
-      <Text variant="heading">Semaine du {week.weekStart}</Text>
+      <Text variant="heading">Semaine {formatWeekRange(week.weekStart)}</Text>
       <Text variant="caption" tone="faint">
         {names.length} recette{names.length > 1 ? 's' : ''}
         {week.model ? ` · ${week.model}` : ''}

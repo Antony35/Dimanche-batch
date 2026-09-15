@@ -1,44 +1,46 @@
 import {
-  BatchScheduleSchema,
+  CookingSessionSchema,
   paths,
-  type BatchSchedule,
-  type GeneratedBatchSchedule,
+  type CookingSession,
+  type GeneratedCookingSession,
 } from '@dimanche-batch/shared';
 import { PROMPT_VERSION } from '../gemini/prompt';
 import { db } from './firestore';
 
-/** Déroulé enregistré pour la semaine, ou `null` s'il n'y en a pas de lisible. */
-export async function readBatchSchedule(
+/** Session de cuisson enregistrée pour la semaine, ou `null` s'il n'y en a pas de lisible. */
+export async function readCookingSession(
   householdId: string,
   weekId: string,
-): Promise<BatchSchedule | null> {
-  const snapshot = await db.doc(paths.batchSchedule(householdId, weekId)).get();
+): Promise<CookingSession | null> {
+  const snapshot = await db.doc(paths.batchSession(householdId, weekId)).get();
   if (!snapshot.exists) return null;
-  const parsed = BatchScheduleSchema.safeParse({ id: snapshot.id, ...snapshot.data() });
+  const parsed = CookingSessionSchema.safeParse({ id: snapshot.id, ...snapshot.data() });
   return parsed.success ? parsed.data : null;
 }
 
-export interface WriteBatchScheduleParams {
+export interface WriteCookingSessionParams {
   householdId: string;
   weekId: string;
   sourceRecipeIds: string[];
-  schedule: GeneratedBatchSchedule;
+  session: GeneratedCookingSession;
   generatedBy: string;
   model: string;
 }
 
 /**
- * Écrit le déroulé, typé par son schéma : un champ ajouté au schéma sans être
+ * Écrit la session, typée par son schéma : un champ ajouté au schéma sans être
  * écrit ici devient une erreur de compilation, pas un document incomplet.
  */
-export async function writeBatchSchedule(params: WriteBatchScheduleParams): Promise<void> {
-  const document: Omit<BatchSchedule, 'id'> = {
+export async function writeCookingSession(params: WriteCookingSessionParams): Promise<void> {
+  const document: Omit<CookingSession, 'id'> = {
     sourceRecipeIds: params.sourceRecipeIds,
-    steps: params.schedule.steps,
+    cuts: params.session.cuts,
+    steps: params.session.steps,
+    timings: params.session.timings,
     generatedAt: Date.now(),
     generatedBy: params.generatedBy,
     model: params.model,
     promptVersion: PROMPT_VERSION,
   };
-  await db.doc(paths.batchSchedule(params.householdId, params.weekId)).set(document);
+  await db.doc(paths.batchSession(params.householdId, params.weekId)).set(document);
 }

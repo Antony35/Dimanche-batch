@@ -1,13 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
   BATCH_SCHEDULE_SYSTEM_INSTRUCTION,
-  buildBatchSchedulePrompt,
   MEAL_REPLACEMENT_SYSTEM_INSTRUCTION,
   PROMPT_VERSION,
   SYSTEM_INSTRUCTION,
+  buildBatchRecipePrompt,
+  buildBatchSchedulePrompt,
   buildMealReplacementPrompt,
   buildPlanPrompt,
   buildRetryPrompt,
+  type PlanPromptInput,
 } from '../prompt';
 
 /**
@@ -16,43 +18,67 @@ import {
  * ce qu'il contient — et ce qu'il ne doit jamais demander en même temps.
  */
 
+const base: PlanPromptInput = {
+  weekStart: '2026-09-19',
+  batchRecipeCount: 3,
+  vegetarianCount: 0,
+  recentRecipeNames: [],
+};
+
 describe('buildPlanPrompt', () => {
   it('dit combien de plats le foyer veut préparer', () => {
-    const prompt = buildPlanPrompt({
-      weekStart: '2026-09-12',
-      batchRecipeCount: 5,
-      recentRecipeNames: [],
-    });
-    expect(prompt).toContain('exactement 5 plats');
+    expect(buildPlanPrompt({ ...base, batchRecipeCount: 5 })).toContain('exactement 5 plats');
   });
 
-  it('nomme la semaine visée, du samedi au vendredi', () => {
-    const prompt = buildPlanPrompt({
-      weekStart: '2026-09-12',
-      batchRecipeCount: 3,
-      recentRecipeNames: [],
-    });
-    expect(prompt).toContain('2026-09-12');
-    expect(prompt).toContain('2026-09-18');
-    expect(prompt).toContain('samedi');
+  /**
+   * Le modèle ne calcule plus les portions : il les reçoit. C'est ce qui a mis
+   * fin aux plats à 7 portions, donc aux demi-assiettes.
+   */
+  it('impose la répartition des repas et les portions de chaque plat', () => {
+    const three = buildPlanPrompt(base);
+    expect(three).toContain('un plat servi à 4 repas (8 portions)');
+    expect(three).toContain('deux plats servis à 3 repas (6 portions)');
+
+    const six = buildPlanPrompt({ ...base, batchRecipeCount: 6 });
+    expect(six).toContain('quatre plats servis à 2 repas (4 portions)');
+    expect(six).toContain('deux plats servis à 1 repas (2 portions)');
+  });
+
+  it('nomme la semaine en français', () => {
+    expect(buildPlanPrompt(base)).toContain('du 19 au 25 septembre');
+  });
+
+  it('demande exactement le nombre de plats végétariens choisi', () => {
+    const prompt = buildPlanPrompt({ ...base, vegetarianCount: 2 });
+    expect(prompt).toContain('Exactement 2 de ces plats sont végétariens');
+  });
+
+  it('dit qu’aucun compte végétarien n’est imposé quand le foyer n’en veut pas', () => {
+    const prompt = buildPlanPrompt(base);
+    expect(prompt).not.toContain('Exactement 0');
+    expect(prompt).toContain('aucun nombre de plats végétariens');
+  });
+
+  it('envoie les légumes du mois de la semaine visée', () => {
+    const september = buildPlanPrompt(base);
+    expect(september).toContain('Légumes de saison');
+    expect(september).toContain('courge butternut');
+
+    const january = buildPlanPrompt({ ...base, weekStart: '2027-01-09' });
+    expect(january).toContain('topinambour');
+    expect(january).not.toContain('tomate,');
   });
 
   it('n’encombre pas le prompt de sections vides', () => {
-    const prompt = buildPlanPrompt({
-      weekStart: '2026-09-12',
-      batchRecipeCount: 3,
-      recentRecipeNames: [],
-    });
+    const prompt = buildPlanPrompt(base);
     expect(prompt).not.toContain('favori');
-    expect(prompt).not.toContain('n’en veut plus');
-    expect(prompt).not.toContain('Contraintes particulières');
+    expect(prompt).not.toContain("n'en veut plus");
+    expect(prompt).not.toContain('servis lors des dernières semaines');
   });
 
   it('interdit les plats bannis sans réserve, contrairement aux plats récents', () => {
     const prompt = buildPlanPrompt({
-      weekStart: '2026-09-12',
-      batchRecipeCount: 3,
-      recentRecipeNames: [],
+      ...base,
       bannedRecipeNames: ['Gratin de courgettes', 'Bœuf carottes'],
     });
     expect(prompt).toContain('sous aucun prétexte');
@@ -62,8 +88,7 @@ describe('buildPlanPrompt', () => {
 
   it('liste les plats récents comme interdits', () => {
     const prompt = buildPlanPrompt({
-      weekStart: '2026-09-12',
-      batchRecipeCount: 3,
+      ...base,
       recentRecipeNames: ['Curry de lentilles', 'Soupe de poireaux'],
     });
     expect(prompt).toContain('ne les repropose pas');
@@ -72,62 +97,46 @@ describe('buildPlanPrompt', () => {
   });
 
   it('propose les favoris sans les imposer, et un seul au plus', () => {
-    const prompt = buildPlanPrompt({
-      weekStart: '2026-09-12',
-      batchRecipeCount: 3,
-      recentRecipeNames: [],
-      favoriteRecipeNames: ['Chili sin carne'],
-    });
+    const prompt = buildPlanPrompt({ ...base, favoriteRecipeNames: ['Chili sin carne'] });
     expect(prompt).toContain('favori');
     expect(prompt).toContain('au maximum');
     expect(prompt).toContain('- Chili sin carne');
   });
-
-  it('reprend les notes de l’utilisateur, débarrassées des espaces', () => {
-    const prompt = buildPlanPrompt({
-      weekStart: '2026-09-12',
-      batchRecipeCount: 3,
-      recentRecipeNames: [],
-      notes: '  pas de porc  ',
-    });
-    expect(prompt).toContain('Contraintes particulières');
-    expect(prompt).toContain('pas de porc');
-    expect(prompt).not.toContain('  pas de porc  ');
-  });
-
-  it('ignore des notes vides', () => {
-    const prompt = buildPlanPrompt({
-      weekStart: '2026-09-12',
-      batchRecipeCount: 3,
-      recentRecipeNames: [],
-      notes: '   ',
-    });
-    expect(prompt).not.toContain('Contraintes particulières');
-  });
 });
 
 describe('buildMealReplacementPrompt', () => {
-  it('situe le repas dans la semaine et nomme le créneau', () => {
+  it('situe le repas le samedi ou le dimanche et nomme le créneau', () => {
     const prompt = buildMealReplacementPrompt({
-      dayIndex: 3,
+      dayIndex: 0,
       slot: 'dinner',
-      date: '2026-09-15',
-      currentRecipeName: 'Soupe de poireaux',
+      date: '2026-09-19',
+      currentRecipeName: null,
       otherRecipeNames: ['Curry de lentilles'],
     });
 
     expect(prompt).toContain('soir');
-    expect(prompt).toContain('mardi');
-    expect(prompt).toContain('dayIndex 3');
+    expect(prompt).toContain('samedi');
+    expect(prompt).toContain('deux portions');
+  });
+
+  it('impose la casserole unique et le temps d’un one-pot quand il est demandé', () => {
+    const prompt = buildMealReplacementPrompt({
+      dayIndex: 1,
+      slot: 'lunch',
+      date: '2026-09-20',
+      style: 'one-pot',
+      currentRecipeName: null,
+      otherRecipeNames: [],
+    });
+    expect(prompt).toContain('one-pot');
+    expect(prompt).toContain('45 minutes');
   });
 
   it('interdit aussi les plats bannis lors d’un remplacement', () => {
-    // Le geste courant : bannir un plat depuis le planning, puis le remplacer.
-    // Sans cette section, le modèle pourrait le reproposer aussitôt.
     const prompt = buildMealReplacementPrompt({
-      dayIndex: 3,
+      dayIndex: 0,
       slot: 'lunch',
-      date: '2026-09-15',
+      date: '2026-09-19',
       currentRecipeName: 'Gratin de courgettes',
       otherRecipeNames: [],
       bannedRecipeNames: ['Gratin de courgettes'],
@@ -139,9 +148,9 @@ describe('buildMealReplacementPrompt', () => {
 
   it('exclut le plat en place et ceux du reste de la semaine', () => {
     const prompt = buildMealReplacementPrompt({
-      dayIndex: 3,
+      dayIndex: 1,
       slot: 'lunch',
-      date: '2026-09-15',
+      date: '2026-09-20',
       currentRecipeName: 'Soupe de poireaux',
       otherRecipeNames: ['Curry de lentilles'],
     });
@@ -151,31 +160,42 @@ describe('buildMealReplacementPrompt', () => {
     expect(prompt).toContain('- Curry de lentilles');
     expect(prompt).toContain('doublon');
   });
+});
 
-  it('tient sans plat en place, quand le créneau était pris dehors', () => {
-    const prompt = buildMealReplacementPrompt({
-      dayIndex: 0,
-      slot: 'dinner',
-      date: '2026-09-12',
-      currentRecipeName: null,
-      otherRecipeNames: [],
-    });
+describe('buildBatchRecipePrompt', () => {
+  const input = {
+    currentRecipeName: 'Curry',
+    servedMeals: 3,
+    needsFreezing: false,
+    otherBatchMinutes: 100,
+    otherRecipeNames: ['Chili'],
+  };
 
-    expect(prompt).toContain('samedi');
-    expect(prompt).not.toContain('actuellement occupé');
+  it('demande exactement les portions des repas repris', () => {
+    expect(buildBatchRecipePrompt(input)).toContain('exactement 6 portions');
+  });
+
+  it('exige un plat qui cuit seul quand le plat remplacé était le seul', () => {
+    expect(buildBatchRecipePrompt({ ...input, requiredSlowCook: 'either' })).toContain(
+      '« mijote » ou « four-lent »',
+    );
+    expect(buildBatchRecipePrompt({ ...input, requiredSlowCook: 'four-lent' })).toContain(
+      'un plat « four-lent »',
+    );
+    expect(buildBatchRecipePrompt(input)).not.toContain('cuisait seul');
   });
 });
 
 describe('buildRetryPrompt', () => {
   it('reprend la demande, les violations et la proposition refusée', () => {
     const prompt = buildRetryPrompt(
-      'Établis le plan de la semaine.',
-      [{ code: 'weekday-not-one-pot', message: 'jour 2 : « Gratin » doit être one-pot.' }],
+      'Compose le batch.',
+      [{ code: 'batch-servings', message: '« Curry » doit produire exactement 8 portions.' }],
       { recipes: [] },
     );
 
-    expect(prompt).toContain('Établis le plan de la semaine.');
-    expect(prompt).toContain('- jour 2 : « Gratin » doit être one-pot.');
+    expect(prompt).toContain('Compose le batch.');
+    expect(prompt).toContain('- « Curry » doit produire exactement 8 portions.');
     expect(prompt).toContain('{"recipes":[]}');
     expect(prompt).toContain('corrige ces points');
   });
@@ -185,81 +205,103 @@ describe('instructions système', () => {
   it('partagent les exigences de recette sans les recopier', () => {
     // Deux textes qui doivent dire la même chose finissent par diverger : le
     // bloc est partagé, ce test le vérifie plutôt que de l'espérer.
-    for (const bloc of ['INGRÉDIENTS', 'ÉTAPES', 'CUISINE']) {
+    for (const bloc of ['INGRÉDIENTS', 'ÉTAPES', 'CUISINE', 'ÉTIQUETTES', 'TEMPS']) {
       expect(SYSTEM_INSTRUCTION).toContain(bloc);
       expect(MEAL_REPLACEMENT_SYSTEM_INSTRUCTION).toContain(bloc);
     }
   });
 
-  it('n’imposent la structure de la semaine que là où elle a un sens', () => {
-    expect(SYSTEM_INSTRUCTION).toContain('SÉMANTIQUE DES REPAS');
-    expect(MEAL_REPLACEMENT_SYSTEM_INSTRUCTION).not.toContain('SÉMANTIQUE DES REPAS');
-    expect(MEAL_REPLACEMENT_SYSTEM_INSTRUCTION).toContain('une seule recette');
-  });
-
-  it('ne demandent le one-pot que pour un remplacement', () => {
-    // Composer la semaine n'a plus besoin de plats rapides : tout est cuisiné
-    // le dimanche. Seul un repas remplacé en pleine semaine se cuisine le soir
-    // même, et c'est là, et seulement là, que la contrainte garde un sens.
-    expect(SYSTEM_INSTRUCTION).not.toContain('one-pot');
-    expect(MEAL_REPLACEMENT_SYSTEM_INSTRUCTION).toContain('one-pot');
-  });
-
-  it('dit que la semaine ne se cuisine pas', () => {
+  it('ne décrivent au modèle que le lundi au vendredi', () => {
+    // Le samedi et le dimanche sont décidés par le foyer après la génération.
     expect(SYSTEM_INSTRUCTION).toContain('ON NE CUISINE PAS');
-    expect(SYSTEM_INSTRUCTION).toContain('SAMEDI au VENDREDI');
+    expect(SYSTEM_INSTRUCTION).toContain('2 (lundi)');
+    expect(SYSTEM_INSTRUCTION).toContain('6 (vendredi)');
+    expect(SYSTEM_INSTRUCTION).toContain('ne te concernent pas');
+    expect(SYSTEM_INSTRUCTION).not.toContain('"cooked"');
   });
 
-  /**
-   * Régression : l'instruction de remplacement a longtemps dit « du lundi au
-   * vendredi (dayIndex 0 à 4) », l'ancienne numérotation d'avant la semaine du
-   * samedi. Le modèle recevait donc samedi et dimanche comme jours contraints,
-   * et jeudi et vendredi comme libres, pendant que `isWeekday` disait 2 à 6.
-   * La reprise de contenu masquait l'écart en gâchant une génération.
-   */
-  it('donnent au modèle la même numérotation des jours que le domaine', () => {
-    for (const instruction of [SYSTEM_INSTRUCTION, MEAL_REPLACEMENT_SYSTEM_INSTRUCTION]) {
-      expect(instruction).toContain('0 samedi');
-      expect(instruction).toContain('6 vendredi');
-      expect(instruction).not.toContain('dayIndex 0 à 4');
-    }
-    // Les jours contraints sont ceux que `isWeekday` couvre : 2 à 6.
-    expect(MEAL_REPLACEMENT_SYSTEM_INSTRUCTION).toContain('dayIndex 2 à 6');
+  it('interdit au modèle de calculer les portions', () => {
+    expect(SYSTEM_INSTRUCTION).toContain('ne les calcule pas');
+    expect(SYSTEM_INSTRUCTION).toContain('EXACTEMENT');
+  });
+
+  it('énonce la règle du plat qui cuit seul et ne compte que la présence', () => {
+    expect(SYSTEM_INSTRUCTION).toContain('"mijote" ET un "four-lent"');
+    expect(SYSTEM_INSTRUCTION).toContain('cookMinutes) ne compte pas');
+  });
+
+  it('ne demande le one-pot qu’au remplacement qui le réclame', () => {
+    // Composer le batch n'a pas besoin de plats rapides : tout se cuisine le
+    // dimanche. C'est le style demandé pour un samedi qui l'impose.
+    expect(SYSTEM_INSTRUCTION).not.toContain('one-pot');
   });
 
   it('demande les plats du batch dans l’ordre de préparation', () => {
-    // C'est cet ordre que suit l'écran de préparation du dimanche : sans lui,
-    // il faudrait un champ de plus dans le contrat.
+    // C'est cet ordre que suit l'écran de préparation du dimanche.
     expect(SYSTEM_INSTRUCTION).toContain("DANS L'ORDRE");
   });
 
-  it('porte une version, stockée avec chaque plan', () => {
-    expect(Number.isInteger(PROMPT_VERSION)).toBe(true);
-    expect(PROMPT_VERSION).toBeGreaterThan(0);
+  it('porte la version 10, stockée avec chaque plan', () => {
+    expect(PROMPT_VERSION).toBe(10);
   });
 });
 
 describe('buildBatchSchedulePrompt', () => {
   const prompt = buildBatchSchedulePrompt({
     recipes: [
-      { id: 'curry', name: 'Curry', prepMinutes: 50, steps: ['Émincer l’oignon.', 'Mijoter.'] },
-      { id: 'chili', name: 'Chili', prepMinutes: 40, steps: ['Hacher l’oignon.'] },
+      {
+        id: 'bourguignon',
+        name: 'Bourguignon',
+        cookMinutes: 150,
+        ingredients: [
+          { name: 'oignon', toCut: true },
+          { name: 'huile d’olive', toCut: false },
+        ],
+        steps: ['Émincer l’oignon et le faire revenir.', 'Mijoter.'],
+      },
+      {
+        id: 'chili',
+        name: 'Chili',
+        cookMinutes: 0,
+        ingredients: [{ name: 'poivron', toCut: true }],
+        steps: ['Cuire.'],
+      },
     ],
   });
 
-  // Le modèle doit citer ces identifiants dans recipeIds : sans eux dans le
-  // prompt, il inventerait des noms que le validateur refuserait.
+  // Le modèle doit citer ces identifiants : sans eux dans le prompt, il
+  // inventerait des noms que le validateur refuserait.
   it('donne chaque plat avec son identifiant exact', () => {
-    expect(prompt).toContain('identifiant curry');
+    expect(prompt).toContain('identifiant bourguignon');
     expect(prompt).toContain('identifiant chili');
   });
 
+  it('marque les ingrédients à couper, et eux seuls', () => {
+    expect(prompt).toContain('- oignon (à couper)');
+    expect(prompt).toContain('- huile d’olive\n');
+    expect(prompt).not.toContain('huile d’olive (à couper)');
+  });
+
+  it('dit quel plat cuit longtemps sans surveillance', () => {
+    expect(prompt).toContain('150 min de cuisson sans surveillance');
+    // Le chili ne cuit pas seul : sa ligne s'arrête à son identifiant.
+    expect(prompt).toContain('identifiant chili\n');
+  });
+
   it('numérote les étapes de chaque recette', () => {
-    expect(prompt).toContain('1. Émincer l’oignon.');
+    expect(prompt).toContain('1. Émincer l’oignon et le faire revenir.');
     expect(prompt).toContain('2. Mijoter.');
   });
 
-  it('interdit de perdre une étape, la faute que le validateur guette', () => {
-    expect(BATCH_SCHEDULE_SYSTEM_INSTRUCTION).toContain('Ne perds aucune étape');
+  it('interdit de redemander une découpe et d’écrire des quantités', () => {
+    expect(BATCH_SCHEDULE_SYSTEM_INSTRUCTION).toContain('Tout est déjà coupé');
+    expect(BATCH_SCHEDULE_SYSTEM_INSTRUCTION).toContain("N'écris aucune quantité");
+    expect(BATCH_SCHEDULE_SYSTEM_INSTRUCTION).toContain('EXACTEMENT comme la recette');
+  });
+
+  it('demande un temps par plat, qui concorde avec ses étapes', () => {
+    expect(BATCH_SCHEDULE_SYSTEM_INSTRUCTION).toContain('"timings"');
+    expect(BATCH_SCHEDULE_SYSTEM_INSTRUCTION).toContain('concorde avec les durées');
+    expect(SYSTEM_INSTRUCTION).toContain('CONCORDENT avec "cookMinutes"');
   });
 });

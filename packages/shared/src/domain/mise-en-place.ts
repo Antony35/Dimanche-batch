@@ -1,108 +1,171 @@
-import type { BatchScheduleStep } from '../schemas/batch-schedule';
-import type { Unit } from '../schemas/common';
+import type { BatchCut } from '../schemas/batch-schedule';
+import type { Aisle, Unit } from '../schemas/common';
 import type { Recipe } from '../schemas/recipe';
-import { ingredientKey } from './grocery';
+import { scaleIngredients } from './batch';
 import { normalizeName } from './text';
-import { dimensionOf, toBaseQuantity } from './units';
+import { toBaseQuantity } from './units';
 
 /**
- * Qui prend quoi, quand on a tout coupé d'un coup.
+ * Ce qu'on coupe d'un coup, avant de cuisiner.
  *
- * Le déroulé entrelacé regroupe les gestes semblables — « émincer les oignons
- * des deux plats » — mais une fois tout coupé, il faut répartir. Les quantités
- * existent déjà, exactes, recette par recette : le partage se **calcule**. Le
- * demander au modèle, qui peut se tromper en comptant, serait moins sûr et
- * coûterait une génération.
+ * L'ordre suit une vraie session de batch, et c'est aussi l'ordre d'hygiène :
+ * les oignons, l'ail, les légumes, les herbes, puis la viande et le poisson —
+ * on ne repasse jamais sur une planche qui a vu du cru.
  *
- * Même agrégation que la liste de courses, et même clé : un ingrédient est
- * reconnu par son nom normalisé et la dimension de son unité. Des grammes et
- * des pièces du même légume restent deux lignes — les additionner n'aurait pas
- * de sens.
+ * Seuls les rayons qui se coupent y figurent. L'huile, le beurre, les épices
+ * sortent sans liste à tenir : leur rayon — épicerie, crèmerie — suffit à les
+ * écarter, et il est déjà obligatoire sur chaque ingrédient.
+ *
+ * Les quantités sont celles des portions réellement cuisinées
+ * (`scaleIngredients`), donc celles de la liste de courses. Un ingrédient est
+ * reconnu par son seul nom au singulier : 300 g de carotte dans un plat et deux
+ * carottes dans l'autre font une ligne, chaque part gardant son unité. Rien ici
+ * ne s'additionne entre plats, donc des unités différentes ne gênent pas —
+ * contrairement à la liste de courses.
  */
 
-interface IngredientShare {
+/**
+ * Groupes, dans l'ordre de la planche. Les aromates d'abord — oignons, ail,
+ * herbes à ciseler —, parce qu'ils servent presque tous les plats et qu'on les
+ * prépare en une fois.
+ */
+export const MISE_EN_PLACE_GROUPS = ['aromates', 'legumes', 'viande', 'poisson'] as const;
+
+export type MiseEnPlaceGroup = (typeof MISE_EN_PLACE_GROUPS)[number];
+
+export interface MiseEnPlaceShare {
   recipeId: string;
   qty: number;
   unit: Unit;
+  /** « émincé », connu une fois la session composée. */
+  cut: string | null;
 }
 
-export interface SharedIngredient {
-  /** Nom tel que la première recette l'écrit, accents compris. */
+export interface MiseEnPlaceLine {
+  key: string;
+  /** Nom tel que la première recette l'écrit. */
   name: string;
-  total: { qty: number; unit: Unit };
-  /** Une entrée par plat, deux au moins. */
-  shares: IngredientShare[];
+  group: MiseEnPlaceGroup;
+  /** Une part par plat, dans l'ordre des recettes reçues. */
+  shares: MiseEnPlaceShare[];
 }
 
-/** Ingrédients présents dans au moins deux des recettes, triés par nom. */
-export function getSharedIngredients(recipes: Recipe[]): SharedIngredient[] {
-  const byKey = new Map<string, SharedIngredient>();
+const ONION_FAMILY: ReadonlySet<string> = new Set(['oignon', 'echalote']);
+const GARLIC: ReadonlySet<string> = new Set(['ail']);
+/** Les herbes qui se ciselent. */
+const CUT_HERBS: ReadonlySet<string> = new Set([
+  'persil',
+  'coriandre',
+  'ciboulette',
+  'basilic',
+  'menthe',
+  'aneth',
+  'cerfeuil',
+  'estragon',
+]);
+/**
+ * Les herbes qui se mettent en branche. Elles ne se coupent pas, donc elles
+ * n'ont rien à faire dans la mise en place — sans cette liste, elles
+ * tomberaient dans les légumes.
+ */
+const SPRIG_HERBS: ReadonlySet<string> = new Set([
+  'thym',
+  'romarin',
+  'laurier',
+  'sauge',
+  'sarriette',
+]);
 
-  for (const recipe of recipes) {
-    for (const ingredient of recipe.ingredients) {
-      const base = toBaseQuantity(ingredient.qty, ingredient.unit);
-      const key = ingredientKey(ingredient.name, dimensionOf(ingredient.unit));
-      const entry = byKey.get(key) ?? {
-        name: ingredient.name.trim(),
-        total: { qty: 0, unit: base.unit },
-        shares: [],
-      };
-
-      entry.total.qty += base.qty;
-      const share = entry.shares.find((candidate) => candidate.recipeId === recipe.id);
-      if (share) share.qty += base.qty;
-      else entry.shares.push({ recipeId: recipe.id, qty: base.qty, unit: base.unit });
-      byKey.set(key, entry);
-    }
-  }
-
-  return [...byKey.values()]
-    .filter((entry) => entry.shares.length >= 2)
-    .sort((a, b) => a.name.localeCompare(b.name, 'fr'));
+/** Ordre au sein des aromates : oignons, puis ail, puis herbes. */
+function aromaticRank(name: string): number {
+  const word = firstWord(name);
+  if (ONION_FAMILY.has(word)) return 0;
+  if (GARLIC.has(word)) return 1;
+  return 2;
 }
 
 /**
- * Partage à afficher sous une étape : restreint aux plats de l'étape, et aux
- * ingrédients qu'elle nomme.
+ * Nom ramené au singulier, mot par mot.
  *
- * Une étape qui ne concerne qu'un plat n'a rien à répartir. Et une étape qui
- * désigne l'ingrédient autrement que la recette (« échalote » pour « oignon »)
- * n'affiche rien : c'est pour ce cas que la mise en place en tête existe.
+ * Le prompt demande des noms au singulier, mais deux recettes écrites à deux
+ * moments différents disent parfois « oignons » et « oignon ». Sur la planche,
+ * c'est le même légume : il doit tomber sur la même ligne.
  */
-export function ingredientsForStep(
-  step: BatchScheduleStep,
-  shared: SharedIngredient[],
-): SharedIngredient[] {
-  const recipeIds = new Set(step.recipeIds);
-  if (recipeIds.size < 2) return [];
-  const words = wordsOf(step.text);
-
-  return shared.flatMap((ingredient) => {
-    const shares = ingredient.shares.filter((share) => recipeIds.has(share.recipeId));
-    if (shares.length < 2 || !mentions(words, ingredient.name)) return [];
-    const qty = shares.reduce((total, share) => total + share.qty, 0);
-    return [{ ...ingredient, total: { qty, unit: ingredient.total.unit }, shares }];
-  });
+export function singularIngredientName(name: string): string {
+  return normalizeName(name)
+    .split(' ')
+    .map((word) => (word.length > 3 && /[sx]$/.test(word) ? word.slice(0, -1) : word))
+    .join(' ');
 }
 
-function wordsOf(text: string): string[] {
-  return normalizeName(text)
-    .split(/[^a-z0-9]+/)
-    .filter(Boolean);
+function firstWord(name: string): string {
+  return (
+    singularIngredientName(name)
+      .split(/[^a-z]+/)
+      .find(Boolean) ?? ''
+  );
 }
 
-/**
- * Vrai si les mots du nom se suivent dans l'étape, chacun en préfixe : ainsi
- * « oignon » reconnaît « oignons », et « pomme de terre » reconnaît « pommes de
- * terre ». Le pluriel français se construit presque toujours par suffixe.
- */
-function mentions(words: string[], name: string): boolean {
-  const target = wordsOf(name);
-  if (target.length === 0) return false;
-  for (let start = 0; start + target.length <= words.length; start += 1) {
-    if (target.every((word, offset) => (words[start + offset] ?? '').startsWith(word))) {
-      return true;
+/** Groupe d'un ingrédient, ou `null` s'il ne se coupe pas. */
+export function miseEnPlaceGroup(name: string, aisle: Aisle): MiseEnPlaceGroup | null {
+  if (aisle === 'boucherie') return 'viande';
+  if (aisle === 'poissonnerie') return 'poisson';
+  if (aisle !== 'fruits-legumes') return null;
+
+  const word = firstWord(name);
+  // Tous les mots, pas seulement le premier : « feuille de laurier ».
+  const words = singularIngredientName(name).split(/[^a-z]+/);
+  if (words.some((candidate) => SPRIG_HERBS.has(candidate))) return null;
+  if (ONION_FAMILY.has(word) || GARLIC.has(word) || CUT_HERBS.has(word)) return 'aromates';
+  return 'legumes';
+}
+
+export function getMiseEnPlace(
+  entries: readonly { recipe: Recipe; portions: number }[],
+  cuts: readonly BatchCut[] = [],
+): MiseEnPlaceLine[] {
+  const cutOf = (recipeId: string, name: string): string | null =>
+    cuts.find(
+      (cut) =>
+        cut.recipeId === recipeId &&
+        singularIngredientName(cut.ingredient) === singularIngredientName(name),
+    )?.cut ?? null;
+
+  const lines = new Map<string, MiseEnPlaceLine>();
+
+  for (const { recipe, portions } of entries) {
+    for (const ingredient of scaleIngredients(recipe, portions)) {
+      const group = miseEnPlaceGroup(ingredient.name, ingredient.aisle);
+      if (group === null) continue;
+
+      const base = toBaseQuantity(ingredient.qty, ingredient.unit);
+      const key = singularIngredientName(ingredient.name);
+      const line = lines.get(key) ?? { key, name: ingredient.name.trim(), group, shares: [] };
+
+      // On n'additionne qu'à unité égale : un plat qui cite la carotte en
+      // grammes et en pièces garde deux parts.
+      const share = line.shares.find(
+        (candidate) => candidate.recipeId === recipe.id && candidate.unit === base.unit,
+      );
+      if (share) share.qty += base.qty;
+      else
+        line.shares.push({
+          recipeId: recipe.id,
+          qty: base.qty,
+          unit: base.unit,
+          cut: cutOf(recipe.id, ingredient.name),
+        });
+      lines.set(key, line);
     }
   }
-  return false;
+
+  return [...lines.values()].sort((a, b) => {
+    const byGroup = MISE_EN_PLACE_GROUPS.indexOf(a.group) - MISE_EN_PLACE_GROUPS.indexOf(b.group);
+    if (byGroup !== 0) return byGroup;
+    if (a.group === 'aromates') {
+      const byRank = aromaticRank(a.name) - aromaticRank(b.name);
+      if (byRank !== 0) return byRank;
+    }
+    return a.name.localeCompare(b.name, 'fr');
+  });
 }

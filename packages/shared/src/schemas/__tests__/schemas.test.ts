@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { GeneratedPlanSchema, GeneratedRecipeSchema } from '../gemini';
 import {
-  BatchScheduleSchema,
+  CookingSessionSchema,
   GenerateBatchScheduleInputSchema,
   GenerateBatchScheduleResultSchema,
-  GeneratedBatchScheduleSchema,
+  GeneratedCookingSessionSchema,
 } from '../batch-schedule';
 import { GenerationLockSchema } from '../generation';
 import { GroceryItemSchema, GroceryListSchema } from '../grocery-list';
@@ -87,10 +87,17 @@ describe('GeneratedPlanSchema', () => {
     expect(GeneratedPlanSchema.safeParse(makeValidGeneratedPlan()).success).toBe(true);
   });
 
-  it('exige exactement 7 jours', () => {
+  // Le modèle ne décrit que le lundi au vendredi : le week-end est décidé après.
+  it('exige exactement les 5 jours de semaine', () => {
     const plan = makeValidGeneratedPlan();
-    expectRejected(GeneratedPlanSchema, { ...plan, days: plan.days.slice(0, 6) });
+    expectRejected(GeneratedPlanSchema, { ...plan, days: plan.days.slice(0, 4) });
     expectRejected(GeneratedPlanSchema, { ...plan, days: [...plan.days, plan.days[0]] });
+  });
+
+  it('refuse plus de 6 recettes : le plan n’est que le batch', () => {
+    const plan = makeValidGeneratedPlan();
+    const extra = [0, 1, 2, 3].map((index) => ({ ...plan.recipes[0], slug: `extra-${index}` }));
+    expectRejected(GeneratedPlanSchema, { ...plan, recipes: [...plan.recipes, ...extra] });
   });
 
   it('exige au moins 3 recettes', () => {
@@ -98,18 +105,22 @@ describe('GeneratedPlanSchema', () => {
     expectRejected(GeneratedPlanSchema, { ...plan, recipes: plan.recipes.slice(0, 2) });
   });
 
-  it('refuse un dayIndex hors de la semaine', () => {
+  it('refuse un dayIndex hors du lundi au vendredi', () => {
     const plan = makeValidGeneratedPlan();
-    const days = plan.days.map((day, index) => (index === 0 ? { ...day, dayIndex: 7 } : day));
-    expectRejected(GeneratedPlanSchema, { ...plan, days });
+    for (const dayIndex of [0, 1, 7]) {
+      const days = plan.days.map((day, index) => (index === 0 ? { ...day, dayIndex } : day));
+      expectRejected(GeneratedPlanSchema, { ...plan, days });
+    }
   });
 
-  it('accepte un repas sans recette, qui est le cas du repas pris dehors', () => {
+  it('n’accepte qu’une portion du batch, jamais un repas cuisiné ou sans recette', () => {
     const plan = makeValidGeneratedPlan();
-    const days = plan.days.map((day, index) =>
-      index === 0 ? { ...day, lunch: { ...day.lunch, recipeSlug: null } } : day,
-    );
-    expect(GeneratedPlanSchema.safeParse({ ...plan, days }).success).toBe(true);
+    const withMeal = (meal: object) =>
+      plan.days.map((day, index) =>
+        index === 0 ? { ...day, lunch: { ...day.lunch, ...meal } } : day,
+      );
+    expectRejected(GeneratedPlanSchema, { ...plan, days: withMeal({ recipeSlug: null }) });
+    expectRejected(GeneratedPlanSchema, { ...plan, days: withMeal({ kind: 'cooked' }) });
   });
 });
 
@@ -139,6 +150,14 @@ describe('RecipeSchema', () => {
 
     expect(parsed.success).toBe(true);
     expect(parsed.success && parsed.data.isDisliked).toBe(false);
+  });
+});
+
+describe('RecipeSchema, temps de cuisson', () => {
+  it('accepte une recette antérieure au temps de cuisson et le met à zéro', () => {
+    const { cookMinutes: _omis, ...ancienne } = makeRecipe({ id: 'curry' });
+    const parsed = RecipeSchema.safeParse(ancienne);
+    expect(parsed.success && parsed.data.cookMinutes).toBe(0);
   });
 });
 
@@ -259,17 +278,10 @@ describe('RegenerateMealInputSchema', () => {
 
   it('accepte un payload complet', () => {
     expect(RegenerateMealInputSchema.safeParse(input).success).toBe(true);
-    expect(RegenerateMealInputSchema.safeParse({ ...input, notes: 'sans porc' }).success).toBe(
-      true,
-    );
   });
 
   it('n’accepte que les deux créneaux du jour', () => {
     expectRejected(RegenerateMealInputSchema, { ...input, slot: 'snack' });
-  });
-
-  it('refuse des notes assez longues pour noyer le prompt', () => {
-    expectRejected(RegenerateMealInputSchema, { ...input, notes: 'a'.repeat(501) });
   });
 });
 
@@ -365,6 +377,30 @@ describe('GenerateWeeklyPlanInputSchema', () => {
       expectRejected(GenerateWeeklyPlanInputSchema, { ...base, batchRecipeCount });
     }
   });
+
+  it('rend zéro plat végétarien par défaut, c’est-à-dire aucune contrainte', () => {
+    const parsed = GenerateWeeklyPlanInputSchema.safeParse({ ...base, batchRecipeCount: 4 });
+    expect(parsed.success && parsed.data.vegetarianCount).toBe(0);
+  });
+
+  it('accepte de 0 à N plats végétariens, jamais plus que de plats', () => {
+    for (const vegetarianCount of [0, 1, 2, 3, 4]) {
+      expect(
+        GenerateWeeklyPlanInputSchema.safeParse({ ...base, batchRecipeCount: 4, vegetarianCount })
+          .success,
+      ).toBe(true);
+    }
+    expectRejected(GenerateWeeklyPlanInputSchema, {
+      ...base,
+      batchRecipeCount: 4,
+      vegetarianCount: 5,
+    });
+    expectRejected(GenerateWeeklyPlanInputSchema, {
+      ...base,
+      batchRecipeCount: 4,
+      vegetarianCount: -1,
+    });
+  });
 });
 
 /**
@@ -425,43 +461,52 @@ describe('GenerationLockSchema', () => {
 });
 
 /**
- * Le déroulé vient du modèle : c'est une frontière comme une autre. Une étape
- * sans plat, ou un déroulé réduit à une ligne, ne doit pas atteindre l'écran.
+ * La session de cuisson vient du modèle : c'est une frontière comme une autre.
+ * Une étape sans plat, ou une découpe vide, ne doit pas atteindre l'écran.
  */
-describe('schémas du déroulé entrelacé', () => {
-  const step = { recipeIds: ['curry'], text: 'Éplucher les oignons.' };
-  const steps = [step, step, step];
+describe('schémas de la session de cuisson', () => {
+  const steps = [{ recipeId: 'curry', text: 'Faire revenir les oignons.' }];
+  const cuts = [{ recipeId: 'curry', ingredient: 'oignon', cut: 'émincé' }];
 
-  it('accepte un déroulé tel que le modèle le rend', () => {
-    expect(GeneratedBatchScheduleSchema.safeParse({ steps }).success).toBe(true);
+  it('accepte une session telle que le modèle la rend', () => {
+    expect(GeneratedCookingSessionSchema.safeParse({ cuts, steps }).success).toBe(true);
   });
 
-  it('refuse une étape rattachée à aucun plat', () => {
-    expectRejected(GeneratedBatchScheduleSchema, {
-      steps: [...steps, { recipeIds: [], text: 'Orpheline.' }],
+  it('refuse une session sans étape', () => {
+    expectRejected(GeneratedCookingSessionSchema, { cuts, steps: [] });
+  });
+
+  it('refuse une étape ou une découpe vide', () => {
+    expectRejected(GeneratedCookingSessionSchema, {
+      cuts,
+      steps: [{ recipeId: 'curry', text: '' }],
+    });
+    expectRejected(GeneratedCookingSessionSchema, {
+      cuts: [{ recipeId: 'curry', ingredient: 'oignon', cut: '' }],
+      steps,
+    });
+    expectRejected(GeneratedCookingSessionSchema, {
+      cuts,
+      steps: [{ recipeId: '', text: 'Cuire.' }],
     });
   });
 
-  it('refuse un déroulé trop court pour en être un', () => {
-    expectRejected(GeneratedBatchScheduleSchema, { steps: [step] });
-  });
-
-  it('refuse une étape vide', () => {
-    expectRejected(GeneratedBatchScheduleSchema, {
-      steps: [...steps, { recipeIds: ['curry'], text: '' }],
-    });
+  it('lit une session composée avant le temps de cuisson, sans temps', () => {
+    const parsed = GeneratedCookingSessionSchema.safeParse({ cuts, steps });
+    expect(parsed.success && parsed.data.timings).toEqual([]);
   });
 
   it('accepte le document tel que la function l’écrit', () => {
     expect(
-      BatchScheduleSchema.safeParse({
+      CookingSessionSchema.safeParse({
         id: '2026-09-12',
         sourceRecipeIds: ['curry'],
+        cuts,
         steps,
         generatedAt: 0,
         generatedBy: 'uid',
         model: 'gemini-test',
-        promptVersion: 1,
+        promptVersion: 9,
       }).success,
     ).toBe(true);
   });

@@ -2,6 +2,8 @@ import { onCall } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions';
 import {
   SetMealInputSchema,
+  addDays,
+  isLastMealOfBatchDish,
   type Meal,
   type SetMealChoice,
   type SetMealInput,
@@ -19,14 +21,16 @@ import {
   PlanNotFoundError,
   readPlanForEdit,
   readPlanRecipes,
+  readRecipesByIds,
   setPlanMeal,
 } from '../lib/plan-writer';
 
 /**
  * Choisit un repas sans passer par le modèle.
  *
- * Deux gestes seulement : servir une portion d'un plat déjà prévu au batch, ou
- * déclarer qu'on mange dehors. Aucun appel à Gemini, donc **aucun quota
+ * Trois gestes : servir une portion d'un plat du batch, déclarer qu'on mange
+ * dehors, ou finir un reste du batch de la semaine précédente — qui n'achète
+ * rien, et allège donc la liste de courses. Aucun appel à Gemini, donc **aucun quota
  * consommé** — décompter une génération pour un choix que l'utilisateur fait
  * lui-même n'aurait aucun sens.
  *
@@ -68,8 +72,30 @@ export const setMeal = onCall(
       throw invalidArgument('Ce jour ne fait pas partie de la semaine planifiée.');
     }
 
-    const meal = toMeal(input.meal, plan.batchRecipeIds);
+    // Le dernier repas d'un plat du batch ne se remplace pas : le plat serait
+    // cuisiné sans que personne ne le mange. On remplace alors le plat lui-même.
+    const current = plan.days.find((day) => day.date === input.date)?.[input.slot];
+    const keepsSameDish =
+      input.meal.choice === 'batch' && current?.recipeId === input.meal.recipeId;
+    if (isLastMealOfBatchDish(plan, input.date, input.slot) && !keepsSameDish) {
+      throw invalidArgument(
+        'C’est le dernier repas de ce plat du batch : remplace plutôt le plat depuis l’écran du dimanche.',
+      );
+    }
+
+    const previousBatchRecipeIds =
+      input.meal.choice === 'previous-leftover'
+        ? await readPreviousBatchRecipeIds(input.householdId, input.weekId)
+        : [];
+    const meal = toMeal(input.meal, plan.batchRecipeIds, previousBatchRecipeIds);
     const knownRecipes = await readPlanRecipes(input.householdId, plan);
+    if (meal.recipeId !== null && !knownRecipes.has(meal.recipeId)) {
+      // Un reste de la semaine précédente n'est pas dans ce plan : sa recette
+      // sert à nommer le repas, jamais à acheter.
+      for (const [id, recipe] of await readRecipesByIds(input.householdId, [meal.recipeId])) {
+        knownRecipes.set(id, recipe);
+      }
+    }
 
     await acquireGenerationLock(input.householdId, input.weekId, uid);
     try {
@@ -104,17 +130,46 @@ export const setMeal = onCall(
   },
 );
 
+/** Plats du batch de la semaine précédente, les seuls dont il peut rester des portions. */
+async function readPreviousBatchRecipeIds(householdId: string, weekId: string): Promise<string[]> {
+  try {
+    const previous = await readPlanForEdit(householdId, addDays(weekId, -7));
+    return previous.batchRecipeIds;
+  } catch (error) {
+    if (error instanceof PlanNotFoundError) return [];
+    throw error;
+  }
+}
+
 /**
  * Traduit le choix de l'utilisateur en repas.
  *
  * Servir un plat qui n'est pas au batch n'aurait pas de sens : il n'a pas été
- * cuisiné, et ses ingrédients ne figurent pas dans la liste de courses.
+ * cuisiné, et ses ingrédients ne figurent pas dans la liste de courses. Un reste
+ * ne vient que du batch de la semaine précédente : sans cette vérification, on
+ * poserait n'importe quelle recette du foyer comme « déjà cuisinée ».
  *
  * Exportée pour être testée : c'est la seule règle métier de cette function.
  */
-export function toMeal(choice: SetMealChoice, batchRecipeIds: string[]): Meal {
+export function toMeal(
+  choice: SetMealChoice,
+  batchRecipeIds: string[],
+  previousBatchRecipeIds: string[] = [],
+): Meal {
   if (choice.choice === 'eat-out') {
     return { recipeId: null, kind: 'eat-out', withStarter: false, withDessert: false };
+  }
+
+  if (choice.choice === 'previous-leftover') {
+    if (!previousBatchRecipeIds.includes(choice.recipeId)) {
+      throw invalidArgument('Ce plat ne faisait pas partie du batch de la semaine précédente.');
+    }
+    return {
+      recipeId: choice.recipeId,
+      kind: 'freezer-backup',
+      withStarter: false,
+      withDessert: false,
+    };
   }
 
   if (!batchRecipeIds.includes(choice.recipeId)) {

@@ -1,15 +1,22 @@
 import { SegmentedSwitch } from '@/components/ui';
 
+/** Semaine affichée, relative à celle qu'on mange : 0, ou la suivante. */
+export type WeekOffset = 0 | 1;
+
+type WeekKey = 'current' | 'next';
+
 export interface WeekSwitchProps {
-  /** Vrai si la semaine affichée est celle qu'on mange. */
-  showingCurrent: boolean;
-  onChange: (showCurrent: boolean) => void;
+  value: WeekOffset;
+  onChange: (offset: WeekOffset) => void;
 }
 
 const OPTIONS = [
   { value: 'current', label: 'Cette semaine' },
-  { value: 'upcoming', label: 'Semaine prochaine' },
+  { value: 'next', label: 'Semaine prochaine' },
 ] as const;
+
+const KEY_BY_OFFSET: Record<WeekOffset, WeekKey> = { 0: 'current', 1: 'next' };
+const OFFSET_BY_KEY: Record<WeekKey, WeekOffset> = { current: 0, next: 1 };
 
 /**
  * Bascule entre la semaine en cours et celle à préparer.
@@ -18,12 +25,12 @@ const OPTIONS = [
  * dernier pendant qu'on achète et cuisine la suivante. Chaque écran s'ouvre sur
  * la sienne, mais doit laisser aller voir l'autre.
  */
-export function WeekSwitch({ showingCurrent, onChange }: WeekSwitchProps) {
+export function WeekSwitch({ value, onChange }: WeekSwitchProps) {
   return (
     <SegmentedSwitch
       options={OPTIONS}
-      value={showingCurrent ? 'current' : 'upcoming'}
-      onChange={(value) => onChange(value === 'current')}
+      value={KEY_BY_OFFSET[value]}
+      onChange={(key) => onChange(OFFSET_BY_KEY[key])}
     />
   );
 }

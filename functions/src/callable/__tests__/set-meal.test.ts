@@ -1,5 +1,10 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
-import { paths, type GeneratedPlan, type SetMealInput } from '@dimanche-batch/shared';
+import {
+  findSwapCounterpart,
+  paths,
+  type GeneratedPlan,
+  type SetMealInput,
+} from '@dimanche-batch/shared';
 import { HttpsError } from 'firebase-functions/v2/https';
 import { clearFirestore } from '../../__tests__/emulator';
 import {
@@ -8,12 +13,15 @@ import {
   MODEL,
   WEEK_START,
   makeGeneratedRecipe,
+  portion,
 } from '../../__tests__/fixtures';
 import { db } from '../../lib/firestore';
 import {
   readPlanForEdit,
   readPlanRecipes,
+  replaceMeal,
   setPlanMeal,
+  swapPlanMeals,
   writeWeeklyPlan,
 } from '../../lib/plan-writer';
 import { toMeal } from '../set-meal';
@@ -47,56 +55,36 @@ const tarte = makeGeneratedRecipe({
   ingredients: [{ name: 'tomate', qty: 4, unit: 'piece', aisle: 'fruits-legumes' }],
 });
 
-/** Deux plats au batch pour la semaine, une tarte cuisinée le samedi soir. */
+/** Deux plats au batch pour la semaine. */
 function basePlan(): GeneratedPlan {
   return {
-    recipes: [curry, chili, tarte],
+    recipes: [curry, chili],
     batchRecipeSlugs: ['batch-curry', 'batch-chili'],
-    days: [0, 1, 2, 3, 4, 5, 6].map((dayIndex) => {
-      if (dayIndex < 2) {
-        return {
-          dayIndex,
-          lunch: {
-            recipeSlug: null,
-            kind: 'eat-out' as const,
-            withStarter: false,
-            withDessert: false,
-          },
-          dinner:
-            dayIndex === 0
-              ? {
-                  recipeSlug: 'tarte-tomates',
-                  kind: 'cooked' as const,
-                  withStarter: false,
-                  withDessert: false,
-                }
-              : {
-                  recipeSlug: null,
-                  kind: 'eat-out' as const,
-                  withStarter: false,
-                  withDessert: false,
-                },
-        };
-      }
-
-      const portion = {
-        recipeSlug: dayIndex <= 4 ? 'batch-curry' : 'batch-chili',
-        kind: 'batch-leftover' as const,
-        withStarter: false,
-        withDessert: false,
-      };
-      return { dayIndex, lunch: portion, dinner: { ...portion } };
+    days: [2, 3, 4, 5, 6].map((dayIndex) => {
+      const slug = dayIndex <= 4 ? 'batch-curry' : 'batch-chili';
+      return { dayIndex, lunch: portion(slug), dinner: portion(slug) };
     }),
   };
 }
 
+/**
+ * Le batch, puis une tarte cuisinée le samedi soir. La génération ne décrit
+ * plus le week-end : c'est le foyer qui le décide, par le même chemin qu'ici.
+ */
 async function seedPlan() {
-  return writeWeeklyPlan({
+  await writeWeeklyPlan({
     householdId: HOUSEHOLD_ID,
     weekStart: WEEK_START,
     generatedBy: ALICE,
     plan: basePlan(),
     model: MODEL,
+  });
+  await replaceMeal({
+    householdId: HOUSEHOLD_ID,
+    weekId: WEEK_START,
+    date: SAMEDI,
+    slot: 'dinner',
+    recipe: tarte,
   });
 }
 
@@ -145,6 +133,24 @@ describe('toMeal', () => {
     expect(() => toMeal({ choice: 'batch', recipeId: 'tarte-tomates' }, ['batch-curry'])).toThrow(
       HttpsError,
     );
+  });
+
+  it('pose un reste du batch de la semaine précédente, qui n’achète rien', () => {
+    expect(
+      toMeal(
+        { choice: 'previous-leftover', recipeId: 'vieux-chili' },
+        ['batch-curry'],
+        ['vieux-chili'],
+      ),
+    ).toMatchObject({ recipeId: 'vieux-chili', kind: 'freezer-backup' });
+  });
+
+  it('refuse un reste qui ne vient pas du batch de la semaine précédente', () => {
+    // Sans cette règle, n'importe quelle recette du foyer passerait pour déjà
+    // cuisinée, et ses ingrédients ne seraient jamais achetés.
+    expect(() =>
+      toMeal({ choice: 'previous-leftover', recipeId: 'batch-curry' }, ['batch-curry'], []),
+    ).toThrow(HttpsError);
   });
 
   it('laisse un repas à l’extérieur sans recette', () => {
@@ -221,5 +227,64 @@ describe('choisir un repas', () => {
 
     const usage = await db.collection(paths.usage(HOUSEHOLD_ID)).get();
     expect(usage.empty).toBe(true);
+  });
+});
+
+describe('reste de la semaine précédente', () => {
+  it('allège la liste de courses du plat dont on retire un repas', async () => {
+    await seedPlan();
+    const before = await db
+      .doc(paths.groceryItem(HOUSEHOLD_ID, WEEK_START, 'lentilles-corail--mass'))
+      .get();
+
+    // Le curry sert six repas ; mardi soir on finit un reste de la semaine
+    // dernière. On ne le choisit pas via `choose` pour poser l'identifiant tel
+    // que la callable le poserait après vérification.
+    const plan = await readPlanForEdit(HOUSEHOLD_ID, WEEK_START);
+    const knownRecipes = await readPlanRecipes(HOUSEHOLD_ID, plan);
+    await setPlanMeal({
+      householdId: HOUSEHOLD_ID,
+      plan,
+      date: MARDI,
+      slot: 'dinner',
+      meal: toMeal({ choice: 'previous-leftover', recipeId: 'vieux-chili' }, plan.batchRecipeIds, [
+        'vieux-chili',
+      ]),
+      recipeToWrite: null,
+      knownRecipes,
+    });
+
+    const after = await db
+      .doc(paths.groceryItem(HOUSEHOLD_ID, WEEK_START, 'lentilles-corail--mass'))
+      .get();
+    expect(after.get('qty')).toBeLessThan(before.get('qty'));
+    // 500 g pour 12 portions : six repas en demandaient 500, cinq en demandent 416,7 -> 420.
+    expect(after.get('qty')).toBe(420);
+  });
+});
+
+describe('échanger deux repas du batch', () => {
+  it('garde la liste de courses identique et échange les deux créneaux', async () => {
+    await seedPlan();
+    const itemsBefore = (
+      await db.collection(paths.groceryItems(HOUSEHOLD_ID, WEEK_START)).get()
+    ).docs.map((doc) => [doc.id, doc.get('qty')]);
+
+    const plan = await readPlanForEdit(HOUSEHOLD_ID, WEEK_START);
+    // Chili lundi midi : le curry y est prévu, le chili vendredi soir cède sa place.
+    const ref = { date: '2026-09-14', slot: 'lunch' as const };
+    const counterpart = findSwapCounterpart(plan, ref, 'batch-chili', () => true);
+    expect(counterpart).toEqual({ date: '2026-09-18', slot: 'dinner' });
+
+    await swapPlanMeals({ householdId: HOUSEHOLD_ID, plan, first: ref, second: counterpart! });
+
+    const itemsAfter = (
+      await db.collection(paths.groceryItems(HOUSEHOLD_ID, WEEK_START)).get()
+    ).docs.map((doc) => [doc.id, doc.get('qty')]);
+    expect(itemsAfter).toEqual(itemsBefore);
+
+    const days = (await db.doc(paths.weeklyPlan(HOUSEHOLD_ID, WEEK_START)).get()).get('days');
+    expect(days[2].lunch.recipeId).toBe('batch-chili');
+    expect(days[6].dinner.recipeId).toBe('batch-curry');
   });
 });

@@ -88,49 +88,46 @@ describe('écriture initiale', () => {
     expect(snapshot.docs.map((doc) => doc.id).sort()).toEqual(['batch-curry', 'soupe-poireaux']);
   });
 
-  it('ne référence dans `recipeIds` que les recettes réellement au menu', async () => {
-    // Une recette proposée par le modèle mais qu'aucun repas ne sert.
-    const base = makeGeneratedPlan([curry, soupe]);
-    await write({
-      ...base,
-      recipes: [...base.recipes, makeGeneratedRecipe({ slug: 'jamais-servie' })],
-    });
+  /**
+   * Le modèle ne décrit que le lundi au vendredi. Le samedi et le dimanche
+   * restent à décider : les générer achèterait un repas que le foyer prendra
+   * peut-être dehors.
+   */
+  it('laisse le samedi et le dimanche à décider, sans rien acheter pour eux', async () => {
+    await write(makeGeneratedPlan([curry, soupe]));
 
-    const plan = await db.doc(paths.weeklyPlan(HOUSEHOLD_ID, WEEK_START)).get();
-    // La recette existe comme document — elle reste consultable — mais le plan
-    // de la semaine ne la cite pas.
-    expect(plan.get('recipeIds')).toEqual(['batch-curry', 'soupe-poireaux']);
-    expect((await db.doc(paths.recipe(HOUSEHOLD_ID, 'jamais-servie')).get()).exists).toBe(true);
+    const days = (await db.doc(paths.weeklyPlan(HOUSEHOLD_ID, WEEK_START)).get()).get('days');
+    for (const index of [0, 1]) {
+      expect(days[index].lunch).toMatchObject({ recipeId: null, kind: 'undecided' });
+      expect(days[index].dinner).toMatchObject({ recipeId: null, kind: 'undecided' });
+    }
+    expect(days[2].lunch).toMatchObject({ recipeId: 'batch-curry', kind: 'batch-leftover' });
   });
 
-  it('n’achète pas les ingrédients d’un midi de restes', async () => {
-    // Un seul soir cuisiné : la quantité doit valoir exactement une recette,
-    // pas une par repas où la recette apparaît.
-    const plan: GeneratedPlan = {
-      recipes: [curry],
-      batchRecipeSlugs: ['batch-curry'],
-      days: [0, 1, 2, 3, 4, 5, 6].map((dayIndex) => ({
-        dayIndex,
-        lunch: {
-          recipeSlug: 'batch-curry',
-          kind: 'batch-leftover' as const,
-          withStarter: false,
-          withDessert: false,
-        },
-        dinner: {
-          recipeSlug: dayIndex === 0 ? 'batch-curry' : null,
-          kind: dayIndex === 0 ? ('cooked' as const) : ('eat-out' as const),
-          withStarter: false,
-          withDessert: false,
-        },
-      })),
-    };
+  it('référence tous les plats du batch dans `recipeIds`', async () => {
+    await write(makeGeneratedPlan([curry, soupe]));
 
-    await write(plan);
+    const plan = await db.doc(paths.weeklyPlan(HOUSEHOLD_ID, WEEK_START)).get();
+    expect([...plan.get('recipeIds')].sort()).toEqual(['batch-curry', 'soupe-poireaux']);
+    expect(plan.get('batchRecipeIds')).toEqual(['batch-curry', 'soupe-poireaux']);
+  });
 
-    const items = Object.values(await readItems());
-    expect(items).toHaveLength(1);
-    expect(items[0]?.qty).toBe(250);
+  it('achète un plat du batch pour les repas qu’il sert', async () => {
+    // Le curry, conçu pour 2 portions à 250 g, sert les cinq midis et trois
+    // soirs : il se cuisine pour 16 portions et s'achète pour 2000 g.
+    await write(makeGeneratedPlan([curry, soupe]));
+
+    const items = await readItems();
+    expect(items['lentilles-corail--mass']?.qty).toBe(2000);
+    expect(items['lentilles-corail--mass']?.origin).toBe('batch');
+  });
+
+  it('enregistre le temps de cuisson sans surveillance de chaque recette', async () => {
+    const mijote = makeGeneratedRecipe({ slug: 'batch-curry', cookMinutes: 120 });
+    await write(makeGeneratedPlan([mijote, soupe]));
+
+    const recipe = await db.doc(paths.recipe(HOUSEHOLD_ID, 'batch-curry')).get();
+    expect(recipe.get('cookMinutes')).toBe(120);
   });
 });
 

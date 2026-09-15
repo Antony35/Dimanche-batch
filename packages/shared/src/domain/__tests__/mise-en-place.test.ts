@@ -1,125 +1,162 @@
 import { describe, expect, it } from 'vitest';
-import { getSharedIngredients, ingredientsForStep } from '../mise-en-place';
+import { getMiseEnPlace, miseEnPlaceGroup } from '../mise-en-place';
 import { makeRecipe } from './fixtures';
 
 /**
- * Une fois tout coupé d'un coup, il faut répartir. Ces tests fixent ce qui ne
- * pardonne pas : la part de chaque plat doit être exacte, et deux unités
- * incompatibles ne doivent jamais s'additionner.
+ * La mise en place dit quoi couper, dans quel ordre, et pour quel plat. Elle
+ * se calcule depuis les recettes : pas de modèle, pas de génération.
  */
-const ingredient = (name: string, qty: number, unit: 'g' | 'kg' | 'piece') => ({
-  name,
-  qty,
-  unit,
-  aisle: 'fruits-legumes' as const,
-});
-
-const curry = makeRecipe({
-  id: 'curry',
-  name: 'Curry',
-  ingredients: [ingredient('carotte', 2, 'piece'), ingredient('oignon', 1, 'piece')],
+const bourguignon = makeRecipe({
+  id: 'bourguignon',
+  servings: 8,
+  ingredients: [
+    { name: 'bœuf', qty: 800, unit: 'g', aisle: 'boucherie' },
+    { name: 'carotte', qty: 4, unit: 'piece', aisle: 'fruits-legumes' },
+    { name: 'oignon', qty: 2, unit: 'piece', aisle: 'fruits-legumes' },
+    { name: 'huile d’olive', qty: 2, unit: 'cas', aisle: 'epicerie' },
+    { name: 'beurre', qty: 30, unit: 'g', aisle: 'cremerie' },
+  ],
 });
 const chili = makeRecipe({
   id: 'chili',
-  name: 'Chili',
-  ingredients: [ingredient('carotte', 3, 'piece'), ingredient('Oignon', 2, 'piece')],
+  servings: 6,
+  ingredients: [
+    { name: 'Oignons', qty: 1, unit: 'piece', aisle: 'fruits-legumes' },
+    { name: 'ail', qty: 2, unit: 'gousse', aisle: 'fruits-legumes' },
+    { name: 'persil', qty: 1, unit: 'botte', aisle: 'fruits-legumes' },
+    { name: 'cabillaud', qty: 400, unit: 'g', aisle: 'poissonnerie' },
+    { name: 'cumin', qty: 1, unit: 'cac', aisle: 'epicerie' },
+  ],
 });
 
-describe('getSharedIngredients', () => {
-  it('additionne le total et garde la part de chaque plat', () => {
-    const carotte = getSharedIngredients([curry, chili]).find((entry) => entry.name === 'carotte');
-
-    expect(carotte?.total).toEqual({ qty: 5, unit: 'piece' });
-    expect(carotte?.shares).toEqual([
-      { recipeId: 'curry', qty: 2, unit: 'piece' },
-      { recipeId: 'chili', qty: 3, unit: 'piece' },
-    ]);
+describe('miseEnPlaceGroup', () => {
+  it('range chaque ingrédient qui se coupe dans son groupe', () => {
+    expect(miseEnPlaceGroup('oignon rouge', 'fruits-legumes')).toBe('aromates');
+    expect(miseEnPlaceGroup('Échalotes', 'fruits-legumes')).toBe('aromates');
+    expect(miseEnPlaceGroup('ail', 'fruits-legumes')).toBe('aromates');
+    expect(miseEnPlaceGroup('coriandre', 'fruits-legumes')).toBe('aromates');
+    expect(miseEnPlaceGroup('courgette', 'fruits-legumes')).toBe('legumes');
+    expect(miseEnPlaceGroup('poulet', 'boucherie')).toBe('viande');
+    expect(miseEnPlaceGroup('saumon', 'poissonnerie')).toBe('poisson');
   });
 
-  it('reconnaît un ingrédient malgré la casse', () => {
-    const oignon = getSharedIngredients([curry, chili]).find(
-      (entry) => entry.name.toLowerCase() === 'oignon',
-    );
-    expect(oignon?.total.qty).toBe(3);
+  // Ni liste de placard à tenir, ni oubli : le rayon suffit.
+  it('écarte ce qui ne se coupe pas, par son rayon', () => {
+    expect(miseEnPlaceGroup('huile d’olive', 'epicerie')).toBeNull();
+    expect(miseEnPlaceGroup('beurre', 'cremerie')).toBeNull();
+    expect(miseEnPlaceGroup('petits pois surgelés', 'surgeles')).toBeNull();
   });
 
-  it('ramène les masses à la même unité', () => {
-    const a = makeRecipe({ id: 'a', ingredients: [ingredient('riz', 200, 'g')] });
-    const b = makeRecipe({ id: 'b', ingredients: [ingredient('riz', 0.3, 'kg')] });
-
-    expect(getSharedIngredients([a, b])[0]?.total).toEqual({ qty: 500, unit: 'g' });
-  });
-
-  // Des grammes et des pièces du même légume : deux lignes, comme sur la liste
-  // de courses. Les additionner produirait un nombre sans unité ni sens.
-  it('n’additionne jamais deux dimensions différentes', () => {
-    const a = makeRecipe({ id: 'a', ingredients: [ingredient('carotte', 200, 'g')] });
-    const b = makeRecipe({ id: 'b', ingredients: [ingredient('carotte', 3, 'piece')] });
-
-    expect(getSharedIngredients([a, b])).toEqual([]);
-  });
-
-  it('ignore ce qu’un seul plat utilise', () => {
-    const a = makeRecipe({ id: 'a', ingredients: [ingredient('poivron', 1, 'piece')] });
-    const b = makeRecipe({ id: 'b', ingredients: [ingredient('courge', 1, 'piece')] });
-
-    expect(getSharedIngredients([a, b])).toEqual([]);
-  });
-
-  it('compte une fois par plat un ingrédient cité deux fois dans la même recette', () => {
-    const a = makeRecipe({
-      id: 'a',
-      ingredients: [ingredient('ail', 1, 'piece'), ingredient('ail', 1, 'piece')],
-    });
-    const b = makeRecipe({ id: 'b', ingredients: [ingredient('ail', 2, 'piece')] });
-
-    expect(getSharedIngredients([a, b])[0]?.shares).toEqual([
-      { recipeId: 'a', qty: 2, unit: 'piece' },
-      { recipeId: 'b', qty: 2, unit: 'piece' },
-    ]);
+  // Elles se mettent en branche : rien à couper.
+  it('écarte les herbes qui ne se coupent pas', () => {
+    for (const herb of ['thym', 'romarin', 'feuille de laurier', 'laurier', 'sauge']) {
+      expect(miseEnPlaceGroup(herb, 'fruits-legumes')).toBeNull();
+    }
   });
 });
 
-describe('ingredientsForStep', () => {
-  const shared = getSharedIngredients([curry, chili]);
-  const names = (text: string, recipeIds = ['curry', 'chili']) =>
-    ingredientsForStep({ text, recipeIds }, shared).map((entry) => entry.name.toLowerCase());
+describe('getMiseEnPlace', () => {
+  const lines = getMiseEnPlace([
+    { recipe: bourguignon, portions: 8 },
+    { recipe: chili, portions: 6 },
+  ]);
 
-  it('donne le partage des ingrédients que l’étape nomme, au pluriel compris', () => {
-    expect(names('Éplucher les carottes des deux plats.')).toEqual(['carotte']);
+  it('suit l’ordre de la planche : aromates, légumes, viande, poisson', () => {
+    expect(lines.map((line) => line.group)).toEqual([
+      'aromates',
+      'aromates',
+      'aromates',
+      'legumes',
+      'viande',
+      'poisson',
+    ]);
   });
 
-  it('n’affiche rien sous une étape qui ne concerne qu’un plat', () => {
-    expect(names('Éplucher les carottes.', ['curry'])).toEqual([]);
+  it('range les aromates : oignons, puis ail, puis herbes', () => {
+    expect(
+      lines.filter((line) => line.group === 'aromates').map((line) => line.name.toLowerCase()),
+    ).toEqual(['oignon', 'ail', 'persil']);
   });
 
-  it('n’affiche rien sous une étape qui ne nomme aucun ingrédient partagé', () => {
-    expect(names('Lancer les deux cuissons.')).toEqual([]);
-  });
-
-  it('restreint le partage aux plats de l’étape', () => {
+  /**
+   * La carotte comptée en grammes dans un plat et en pièces dans l'autre
+   * tombait sur deux lignes. Sur la planche, c'est le même légume.
+   */
+  it('met un même légume sur une seule ligne, chaque part dans son unité', () => {
     const soupe = makeRecipe({
       id: 'soupe',
-      ingredients: [ingredient('carotte', 4, 'piece')],
+      ingredients: [{ name: 'carottes', qty: 300, unit: 'g', aisle: 'fruits-legumes' }],
     });
-    const trio = getSharedIngredients([curry, chili, soupe]);
-    const [carotte] = ingredientsForStep(
-      { text: 'Éplucher les carottes du curry et du chili.', recipeIds: ['curry', 'chili'] },
-      trio,
-    );
+    const carrots = getMiseEnPlace([
+      { recipe: bourguignon, portions: 8 },
+      { recipe: soupe, portions: 2 },
+    ]).filter((line) => line.key === 'carotte');
 
-    expect(carotte?.total.qty).toBe(5);
-    expect(carotte?.shares.map((share) => share.recipeId)).toEqual(['curry', 'chili']);
+    expect(carrots).toHaveLength(1);
+    expect(carrots[0]?.shares).toEqual([
+      { recipeId: 'bourguignon', qty: 4, unit: 'piece', cut: null },
+      { recipeId: 'soupe', qty: 300, unit: 'g', cut: null },
+    ]);
   });
 
-  it('reconnaît un nom composé au pluriel', () => {
-    const a = makeRecipe({ id: 'a', ingredients: [ingredient('pomme de terre', 2, 'piece')] });
-    const b = makeRecipe({ id: 'b', ingredients: [ingredient('pomme de terre', 3, 'piece')] });
+  it('garde deux parts pour un plat qui cite l’ingrédient dans deux unités', () => {
+    const mixte = makeRecipe({
+      id: 'mixte',
+      ingredients: [
+        { name: 'carotte', qty: 2, unit: 'piece', aisle: 'fruits-legumes' },
+        { name: 'carotte', qty: 100, unit: 'g', aisle: 'fruits-legumes' },
+        { name: 'carotte', qty: 1, unit: 'piece', aisle: 'fruits-legumes' },
+      ],
+    });
+    const [line] = getMiseEnPlace([{ recipe: mixte, portions: 2 }]);
+    expect(line?.shares.map((share) => [share.qty, share.unit])).toEqual([
+      [3, 'piece'],
+      [100, 'g'],
+    ]);
+  });
 
-    const [entry] = ingredientsForStep(
-      { text: 'Éplucher toutes les pommes de terre.', recipeIds: ['a', 'b'] },
-      getSharedIngredients([a, b]),
+  it('n’affiche ni huile, ni beurre, ni épices', () => {
+    const names = lines.map((line) => line.name.toLowerCase());
+    expect(names).not.toContain('huile d’olive');
+    expect(names).not.toContain('beurre');
+    expect(names).not.toContain('cumin');
+  });
+
+  it('réunit un même ingrédient et donne la part de chaque plat', () => {
+    const oignon = lines.find((line) => line.key === 'oignon');
+    expect(oignon?.shares).toEqual([
+      { recipeId: 'bourguignon', qty: 2, unit: 'piece', cut: null },
+      { recipeId: 'chili', qty: 1, unit: 'piece', cut: null },
+    ]);
+  });
+
+  it('donne les quantités des portions réellement cuisinées', () => {
+    // Le bourguignon ne sert plus que trois repas : 6 portions sur 8.
+    const scaled = getMiseEnPlace([{ recipe: bourguignon, portions: 6 }]);
+    expect(scaled.find((line) => line.group === 'viande')?.shares[0]?.qty).toBe(600);
+    expect(scaled.find((line) => line.name === 'carotte')?.shares[0]?.qty).toBe(3);
+  });
+
+  it('attache la découpe composée par la session, plat par plat', () => {
+    const withCuts = getMiseEnPlace(
+      [
+        { recipe: bourguignon, portions: 8 },
+        { recipe: chili, portions: 6 },
+      ],
+      [
+        { recipeId: 'bourguignon', ingredient: 'Oignon', cut: 'émincé' },
+        { recipeId: 'chili', ingredient: 'oignons', cut: 'en dés' },
+      ],
     );
-    expect(entry?.total.qty).toBe(5);
+    const oignon = withCuts.find((line) => line.key === 'oignon');
+    expect(oignon?.shares.map((share) => share.cut)).toEqual(['émincé', 'en dés']);
+  });
+
+  it('ne rend rien pour une semaine sans rien à couper', () => {
+    const placard = makeRecipe({
+      id: 'riz',
+      ingredients: [{ name: 'riz', qty: 200, unit: 'g', aisle: 'epicerie' }],
+    });
+    expect(getMiseEnPlace([{ recipe: placard, portions: 2 }])).toEqual([]);
   });
 });

@@ -2,11 +2,23 @@ import { z } from 'zod';
 import { IsoDateSchema, WeekIdSchema } from './common';
 
 /**
- * Nature d'un repas. Distinguer `batch-leftover` de `cooked` est ce qui permet
- * à la liste de courses de ne pas compter deux fois les ingrédients du batch :
- * seuls les repas `cooked` consomment des ingrédients.
+ * Nature d'un repas, et ce qu'il achète.
+ *
+ * - `batch-leftover` : une portion d'un plat du batch de la semaine ;
+ * - `cooked` : cuisiné le jour même, le samedi ou le dimanche ;
+ * - `freezer-backup` : un reste d'une semaine précédente — n'achète rien ;
+ * - `eat-out` : pris à l'extérieur — n'achète rien ;
+ * - `undecided` : samedi ou dimanche que le foyer n'a pas encore décidé. La
+ *   génération les laisse ainsi, pour ne pas acheter un repas qu'on prendra
+ *   peut-être dehors.
  */
-export const MEAL_KINDS = ['cooked', 'batch-leftover', 'freezer-backup', 'eat-out'] as const;
+export const MEAL_KINDS = [
+  'cooked',
+  'batch-leftover',
+  'freezer-backup',
+  'eat-out',
+  'undecided',
+] as const;
 
 export const MealKindSchema = z.enum(MEAL_KINDS);
 
@@ -54,16 +66,24 @@ export const WeeklyPlanSchema = z.object({
 });
 
 /** Payload de la callable `generateWeeklyPlan`. */
-export const GenerateWeeklyPlanInputSchema = z.object({
-  householdId: z.string().min(1),
-  weekStart: IsoDateSchema,
-  /** Contraintes ponctuelles saisies dans l'app, en texte libre. */
-  notes: z.string().max(500).optional(),
-  /** Régénère en écrasant un plan existant pour cette semaine. */
-  force: z.boolean().optional(),
-  /** Nombre de plats à préparer le dimanche, choisi avant la génération. */
-  batchRecipeCount: z.number().int().min(3).max(6),
-});
+export const GenerateWeeklyPlanInputSchema = z
+  .object({
+    householdId: z.string().min(1),
+    weekStart: IsoDateSchema,
+    /** Régénère en écrasant un plan existant pour cette semaine. */
+    force: z.boolean().optional(),
+    /** Nombre de plats à préparer le dimanche, choisi avant la génération. */
+    batchRecipeCount: z.number().int().min(3).max(6),
+    /**
+     * Combien de ces plats sont végétariens. Zéro veut dire « aucune
+     * contrainte », et c'est la valeur par défaut.
+     */
+    vegetarianCount: z.number().int().min(0).max(6).default(0),
+  })
+  .refine((input) => input.vegetarianCount <= input.batchRecipeCount, {
+    message: 'Il ne peut pas y avoir plus de plats végétariens que de plats.',
+    path: ['vegetarianCount'],
+  });
 
 export const GenerateWeeklyPlanResultSchema = z.object({
   weekId: WeekIdSchema,
@@ -88,7 +108,6 @@ export const RegenerateMealInputSchema = z.object({
   date: IsoDateSchema,
   slot: z.enum(['lunch', 'dinner']),
   style: MealStyleSchema.optional(),
-  notes: z.string().max(500).optional(),
 });
 
 /**
@@ -101,6 +120,8 @@ export const RegenerateMealInputSchema = z.object({
 export const SetMealChoiceSchema = z.discriminatedUnion('choice', [
   z.object({ choice: z.literal('batch'), recipeId: z.string().min(1) }),
   z.object({ choice: z.literal('eat-out') }),
+  /** Une portion restante d'un plat du batch de la semaine précédente. N'achète rien. */
+  z.object({ choice: z.literal('previous-leftover'), recipeId: z.string().min(1) }),
 ]);
 
 export const SetMealInputSchema = z.object({
@@ -109,6 +130,28 @@ export const SetMealInputSchema = z.object({
   date: IsoDateSchema,
   slot: z.enum(['lunch', 'dinner']),
   meal: SetMealChoiceSchema,
+});
+
+/**
+ * Payload de la callable `swapMeals`.
+ *
+ * On dit seulement quel plat du batch on veut manger sur ce créneau : le
+ * créneau qui cède sa place se déduit du plan, dans le domaine. Laisser l'app
+ * le choisir serait lui confier la règle des portions.
+ */
+export const SwapMealsInputSchema = z.object({
+  householdId: z.string().min(1),
+  weekId: WeekIdSchema,
+  date: IsoDateSchema,
+  slot: z.enum(['lunch', 'dinner']),
+  recipeId: z.string().min(1),
+});
+
+export const SwapMealsResultSchema = z.object({
+  weekId: WeekIdSchema,
+  /** Le créneau qui a reçu le plat quitté. */
+  counterpartDate: IsoDateSchema,
+  counterpartSlot: z.enum(['lunch', 'dinner']),
 });
 
 export const SetMealResultSchema = z.object({
@@ -131,7 +174,6 @@ export const ReplaceBatchRecipeInputSchema = z.object({
   weekId: WeekIdSchema,
   /** Plat du batch à remplacer. */
   recipeId: z.string().min(1),
-  notes: z.string().max(500).optional(),
 });
 
 export const ReplaceBatchRecipeResultSchema = z.object({
@@ -164,5 +206,7 @@ export type RegenerateMealResult = z.infer<typeof RegenerateMealResultSchema>;
 export type SetMealChoice = z.infer<typeof SetMealChoiceSchema>;
 export type SetMealInput = z.infer<typeof SetMealInputSchema>;
 export type SetMealResult = z.infer<typeof SetMealResultSchema>;
+export type SwapMealsInput = z.infer<typeof SwapMealsInputSchema>;
+export type SwapMealsResult = z.infer<typeof SwapMealsResultSchema>;
 export type ReplaceBatchRecipeInput = z.infer<typeof ReplaceBatchRecipeInputSchema>;
 export type ReplaceBatchRecipeResult = z.infer<typeof ReplaceBatchRecipeResultSchema>;

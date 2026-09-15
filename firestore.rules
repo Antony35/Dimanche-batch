@@ -31,6 +31,29 @@ service cloud.firestore {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly(fields);
     }
 
+    /**
+     * Un article de courses ajouté par le foyer, seul que le client puisse
+     * créer ou supprimer. Les articles calculés portent `batch` ou `fresh` et
+     * lui restent inaccessibles.
+     */
+    function isManualItem(data) {
+      return data.origin == 'manual';
+    }
+
+    /**
+     * Recopiés de `packages/shared/src/schemas/common.ts`. Les Security Rules
+     * n'importent rien : c'est la seule duplication du dépôt, et elle est
+     * gardée par un test qui compare les deux listes.
+     */
+    function unitValues() {
+      return ['g', 'kg', 'ml', 'cl', 'l', 'piece', 'cas', 'cac', 'pincee', 'botte', 'gousse'];
+    }
+
+    function aisleValues() {
+      return ['fruits-legumes', 'boucherie', 'poissonnerie', 'cremerie', 'boulangerie',
+              'epicerie', 'surgeles', 'boissons', 'entretien', 'hygiene', 'autre'];
+    }
+
     match /households/{householdId} {
       allow get, list: if isSignedIn() && request.auth.uid in resource.data.members;
 
@@ -66,10 +89,54 @@ service cloud.firestore {
 
         match /items/{itemId} {
           allow read: if isMember(householdId);
-          // Cocher un article est le seul geste d'écriture du parcours courses.
+          // Cocher un article : le geste du magasin, borné à ce seul champ.
           allow update: if isMember(householdId) && onlyChanges(['checked']);
-          allow create, delete: if false;
+
+          // Ajouter et retirer un article à la main. La liste de courses est
+          // celle du foyer, pas seulement celle du batch : on y met du sac
+          // poubelle. Passer par une callable ajouterait un aller-retour réseau
+          // au milieu d'un magasin, pour le même argument que `checked`.
+          //
+          // Le client est enfermé dans l'espace de noms `manual--`, et cette
+          // borne est ce qui rend la règle sûre : il ne peut ni créer un faux
+          // article du batch, ni supprimer un article calculé. Voir
+          // `manualItemId` dans `packages/shared/src/domain/grocery.ts`.
+          allow create: if isMember(householdId)
+            && itemId.matches('^manual--.+')
+            && isManualItem(request.resource.data)
+            && request.resource.data.keys().hasOnly(
+              ['name', 'qty', 'unit', 'aisle', 'checked', 'origin', 'fromRecipeIds']
+            )
+            && request.resource.data.keys().hasAll(
+              ['name', 'qty', 'unit', 'aisle', 'checked', 'origin', 'fromRecipeIds']
+            )
+            && request.resource.data.name is string
+            && request.resource.data.name.size() > 0
+            && request.resource.data.name.size() <= 80
+            && request.resource.data.qty is number
+            && request.resource.data.qty > 0
+            && request.resource.data.checked is bool
+            && request.resource.data.fromRecipeIds == []
+            && request.resource.data.unit in unitValues()
+            && request.resource.data.aisle in aisleValues();
+
+          allow delete: if isMember(householdId) && isManualItem(resource.data);
         }
+      }
+
+      // Lexique des rayons du foyer : ce que l'utilisateur a corrigé ou ajouté
+      // quand la table livrée ne connaissait pas un article. Un seul document,
+      // une seule clé, et des valeurs restreintes aux rayons connus — sans quoi
+      // un rayon inventé ferait disparaître l'article de la liste.
+      match /lexicon/{docId} {
+        allow read: if isMember(householdId);
+        allow create, update: if isMember(householdId)
+          && docId == 'overrides'
+          && request.resource.data.keys().hasOnly(['entries'])
+          && request.resource.data.entries is map
+          && request.resource.data.entries.size() <= 2000
+          && request.resource.data.entries.values().hasOnly(aisleValues());
+        allow delete: if false;
       }
 
       match /usage/{day} {
@@ -84,9 +151,10 @@ service cloud.firestore {
         allow write: if false;
       }
 
-      // Déroulé entrelacé du dimanche : composé par Gemini dans une callable,
-      // donc écrit par l'admin SDK uniquement. Le client le lit, rien de plus.
-      match /batchSchedules/{weekId} {
+      // Session de cuisson du dimanche : découpes et étapes composées par Gemini
+      // dans une callable, donc écrites par l'admin SDK uniquement. Le client
+      // les lit, rien de plus.
+      match /batchSessions/{weekId} {
         allow read: if isMember(householdId);
         allow write: if false;
       }

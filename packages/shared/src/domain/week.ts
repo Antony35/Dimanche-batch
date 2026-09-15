@@ -112,3 +112,85 @@ export const BATCH_DAY_INDEX = 1;
 export function requiresFreezing(dayIndex: number): boolean {
   return dayIndex >= 5;
 }
+
+const MONTH_NAMES = [
+  'janvier',
+  'février',
+  'mars',
+  'avril',
+  'mai',
+  'juin',
+  'juillet',
+  'août',
+  'septembre',
+  'octobre',
+  'novembre',
+  'décembre',
+] as const;
+
+/**
+ * Date lisible par un francophone : `2026-09-14` devient `14/09/2026`.
+ *
+ * Le format ISO reste celui du stockage — il est la clé des documents de plan et
+ * son ordre lexicographique est l'ordre chronologique, ce qui fait tenir le tri
+ * de l'historique. Mais il n'a rien à faire sous les yeux de l'utilisateur, et
+ * il y était à six endroits.
+ *
+ * Écrit à la main plutôt qu'avec `Intl.DateTimeFormat` : le résultat doit être
+ * identique sur les deux téléphones et sous les tests, quelles que soient la
+ * locale du système et les données ICU embarquées dans le binaire.
+ */
+export function formatDate(iso: IsoDate): string {
+  const [year, month, day] = iso.split('-');
+  return `${day}/${month}/${year}`;
+}
+
+/** `samedi 14 septembre` — pour les en-têtes, où le jour de la semaine porte le sens. */
+export function formatDateLong(iso: IsoDate): string {
+  const date = parseIsoDate(iso);
+  return `${getDayNameForDate(iso)} ${date.getDate()} ${MONTH_NAMES[date.getMonth()]}`;
+}
+
+/**
+ * Étendue d'une semaine : `du 14 au 20 septembre`.
+ *
+ * Le mois n'est répété que s'il change, et l'année n'apparaît qu'au passage du
+ * 31 décembre — répéter ce que le lecteur sait déjà allonge la ligne sans rien
+ * lui apprendre.
+ */
+export function formatWeekRange(weekStart: WeekId): string {
+  const start = parseIsoDate(weekStart);
+  const end = parseIsoDate(addDays(weekStart, 6));
+
+  const startMonth = MONTH_NAMES[start.getMonth()];
+  const endMonth = MONTH_NAMES[end.getMonth()];
+
+  if (start.getFullYear() !== end.getFullYear()) {
+    return `du ${start.getDate()} ${startMonth} ${start.getFullYear()} au ${end.getDate()} ${endMonth} ${end.getFullYear()}`;
+  }
+  if (start.getMonth() !== end.getMonth()) {
+    return `du ${start.getDate()} ${startMonth} au ${end.getDate()} ${endMonth}`;
+  }
+  return `du ${start.getDate()} au ${end.getDate()} ${endMonth}`;
+}
+
+/**
+ * La seule semaine que le foyer peut composer aujourd'hui : la suivante.
+ *
+ * Jamais la semaine en cours. Elle a commencé samedi, les courses sont faites
+ * ou devraient l'être, et le batch est cuisiné ou sur le point de l'être : un
+ * plan composé maintenant arriverait après le moment où il servait. Le samedi
+ * et le dimanche, en revanche, la semaine suivante reste composable — elle
+ * commence dans six ou sept jours, il y a tout le temps de s'organiser.
+ *
+ * Pas plus loin non plus : composer deux semaines d'avance, c'est choisir des
+ * plats avant de savoir ce qui reste du batch précédent.
+ */
+export function getComposableWeekId(today: IsoDate): WeekId {
+  return addDays(getWeekId(parseIsoDate(today)), 7);
+}
+
+/** Vrai si `weekStart` est la semaine composable à la date `today`. */
+export function isComposableWeek(weekStart: WeekId, today: IsoDate): boolean {
+  return weekStart === getComposableWeekId(today);
+}

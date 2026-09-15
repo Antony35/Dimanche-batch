@@ -7,5 +7,6 @@ export { joinHousehold } from './callable/join-household';
 export { generateWeeklyPlan } from './callable/generate-weekly-plan';
 export { regenerateMeal } from './callable/regenerate-meal';
 export { setMeal } from './callable/set-meal';
+export { swapMeals } from './callable/swap-meals';
 export { replaceBatchRecipeCallable as replaceBatchRecipe } from './callable/replace-batch-recipe';
 export { generateBatchSchedule } from './callable/generate-batch-schedule';

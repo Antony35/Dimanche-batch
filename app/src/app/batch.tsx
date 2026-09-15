@@ -4,12 +4,14 @@ import { useKeepAwake } from 'expo-keep-awake';
 import { Pressable, View } from 'react-native';
 import {
   AISLE_LABELS,
+  formatDateLong,
   formatQuantity,
-  countMealsServing,
+  countBatchMealsServing,
   getBatchSession,
   getDayName,
   getUpcomingWeekId,
   capitalize,
+  scaleIngredients,
   type BatchRecipe,
   type GenerationLock,
 } from '@dimanche-batch/shared';
@@ -34,31 +36,31 @@ import { useBatchSchedule } from '@/features/meal-plan/api/use-batch-schedule';
 import { useGenerateBatchSchedule } from '@/features/meal-plan/api/use-generate-batch-schedule';
 import { useRecipes } from '@/features/meal-plan/api/use-recipes';
 import { useReplaceBatchRecipe } from '@/features/meal-plan/api/use-replace-batch-recipe';
-import { BatchScheduleView } from '@/features/meal-plan/components/batch-schedule-view';
+import { BatchSessionView } from '@/features/meal-plan/components/batch-session-view';
 import { GenerationProgress } from '@/features/meal-plan/components/generation-progress';
 import { useGenerationProgress } from '@/features/meal-plan/api/use-generation-progress';
 import { useWeeklyPlan } from '@/features/meal-plan/api/use-weekly-plan';
 import { useTheme } from '@/theme';
 
 /**
- * Session de préparation du dimanche.
+ * Session de préparation du dimanche, sous deux formes.
  *
- * Les recettes sont présentées à la suite, dans l'ordre où le modèle a demandé
- * de les cuisiner. Pas d'entrelacement des étapes : mélanger les gestes de
- * quatre plats produit une liste qu'on ne peut plus rattacher à un plat quand
- * on s'y perd.
+ * « Recette par recette » enchaîne les plats tels qu'ils sont écrits.
+ * « Mise en place puis cuisson » coupe tout d'un coup, puis cuisine les plats
+ * du plus long au plus court, avec des étapes réécrites sans la découpe.
  */
-type BatchView = 'recipes' | 'parallel';
+type BatchView = 'recipes' | 'session';
 
 const VIEW_OPTIONS = [
   { value: 'recipes', label: 'Recette par recette' },
-  { value: 'parallel', label: 'Tout en parallèle' },
+  { value: 'session', label: 'Mise en place puis cuisson' },
 ] as const;
 
 /** Ce que promet chaque vue, sous le sélecteur. */
 const VIEW_HINTS: Record<BatchView, string> = {
   recipes: 'Un plat après l’autre, dans l’ordre prévu : plus lent, plus tranquille.',
-  parallel: 'Les gestes des plats mêlés pour gagner du temps, chaque étape nommant son plat.',
+  session:
+    'Tout couper d’un coup, puis cuisiner les plats du plus long au plus court : chaque fiche ne garde que la cuisson.',
 };
 
 export default function BatchScreen() {
@@ -120,12 +122,12 @@ export default function BatchScreen() {
     <Screen>
       <View style={{ gap: theme.spacing.xs }}>
         <Text variant="overline" tone="faint">
-          {getDayName(1).toUpperCase()} {session.cookDate}
+          {formatDateLong(session.cookDate).toUpperCase()}
         </Text>
         <Text variant="title">Préparation du batch</Text>
         <Text tone="soft">
           {session.recipes.length} plats · environ {formatDuration(session.totalMinutes)} de
-          cuisine.
+          présence en cuisine. Commence par les plats qui cuisent seuls.
         </Text>
       </View>
 
@@ -138,8 +140,8 @@ export default function BatchScreen() {
 
       {replace.error ? <ErrorState message={replace.error.message} /> : null}
 
-      {view === 'parallel' ? (
-        <BatchScheduleView
+      {view === 'session' ? (
+        <BatchSessionView
           plan={plan}
           recipesById={recipesById}
           schedule={schedule}
@@ -160,7 +162,7 @@ export default function BatchScreen() {
             entry={entry}
             position={index + 1}
             progress={progress}
-            mealCount={countMealsServing(plan, entry.recipe.id)}
+            mealCount={countBatchMealsServing(plan, entry.recipe.id)}
             isReplacing={replace.isPending && replace.variables?.recipeId === entry.recipe.id}
             generation={generation}
             onReplace={() => {
@@ -210,9 +212,20 @@ function BatchRecipeCard({
         </View>
 
         <Text variant="caption" tone="soft">
-          {recipe.prepMinutes} min · {recipe.servings} portions ·{' '}
-          {describeServedDays(entry.servedDayIndexes)}
+          {recipe.prepMinutes} min
+          {recipe.cookMinutes > 0 ? ` + ${recipe.cookMinutes} min de cuisson seule` : ''} ·{' '}
+          <Text variant="caption" style={{ color: theme.colors.accent }}>
+            {entry.portions} portions à cuisiner
+          </Text>{' '}
+          · {describeServedDays(entry.servedDayIndexes)}
         </Text>
+
+        {entry.portions !== recipe.servings ? (
+          <Text variant="caption" tone="faint">
+            La recette est prévue pour {recipe.servings} portions : les quantités ci-dessous sont
+            celles de la liste de courses, pour {entry.portions}.
+          </Text>
+        ) : null}
 
         {entry.needsFreezing ? (
           <Text variant="caption" style={{ color: theme.colors.spice }}>
@@ -234,7 +247,7 @@ function BatchRecipeCard({
         <Text variant="overline" tone="faint">
           INGRÉDIENTS
         </Text>
-        {recipe.ingredients.map((ingredient, index) => (
+        {scaleIngredients(recipe, entry.portions).map((ingredient, index) => (
           <View
             key={`${ingredient.name}-${index}`}
             style={{ flexDirection: 'row', alignItems: 'baseline', gap: theme.spacing.sm }}

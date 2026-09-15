@@ -14,6 +14,7 @@ export function makeGeneratedRecipe(
     name: 'Recette générée',
     servings: 2,
     prepMinutes: 25,
+    cookMinutes: 0,
     tags: ['one-pot'],
     ingredients: [{ name: 'lentilles corail', qty: 250, unit: 'g', aisle: 'epicerie' }],
     steps: ['Tout mettre dans la cocotte.'],
@@ -21,28 +22,23 @@ export function makeGeneratedRecipe(
   };
 }
 
+/** Une portion du batch, pour composer les jours de semaine d'un plan généré. */
+export function portion(recipeSlug: string) {
+  return { recipeSlug, kind: 'batch-leftover' as const, withStarter: false, withDessert: false };
+}
+
 /**
- * Plan où chaque recette est réellement cuisinée au moins un soir.
+ * Plan dont toutes les recettes sont des plats du batch, servis à tour de rôle
+ * du lundi au vendredi — le midi par la première, le soir par roulement.
  *
- * Volontairement resté sur l'ancienne sémantique — un repas `cooked` par
- * recette — pour que les tests d'écriture continuent de vérifier ce chemin.
- * Les scénarios propres au batch passent `batchRecipeIds` explicitement.
+ * Il ne passe pas forcément les contraintes métier : il sert aux tests
+ * d'écriture, qui n'appellent pas le validateur.
  */
 export function makeGeneratedPlan(recipes: GeneratedRecipe[]): GeneratedPlan {
-  const days = [0, 1, 2, 3, 4, 5, 6].map((dayIndex) => ({
+  const days = [2, 3, 4, 5, 6].map((dayIndex) => ({
     dayIndex,
-    lunch: {
-      recipeSlug: recipes[0]?.slug ?? null,
-      kind: 'batch-leftover' as const,
-      withStarter: false,
-      withDessert: false,
-    },
-    dinner: {
-      recipeSlug: recipes[dayIndex % recipes.length]?.slug ?? null,
-      kind: 'cooked' as const,
-      withStarter: false,
-      withDessert: false,
-    },
+    lunch: portion(recipes[0]?.slug ?? 'inconnue'),
+    dinner: portion(recipes[dayIndex % recipes.length]?.slug ?? 'inconnue'),
   }));
 
   return { recipes, batchRecipeSlugs: recipes.map((recipe) => recipe.slug), days };
@@ -50,7 +46,8 @@ export function makeGeneratedPlan(recipes: GeneratedRecipe[]): GeneratedPlan {
 
 /**
  * Plan conforme au nouveau modèle : trois plats préparés le dimanche nourrissent
- * les dix repas de la semaine, le week-end est pris à l'extérieur.
+ * les dix repas de la semaine, répartis 4, 3 et 3 — donc 8, 6 et 6 portions. Le
+ * modèle ne décrit ni le samedi ni le dimanche.
  *
  * Les portions et les étiquettes sont calibrées pour passer les contraintes —
  * une fixture qui en violerait une rendrait rouge le premier test et suspects
@@ -58,49 +55,42 @@ export function makeGeneratedPlan(recipes: GeneratedRecipe[]): GeneratedPlan {
  */
 export function makeValidGeneratedPlan(): GeneratedPlan {
   const recipes = [
-    makeGeneratedRecipe({ slug: 'batch-curry', tags: ['batch'], servings: 8, prepMinutes: 50 }),
+    makeGeneratedRecipe({
+      slug: 'batch-curry',
+      tags: ['batch', 'mijote'],
+      servings: 8,
+      prepMinutes: 50,
+      cookMinutes: 90,
+    }),
     makeGeneratedRecipe({
       slug: 'chili-sin-carne',
       tags: ['congelable'],
-      servings: 8,
+      servings: 6,
       prepMinutes: 50,
     }),
     makeGeneratedRecipe({
       slug: 'soupe-poireaux',
       tags: ['congelable'],
-      servings: 4,
+      servings: 6,
       prepMinutes: 30,
     }),
   ];
 
-  const slugFor = (dayIndex: number): string => {
-    if (dayIndex <= 3) return 'batch-curry';
-    if (dayIndex <= 5) return 'chili-sin-carne';
-    return 'soupe-poireaux';
+  const serving: Record<number, [string, string]> = {
+    2: ['batch-curry', 'batch-curry'],
+    3: ['batch-curry', 'batch-curry'],
+    4: ['chili-sin-carne', 'chili-sin-carne'],
+    5: ['chili-sin-carne', 'soupe-poireaux'],
+    6: ['soupe-poireaux', 'soupe-poireaux'],
   };
-
-  const days = [0, 1, 2, 3, 4, 5, 6].map((dayIndex) => {
-    if (dayIndex < 2) {
-      const away = {
-        recipeSlug: null,
-        kind: 'eat-out' as const,
-        withStarter: false,
-        withDessert: false,
-      };
-      return { dayIndex, lunch: away, dinner: { ...away } };
-    }
-    const portion = {
-      recipeSlug: slugFor(dayIndex),
-      kind: 'batch-leftover' as const,
-      withStarter: false,
-      withDessert: false,
-    };
-    return { dayIndex, lunch: portion, dinner: { ...portion } };
-  });
 
   return {
     recipes,
     batchRecipeSlugs: ['batch-curry', 'chili-sin-carne', 'soupe-poireaux'],
-    days,
+    days: [2, 3, 4, 5, 6].map((dayIndex) => ({
+      dayIndex,
+      lunch: portion(serving[dayIndex]![0]),
+      dinner: portion(serving[dayIndex]![1]),
+    })),
   };
 }

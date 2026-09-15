@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { getBatchSession, getThawReminders } from '../batch';
+import {
+  countBatchMealsServing,
+  getBatchPortions,
+  getBatchSession,
+  getThawReminders,
+  orderForCooking,
+  scaleIngredients,
+} from '../batch';
 import { makePlan, makeRecipe } from './fixtures';
 
 /**
@@ -122,5 +129,116 @@ describe('getThawReminders', () => {
     // Le chili occupe les deux créneaux du jeudi : on ne sort qu'une barquette
     // de plus, pas deux rappels.
     expect(reminders('2026-09-16')).toHaveLength(1);
+  });
+});
+
+/**
+ * « Ce qui est acheté est ce qui est cuisiné. » Cette fonction est la seule
+ * autorité sur les deux, et c'est ce qui rend l'égalité vraie par construction :
+ * la liste de courses et l'écran du dimanche l'appellent tous les deux.
+ */
+describe('getBatchPortions', () => {
+  it('compte deux portions par repas servi', () => {
+    const plan = makePlan(
+      [
+        {},
+        {},
+        { lunch: { recipeId: 'curry', kind: 'batch-leftover' } },
+        { lunch: { recipeId: 'curry', kind: 'batch-leftover' } },
+        { lunch: { recipeId: 'curry', kind: 'batch-leftover' } },
+      ],
+      '2026-09-12',
+      ['curry'],
+    );
+
+    expect(countBatchMealsServing(plan, 'curry')).toBe(3);
+    expect(getBatchPortions(plan, 'curry')).toBe(6);
+  });
+
+  it('ne compte ni le repas dehors ni le reste d’une semaine précédente', () => {
+    const plan = makePlan(
+      [
+        { lunch: { recipeId: 'curry', kind: 'freezer-backup' } },
+        { lunch: { recipeId: null, kind: 'eat-out' } },
+        { lunch: { recipeId: 'curry', kind: 'batch-leftover' } },
+        { lunch: { recipeId: 'curry', kind: 'batch-leftover' } },
+      ],
+      '2026-09-12',
+      ['curry'],
+    );
+
+    // Le `freezer-backup` a été acheté et cuisiné une autre semaine.
+    expect(getBatchPortions(plan, 'curry')).toBe(4);
+  });
+
+  /**
+   * Un plat du batch est cuisiné le dimanche, donc acheté, même si plus aucun
+   * créneau ne le sert. L'interface interdit d'en arriver là, mais un plan
+   * antérieur à cette règle ne doit pas produire une liste qui oublie un plat.
+   */
+  it('garde un plancher d’un repas pour un plat que rien ne sert', () => {
+    const plan = makePlan([{}], '2026-09-12', ['curry']);
+    expect(countBatchMealsServing(plan, 'curry')).toBe(0);
+    expect(getBatchPortions(plan, 'curry')).toBe(2);
+  });
+
+  it('annonce à la session du dimanche les portions qu’on a achetées', () => {
+    const plan = makePlan(
+      [
+        {},
+        {},
+        { lunch: { recipeId: 'curry', kind: 'batch-leftover' } },
+        { lunch: { recipeId: 'curry', kind: 'batch-leftover' } },
+      ],
+      '2026-09-12',
+      ['curry'],
+    );
+    const recipes = new Map([['curry', makeRecipe({ id: 'curry', servings: 8 })]]);
+
+    const session = getBatchSession(plan, recipes);
+    // La recette déclare 8 portions, mais elle ne sert plus que deux repas.
+    expect(session.recipes[0]?.portions).toBe(4);
+  });
+});
+
+describe('scaleIngredients', () => {
+  const eightPortions = makeRecipe({
+    id: 'curry',
+    servings: 8,
+    ingredients: [
+      { name: 'lentilles corail', qty: 400, unit: 'g', aisle: 'epicerie' },
+      { name: 'oignon', qty: 3, unit: 'piece', aisle: 'fruits-legumes' },
+    ],
+  });
+
+  it('rend la recette telle quelle quand on cuisine ses portions', () => {
+    expect(scaleIngredients(eightPortions, 8)).toBe(eightPortions.ingredients);
+  });
+
+  it('met les quantités à l’échelle, arrondies vers le haut comme les courses', () => {
+    const six = scaleIngredients(eightPortions, 6);
+    expect(six[0]?.qty).toBe(300);
+    // 2,25 oignons : on en sort 3, jamais 2.
+    expect(six[1]?.qty).toBe(3);
+  });
+});
+
+describe('orderForCooking', () => {
+  const entry = (id: string, cookMinutes: number, prepMinutes = 20) => ({
+    recipe: makeRecipe({ id, cookMinutes, prepMinutes }),
+  });
+
+  it('lance d’abord le plat qui cuit le plus longtemps', () => {
+    const ordered = orderForCooking([
+      entry('salade', 0),
+      entry('bourguignon', 150),
+      entry('chili', 40),
+    ]);
+    expect(ordered.map((item) => item.recipe.id)).toEqual(['bourguignon', 'chili', 'salade']);
+  });
+
+  it('départage par le temps de préparation, puis par l’ordre du batch', () => {
+    const ordered = orderForCooking([entry('a', 30, 10), entry('b', 30, 40), entry('c', 30, 10)]);
+    expect(ordered.map((item) => item.recipe.id)).toEqual(['b', 'a', 'c']);
   });
 });

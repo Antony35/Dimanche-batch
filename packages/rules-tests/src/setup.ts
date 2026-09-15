@@ -72,8 +72,23 @@ export async function seed(testEnv: RulesTestEnvironment): Promise<void> {
       unit: 'g',
       aisle: 'epicerie',
       checked: false,
+      origin: 'batch',
       fromRecipeIds: ['recipe-1'],
     });
+
+    // Un article ajouté à la main, déjà en base : c'est le seul que le client
+    // puisse supprimer.
+    await db
+      .doc(`households/${HOUSEHOLD_ID}/groceryLists/${WEEK_ID}/items/manual--sac-poubelle--piece`)
+      .set({
+        name: 'sac poubelle',
+        qty: 1,
+        unit: 'piece',
+        aisle: 'entretien',
+        checked: false,
+        origin: 'manual',
+        fromRecipeIds: [],
+      });
 
     await db.doc(`households/${HOUSEHOLD_ID}/usage/2026-09-13`).set({ generations: 1 });
   });

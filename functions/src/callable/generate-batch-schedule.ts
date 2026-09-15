@@ -2,7 +2,10 @@ import { onCall } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions';
 import {
   GenerateBatchScheduleInputSchema,
+  getBatchPortions,
   isScheduleCurrent,
+  miseEnPlaceGroup,
+  scaleIngredients,
   type GenerateBatchScheduleInput,
   type GenerateBatchScheduleResult,
   type WeeklyPlan,
@@ -25,7 +28,7 @@ import {
   requireHouseholdMember,
 } from '../lib/guards';
 import { readPlanRecipes } from '../lib/plan-writer';
-import { readBatchSchedule, writeBatchSchedule } from '../lib/batch-schedule-writer';
+import { readCookingSession, writeCookingSession } from '../lib/batch-schedule-writer';
 import { rethrowIfUnavailable, readPlanOrFail } from '../lib/callable-support';
 import {
   BatchScheduleGenerationError,
@@ -33,12 +36,13 @@ import {
 } from '../gemini/generate-batch-schedule';
 
 /**
- * Compose le déroulé entrelacé du dimanche, à la demande.
+ * Compose la session de cuisson du dimanche, à la demande : la découpe de
+ * chaque ingrédient et les étapes de cuisson de chaque plat.
  *
- * Généré seulement si quelqu'un ouvre l'onglet, puis conservé : une génération
- * par batch, jamais une par consultation. Si un déroulé à jour existe déjà —
- * l'autre téléphone vient de le composer — il est rendu tel quel, sans rien
- * décompter. La vérification se fait **sous le verrou** : sans lui, deux
+ * Généré seulement si quelqu'un le demande, puis conservé : une génération par
+ * batch, jamais une par consultation. Si une session à jour existe déjà —
+ * l'autre téléphone vient de la composer — elle est rendue telle quelle, sans
+ * rien décompter. La vérification se fait **sous le verrou** : sans lui, deux
  * téléphones qui ouvrent l'onglet en même temps paieraient deux fois.
  */
 export const generateBatchSchedule = onCall(
@@ -68,7 +72,7 @@ export const generateBatchSchedule = onCall(
 
     await acquireGenerationLock(input.householdId, input.weekId, uid);
     try {
-      const existing = await readBatchSchedule(input.householdId, input.weekId);
+      const existing = await readCookingSession(input.householdId, input.weekId);
       if (existing && isScheduleCurrent(existing, plan)) {
         return { weekId: input.weekId, stepCount: existing.steps.length, generated: false };
       }
@@ -100,13 +104,22 @@ async function composeSchedule(
   try {
     generated = await generateBatchScheduleFromGemini(
       {
-        recipes: recipes.map(({ id, name, prepMinutes, steps }) => ({
-          id,
-          name,
-          prepMinutes,
-          steps,
+        recipes: recipes.map((recipe) => ({
+          id: recipe.id,
+          name: recipe.name,
+          cookMinutes: recipe.cookMinutes,
+          // Les ingrédients des portions réellement cuisinées, pour que le
+          // modèle ne réécrive pas une étape sur des quantités qui ont changé.
+          ingredients: scaleIngredients(recipe, getBatchPortions(plan, recipe.id)).map(
+            (ingredient) => ({
+              name: ingredient.name,
+              toCut: miseEnPlaceGroup(ingredient.name, ingredient.aisle) !== null,
+            }),
+          ),
+          steps: recipe.steps,
         })),
       },
+      recipes,
       (attempt) => {
         void reportGenerationStep(
           input.householdId,
@@ -123,13 +136,13 @@ async function composeSchedule(
         violations: error.violations.map((violation) => violation.code),
       });
       throw internal(
-        'Le déroulé proposé oubliait un plat, même après correction. Réessaie, ou cuisine ' +
-          'recette par recette.',
+        'Les étapes de cuisson proposées ne tenaient pas, même après correction. Réessaie, ou ' +
+          'cuisine recette par recette.',
         error,
       );
     }
     throw internal(
-      'La composition du déroulé a échoué pour une raison inattendue. Réessaie dans un instant.',
+      'La composition des étapes de cuisson a échoué pour une raison inattendue. Réessaie dans un instant.',
       error,
     );
   }
@@ -137,25 +150,26 @@ async function composeSchedule(
   await reportGenerationStep(input.householdId, input.weekId, 'writing', generated.attempts);
 
   try {
-    await writeBatchSchedule({
+    await writeCookingSession({
       householdId: input.householdId,
       weekId: input.weekId,
       sourceRecipeIds: plan.batchRecipeIds,
-      schedule: generated.schedule,
+      session: generated.session,
       generatedBy: uid,
       model: generated.model,
     });
   } catch (error) {
     throw internal(
-      'Le déroulé a bien été composé mais n’a pas pu être enregistré. Réessaie dans un instant.',
+      'Les étapes de cuisson ont bien été composées mais n’ont pas pu être enregistrées. Réessaie dans un instant.',
       error,
     );
   }
 
-  logger.info('déroulé enregistré', {
+  logger.info('session de cuisson enregistrée', {
     weekId: input.weekId,
-    etapes: generated.schedule.steps.length,
+    etapes: generated.session.steps.length,
+    decoupes: generated.session.cuts.length,
     tentatives: generated.attempts,
   });
-  return { weekId: input.weekId, stepCount: generated.schedule.steps.length, generated: true };
+  return { weekId: input.weekId, stepCount: generated.session.steps.length, generated: true };
 }

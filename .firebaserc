@@ -1,5 +1,7 @@
 {
   "projects": {
-    "default": "dimanche-batch"
+    "default": "dimanche-batch-dev",
+    "dev": "dimanche-batch-dev",
+    "prod": "dimanche-batch"
   }
 }

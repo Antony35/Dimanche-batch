@@ -12,6 +12,7 @@ import {
   MODEL,
   WEEK_START,
   makeGeneratedRecipe,
+  portion,
 } from '../../__tests__/fixtures';
 import { db } from '../firestore';
 import { replaceBatchRecipe, writeWeeklyPlan } from '../plan-writer';
@@ -59,28 +60,14 @@ const tajine = makeGeneratedRecipe({
   ingredients: [{ name: 'courgette', qty: 3, unit: 'piece', aisle: 'fruits-legumes' }],
 });
 
-/** Curry lundi et mardi, chili jeudi et vendredi, week-end à l'extérieur. */
+/** Curry lundi et mardi, chili du mercredi au vendredi. */
 function basePlan(): GeneratedPlan {
-  const portion = (slug: string) => ({
-    recipeSlug: slug,
-    kind: 'batch-leftover' as const,
-    withStarter: false,
-    withDessert: false,
-  });
-  const away = {
-    recipeSlug: null,
-    kind: 'eat-out' as const,
-    withStarter: false,
-    withDessert: false,
-  };
-
   return {
     recipes: [curry, chili],
     batchRecipeSlugs: ['batch-curry', 'chili-sin-carne'],
-    days: [0, 1, 2, 3, 4, 5, 6].map((dayIndex) => {
-      const slug = dayIndex >= 5 ? 'chili-sin-carne' : 'batch-curry';
-      const meal = dayIndex < 2 || dayIndex === 4 ? away : portion(slug);
-      return { dayIndex, lunch: meal, dinner: { ...meal } };
+    days: [2, 3, 4, 5, 6].map((dayIndex) => {
+      const slug = dayIndex >= 4 ? 'chili-sin-carne' : 'batch-curry';
+      return { dayIndex, lunch: portion(slug), dinner: portion(slug) };
     }),
   };
 }
@@ -162,8 +149,9 @@ describe('replaceBatchRecipe', () => {
     await swapCurry();
 
     const oignon = (await readItems()).find((item) => item.name === 'oignon');
-    // Le curry en demandait 2, le chili 1 : il reste celui du chili.
-    expect(oignon?.qty).toBe(1);
+    // Le chili demande 1 oignon pour 8 portions ; servi six repas, il en faut
+    // 1,5, arrondi vers le haut : 2. Avec les 2 du curry, on en achèterait 4.
+    expect(oignon?.qty).toBe(2);
   });
 
   it('préserve les cases déjà cochées des articles qui restent', async () => {

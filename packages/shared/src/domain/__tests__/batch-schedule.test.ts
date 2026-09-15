@@ -1,77 +1,164 @@
 import { describe, expect, it } from 'vitest';
-import { isScheduleCurrent, validateBatchSchedule } from '../batch-schedule';
-import { makePlan } from './fixtures';
+import { isScheduleCurrent, sessionCookMinutes, validateBatchSession } from '../batch-schedule';
+import { makePlan, makeRecipe } from './fixtures';
 
 /**
- * Le déroulé fond plusieurs recettes en une séquence. Ce qu'il ne doit jamais
- * faire, c'est en perdre une en route : on s'en apercevrait devant les
- * fourneaux, avec un plat jamais cuisiné.
+ * Une fois tout coupé, la session ne garde de chaque plat que sa cuisson. Ce
+ * qu'elle ne doit jamais faire : perdre un plat, redemander de couper, ou
+ * inventer une découpe pour un ingrédient absent.
  */
-const BATCH = ['curry', 'chili', 'soupe'];
+const curry = makeRecipe({
+  id: 'curry',
+  ingredients: [
+    { name: 'oignon', qty: 2, unit: 'piece', aisle: 'fruits-legumes' },
+    { name: 'lentilles corail', qty: 300, unit: 'g', aisle: 'epicerie' },
+  ],
+});
+const chili = makeRecipe({
+  id: 'chili',
+  ingredients: [{ name: 'poivron', qty: 2, unit: 'piece', aisle: 'fruits-legumes' }],
+});
+const RECIPES = [curry, chili];
 
-const step = (text: string, ...recipeIds: string[]) => ({ text, recipeIds });
+/** Un temps de cuisson par plat : ce qu'une session complète rend. */
+const TIMINGS = [
+  { recipeId: 'curry', cookMinutes: 20 },
+  { recipeId: 'chili', cookMinutes: 0 },
+];
 
-describe('validateBatchSchedule', () => {
-  const codes = (steps: ReturnType<typeof step>[]) =>
-    validateBatchSchedule({ steps }, BATCH).map((violation) => violation.code);
+const step = (recipeId: string, text: string) => ({ recipeId, text });
+const cut = (recipeId: string, ingredient: string, how: string) => ({
+  recipeId,
+  ingredient,
+  cut: how,
+});
 
-  it('accepte un déroulé qui couvre chaque plat', () => {
+function codes(session: {
+  cuts: ReturnType<typeof cut>[];
+  steps: ReturnType<typeof step>[];
+  timings?: { recipeId: string; cookMinutes: number }[];
+}) {
+  return validateBatchSession({ timings: TIMINGS, ...session }, RECIPES).map(
+    (violation) => violation.code,
+  );
+}
+
+describe('validateBatchSession', () => {
+  it('accepte une session qui donne des étapes à chaque plat', () => {
     expect(
-      codes([
-        step('Éplucher les oignons des trois plats.', 'curry', 'chili', 'soupe'),
-        step('Lancer le chili à feu doux.', 'chili'),
-        step('Pendant ce temps, préparer le curry.', 'curry'),
-      ]),
+      codes({
+        cuts: [cut('curry', 'oignon', 'émincé'), cut('chili', 'Poivron', 'en lanières')],
+        steps: [
+          step('curry', 'Faire revenir les oignons émincés.'),
+          step('curry', 'Ajouter les lentilles et cuire 20 minutes.'),
+          step('chili', 'Faire sauter les poivrons.'),
+        ],
+      }),
     ).toEqual([]);
   });
 
-  it('refuse un déroulé qui oublie un plat', () => {
-    const result = codes([
-      step('Préparer le curry.', 'curry'),
-      step('Préparer le chili.', 'chili'),
+  it('refuse une session qui oublie un plat', () => {
+    expect(codes({ cuts: [], steps: [step('curry', 'Cuire.')] })).toEqual([
+      'session-missing-recipe',
     ]);
-    expect(result).toEqual(['schedule-missing-recipe']);
   });
 
-  it('refuse une étape qui vise un plat hors du batch', () => {
-    const result = codes([
-      step('Préparer tout.', 'curry', 'chili', 'soupe'),
-      step('Faire le gratin.', 'gratin'),
-    ]);
-    expect(result).toEqual(['schedule-unknown-recipe']);
+  it('refuse une étape ou une découpe qui vise un plat hors du batch', () => {
+    const result = codes({
+      cuts: [cut('gratin', 'courgette', 'en rondelles')],
+      steps: [step('curry', 'Cuire.'), step('chili', 'Cuire.'), step('gratin', 'Enfourner.')],
+    });
+    expect(result).toEqual(['session-unknown-recipe', 'session-unknown-recipe']);
   });
 
-  it('nomme le plat oublié, puisque le message repart dans la reprise', () => {
-    const [violation] = validateBatchSchedule(
-      { steps: [step('Tout sauf la soupe.', 'curry', 'chili')] },
-      BATCH,
+  // Tout est coupé à ce stade : une étape qui redemande de couper n'a pas été réécrite.
+  it('refuse une étape qui commence par une découpe', () => {
+    const result = codes({
+      cuts: [],
+      steps: [step('curry', 'Émincer l’oignon et le faire revenir.'), step('chili', 'Cuire.')],
+    });
+    expect(result).toEqual(['session-prep-step']);
+  });
+
+  it('laisse passer une étape qui ne fait que citer un ingrédient coupé', () => {
+    expect(
+      codes({
+        cuts: [],
+        steps: [step('curry', 'Ajouter les oignons émincés.'), step('chili', 'Cuire.')],
+      }),
+    ).toEqual([]);
+  });
+
+  it('refuse la découpe d’un ingrédient que la recette ne contient pas', () => {
+    const violations = validateBatchSession(
+      {
+        cuts: [cut('curry', 'échalote', 'ciselée')],
+        steps: [step('curry', 'Cuire.'), step('chili', 'Cuire.')],
+        timings: TIMINGS,
+      },
+      RECIPES,
     );
-    expect(violation?.message).toContain('soupe');
+    expect(violations.map((violation) => violation.code)).toEqual(['session-unknown-ingredient']);
+    expect(violations[0]?.message).toContain('nom exact');
+  });
+});
+
+/**
+ * L'écran annonçait un temps de cuisson que les étapes démentaient. La session
+ * rend désormais le sien, et il doit concorder avec ses propres étapes.
+ */
+describe('validateBatchSession, temps de cuisson', () => {
+  it('exige un temps pour chaque plat', () => {
+    expect(
+      codes({
+        cuts: [],
+        steps: [step('curry', 'Cuire.'), step('chili', 'Cuire.')],
+        timings: [{ recipeId: 'curry', cookMinutes: 20 }],
+      }),
+    ).toEqual(['session-missing-timing']);
+  });
+
+  it('refuse un temps que les étapes démentent', () => {
+    expect(
+      codes({
+        cuts: [],
+        steps: [step('curry', 'Couvrir et laisser mijoter 1 h 30.'), step('chili', 'Cuire.')],
+      }),
+    ).toEqual(['cook-time-mismatch']);
+  });
+
+  it('préfère le temps de la session à celui de la recette, et retombe dessus à défaut', () => {
+    const recipe = { id: 'curry', cookMinutes: 60 };
+    expect(sessionCookMinutes({ timings: [{ recipeId: 'curry', cookMinutes: 90 }] }, recipe)).toBe(
+      90,
+    );
+    expect(sessionCookMinutes({ timings: [] }, recipe)).toBe(60);
+    expect(sessionCookMinutes(null, recipe)).toBe(60);
   });
 });
 
 describe('isScheduleCurrent', () => {
-  const plan = makePlan([], '2026-09-12', BATCH);
-  const schedule = (sourceRecipeIds: string[]) => ({
+  const session = {
     id: '2026-09-12',
-    sourceRecipeIds,
-    steps: [],
+    sourceRecipeIds: ['curry', 'chili'],
+    cuts: [],
+    timings: TIMINGS,
+    steps: [step('curry', 'Cuire.')],
     generatedAt: 0,
     generatedBy: 'uid',
     model: 'gemini-test',
-    promptVersion: 1,
+    promptVersion: 9,
+  };
+
+  it('reconnaît une session composée pour ce batch', () => {
+    expect(isScheduleCurrent(session, makePlan([], '2026-09-12', ['curry', 'chili']))).toBe(true);
   });
 
-  it('reconnaît un déroulé composé à partir du batch actuel', () => {
-    expect(isScheduleCurrent(schedule(BATCH), plan)).toBe(true);
+  it('signale une session périmée par un plat remplacé', () => {
+    expect(isScheduleCurrent(session, makePlan([], '2026-09-12', ['curry', 'tajine']))).toBe(false);
   });
 
-  // Le cas qui motive la fonction : un plat remplacé depuis l'écran du batch.
-  it('déclare périmé un déroulé dont un plat a été remplacé', () => {
-    expect(isScheduleCurrent(schedule(['curry', 'tajine', 'soupe']), plan)).toBe(false);
-  });
-
-  it('déclare périmé un déroulé composé pour un batch plus court', () => {
-    expect(isScheduleCurrent(schedule(['curry', 'chili']), plan)).toBe(false);
+  it('signale une session dont l’ordre du batch a changé', () => {
+    expect(isScheduleCurrent(session, makePlan([], '2026-09-12', ['chili', 'curry']))).toBe(false);
   });
 });

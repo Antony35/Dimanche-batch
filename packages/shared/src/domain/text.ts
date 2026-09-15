@@ -29,3 +29,19 @@ export function normalizeName(value: string): string {
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/\s+/g, ' ');
 }
+
+/**
+ * Découpe une liste écrite à la main en articles.
+ *
+ * Les tables de données du domaine — rayons, saisons — comptent des centaines
+ * d'entrées. Écrites en tableaux de chaînes, le formateur leur donne une ligne
+ * chacune et le fichier devient illisible pour qui vient y ajouter un oubli.
+ * Écrites en une chaîne, virgules ou retours à la ligne au choix, elles restent
+ * relisibles et le formateur n'y touche pas.
+ */
+export function parseList(value: string): string[] {
+  return value
+    .split(/[,\n]/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}

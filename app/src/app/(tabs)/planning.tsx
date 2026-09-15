@@ -1,12 +1,15 @@
 import { useState } from 'react';
+import { useLocalSearchParams } from 'expo-router';
 import { View } from 'react-native';
 import {
+  addDays,
+  capitalize,
+  formatWeekRange,
   getBatchSession,
   getCurrentWeekId,
   getDayNameForDate,
-  getUpcomingWeekId,
-  getWeekDates,
-  capitalize,
+  isLastMealOfBatchDish,
+  listSwapTargets,
   toIsoDate,
   type DayPlan,
   type GenerationLock,
@@ -20,11 +23,12 @@ import {
   MealChoiceSheet,
   type MealChoiceTarget,
 } from '@/features/meal-plan/components/meal-choice-sheet';
-import { WeekSwitch } from '@/features/meal-plan/components/week-switch';
+import { WeekSwitch, type WeekOffset } from '@/features/meal-plan/components/week-switch';
 import { useRecipes } from '@/features/meal-plan/api/use-recipes';
 import { useGenerationProgress } from '@/features/meal-plan/api/use-generation-progress';
 import { useRegenerateMeal } from '@/features/meal-plan/api/use-regenerate-meal';
 import { useSetMeal } from '@/features/meal-plan/api/use-set-meal';
+import { useSwapMeals } from '@/features/meal-plan/api/use-swap-meals';
 import { useWeeklyPlan } from '@/features/meal-plan/api/use-weekly-plan';
 import { useToggleDislike } from '@/features/recipes/api/use-recipe-verdict';
 import { useTheme } from '@/theme';
@@ -35,46 +39,62 @@ export default function PlanningScreen() {
   const { household } = useHousehold();
   const today = toIsoDate(new Date());
 
-  // Le planning s'ouvre sur ce qu'on mange ; la semaine à préparer est à un
-  // geste, parce que c'est elle qu'on ajuste avant les courses.
-  const [showingCurrent, setShowingCurrent] = useState(true);
-  const weekId = showingCurrent ? getCurrentWeekId() : getUpcomingWeekId();
+  // Le planning s'ouvre sur ce qu'on mange ; les semaines à préparer sont à un
+  // geste, parce que c'est elles qu'on ajuste avant les courses.
+  const { week } = useLocalSearchParams<{ week?: string }>();
+  const [offset, setOffset] = useState<WeekOffset>(week === '1' ? 1 : 0);
+  const weekId = addDays(getCurrentWeekId(), 7 * offset);
 
   const householdId = household?.id ?? null;
   const { plan, isLoading, isStale, error } = useWeeklyPlan(householdId, weekId);
+  // Les restes possibles viennent du batch de la semaine d'avant celle affichée.
+  const previous = useWeeklyPlan(householdId, addDays(weekId, -7));
   const { recipesById } = useRecipes(householdId);
   const regenerate = useRegenerateMeal();
   const choose = useSetMeal();
+  const swap = useSwapMeals();
   const dislike = useToggleDislike();
 
   const [target, setTarget] = useState<MealChoiceTarget | null>(null);
   const progress = useGenerationProgress(householdId, weekId);
   const batchRecipes = plan ? getBatchSession(plan, recipesById).recipes : [];
-  const dates = getWeekDates(weekId);
+
+  const isFreezable = (recipeId: string) =>
+    recipesById.get(recipeId)?.tags.includes('congelable') ?? false;
+  const swapTargets =
+    plan && target
+      ? listSwapTargets(plan, { date: target.date, slot: target.slot }, isFreezable)
+          .map((recipeId) => recipesById.get(recipeId))
+          .filter((recipe): recipe is Recipe => recipe !== undefined)
+      : [];
+  const previousLeftovers = (previous.plan?.batchRecipeIds ?? [])
+    .map((recipeId) => recipesById.get(recipeId))
+    .filter((recipe): recipe is Recipe => recipe !== undefined);
 
   function closeSheet() {
     setTarget(null);
   }
 
   const pendingSlot =
-    regenerate.isPending || choose.isPending
-      ? (regenerate.variables ?? choose.variables)
+    regenerate.isPending || choose.isPending || swap.isPending
+      ? (regenerate.variables ?? choose.variables ?? swap.variables)
       : undefined;
+
+  const mutationError = regenerate.error ?? choose.error ?? swap.error;
 
   return (
     <Screen>
       <View style={{ gap: theme.spacing.sm }}>
         <Text variant="overline" tone="faint">
-          DU {dates[0]} AU {dates[6]}
+          {formatWeekRange(weekId).toUpperCase()}
         </Text>
         <Text variant="title">Planning</Text>
-        <WeekSwitch showingCurrent={showingCurrent} onChange={setShowingCurrent} />
+        <WeekSwitch value={offset} onChange={setOffset} />
       </View>
 
       {isStale && plan !== null ? <StaleNotice /> : null}
       {error ? <ErrorState message={error.message} /> : null}
-      {regenerate.error ? <ErrorState message={regenerate.error.message} /> : null}
-      {choose.error ? <ErrorState message={choose.error.message} /> : null}
+      {mutationError ? <ErrorState message={mutationError.message} /> : null}
       {dislike.error ? (
         <ErrorState message="Le plat n’a pas pu être banni. Vérifie ta connexion." />
       ) : null}
@@ -87,7 +107,7 @@ export default function PlanningScreen() {
           description="Compose-la depuis l’accueil : le batch du dimanche nourrit ensuite toute la semaine."
         />
       ) : (
-        plan.days.map((day) => (
+        plan.days.map((day, dayIndex) => (
           <DaySection
             key={day.date}
             day={day}
@@ -95,19 +115,25 @@ export default function PlanningScreen() {
             recipesById={recipesById}
             pending={pendingSlot}
             progress={progress}
-            onChoose={(slot, currentRecipeId) =>
+            onChoose={(slot) => {
+              const meal = day[slot];
+              const recipeId = meal.recipeId;
               setTarget({
                 date: day.date,
                 slot,
-                currentRecipeId,
-                currentRecipeName: currentRecipeId
-                  ? (recipesById.get(currentRecipeId)?.name ?? null)
-                  : null,
-                isCurrentDisliked: currentRecipeId
-                  ? (recipesById.get(currentRecipeId)?.isDisliked ?? false)
+                dayIndex,
+                currentRecipeId: recipeId,
+                currentRecipeName: recipeId ? (recipesById.get(recipeId)?.name ?? null) : null,
+                isCurrentDisliked: recipeId
+                  ? (recipesById.get(recipeId)?.isDisliked ?? false)
                   : false,
-              })
-            }
+                isBatchPortion:
+                  meal.kind === 'batch-leftover' &&
+                  recipeId !== null &&
+                  plan.batchRecipeIds.includes(recipeId),
+                isLastMealOfDish: isLastMealOfBatchDish(plan, day.date, slot),
+              });
+            }}
           />
         ))
       )}
@@ -115,16 +141,12 @@ export default function PlanningScreen() {
       <MealChoiceSheet
         target={target}
         batchRecipes={batchRecipes}
+        swapTargets={swapTargets}
+        previousLeftovers={previousLeftovers}
         onClose={closeSheet}
-        onCook={(style) => {
+        onSwap={(recipeId) => {
           if (householdId && target) {
-            regenerate.mutate({
-              householdId,
-              weekId,
-              date: target.date,
-              slot: target.slot,
-              style,
-            });
+            swap.mutate({ householdId, weekId, date: target.date, slot: target.slot, recipeId });
           }
           closeSheet();
         }}
@@ -136,6 +158,18 @@ export default function PlanningScreen() {
               date: target.date,
               slot: target.slot,
               meal: { choice: 'batch', recipeId },
+            });
+          }
+          closeSheet();
+        }}
+        onPreviousLeftover={(recipeId) => {
+          if (householdId && target) {
+            choose.mutate({
+              householdId,
+              weekId,
+              date: target.date,
+              slot: target.slot,
+              meal: { choice: 'previous-leftover', recipeId },
             });
           }
           closeSheet();
@@ -152,6 +186,18 @@ export default function PlanningScreen() {
           }
           closeSheet();
         }}
+        onCook={(style) => {
+          if (householdId && target) {
+            regenerate.mutate({
+              householdId,
+              weekId,
+              date: target.date,
+              slot: target.slot,
+              style,
+            });
+          }
+          closeSheet();
+        }}
         onDislike={(isDisliked) => {
           if (householdId && target?.currentRecipeId) {
             dislike.mutate({
@@ -159,8 +205,8 @@ export default function PlanningScreen() {
               recipeId: target.currentRecipeId,
               isDisliked,
             });
-            // La feuille reste ouverte : les trois façons de remplacer le plat
-            // sont juste dessous, et c'est le moment où l'on y pense.
+            // La feuille reste ouverte : les façons de remplacer le plat sont
+            // juste dessous, et c'est le moment où l'on y pense.
             setTarget({ ...target, isCurrentDisliked: isDisliked });
           }
         }}
@@ -183,7 +229,7 @@ function DaySection({
   /** Créneau en cours d'enregistrement, s'il y en a un. */
   pending: { date: string; slot: MealSlot } | undefined;
   progress: GenerationLock | null;
-  onChoose: (slot: MealSlot, currentRecipeId: string | null) => void;
+  onChoose: (slot: MealSlot) => void;
 }) {
   const theme = useTheme();
 
@@ -208,7 +254,7 @@ function DaySection({
         recipesById={recipesById}
         isRegenerating={isPending('lunch')}
         progress={progress}
-        onChangeMeal={() => onChoose('lunch', day.lunch.recipeId)}
+        onChangeMeal={() => onChoose('lunch')}
       />
       <MealCard
         label="Soir"
@@ -216,7 +262,7 @@ function DaySection({
         recipesById={recipesById}
         isRegenerating={isPending('dinner')}
         progress={progress}
-        onChangeMeal={() => onChoose('dinner', day.dinner.recipeId)}
+        onChangeMeal={() => onChoose('dinner')}
       />
     </View>
   );

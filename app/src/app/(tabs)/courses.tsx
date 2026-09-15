@@ -1,26 +1,23 @@
 import { useState } from 'react';
-import { Share, View } from 'react-native';
+import { View } from 'react-native';
 import {
-  formatGroceryListForSharing,
+  addDays,
+  formatWeekRange,
   getCurrentWeekId,
-  getUpcomingWeekId,
-  getWeekDates,
   type GroceryItem,
 } from '@dimanche-batch/shared';
-import {
-  Button,
-  EmptyState,
-  ErrorState,
-  LoadingState,
-  Screen,
-  StaleNotice,
-  Text,
-} from '@/components/ui';
+import { EmptyState, ErrorState, LoadingState, Screen, StaleNotice, Text } from '@/components/ui';
+import { AddGroceryItem } from '@/features/grocery-list/components/add-grocery-item';
 import { AisleSection } from '@/features/grocery-list/components/aisle-section';
+import { GroceryLegend } from '@/features/grocery-list/components/grocery-legend';
+import { useAddGroceryItem } from '@/features/grocery-list/api/use-add-grocery-item';
+import { useAisleLexicon } from '@/features/grocery-list/api/use-aisle-lexicon';
+import { useSaveAisleCorrection } from '@/features/grocery-list/api/use-save-aisle-correction';
+import { useDeleteGroceryItem } from '@/features/grocery-list/api/use-delete-grocery-item';
 import { useGroceryList } from '@/features/grocery-list/api/use-grocery-list';
 import { useToggleGroceryItem } from '@/features/grocery-list/api/use-toggle-grocery-item';
 import { useHousehold } from '@/features/household/api/use-household';
-import { WeekSwitch } from '@/features/meal-plan/components/week-switch';
+import { WeekSwitch, type WeekOffset } from '@/features/meal-plan/components/week-switch';
 import { useTheme } from '@/theme';
 
 /** Liste de courses de la semaine, groupée dans l'ordre de parcours du magasin. */
@@ -30,8 +27,8 @@ export default function GroceryScreen() {
 
   // Les courses s'ouvrent sur la semaine à préparer : c'est pour elle qu'on
   // achète. Celle en cours reste consultable, on peut avoir oublié un article.
-  const [showingCurrent, setShowingCurrent] = useState(false);
-  const weekId = showingCurrent ? getCurrentWeekId() : getUpcomingWeekId();
+  const [offset, setOffset] = useState<WeekOffset>(1);
+  const weekId = addDays(getCurrentWeekId(), 7 * offset);
 
   const householdId = household?.id ?? null;
   const { items, groups, checkedCount, isLoading, isStale, error } = useGroceryList(
@@ -39,37 +36,34 @@ export default function GroceryScreen() {
     weekId,
   );
   const toggle = useToggleGroceryItem();
+  const add = useAddGroceryItem();
+  const remove = useDeleteGroceryItem();
+  const lexicon = useAisleLexicon(householdId);
+  const saveCorrection = useSaveAisleCorrection();
 
   function handleToggle(item: GroceryItem) {
     if (!householdId) return;
     toggle.mutate({ householdId, weekId, itemId: item.id, checked: !item.checked });
   }
 
-  // Ce qui est déjà dans le panier n'a pas à voyager : on partage le reste.
-  // Les en-têtes de rayon sont conservés : ils se lisent, et l'import par
-  // suggestion de Listonic les traverse sans en faire des articles.
-  async function handleShare() {
-    await Share.share({
-      message: formatGroceryListForSharing(items, {
-        title: `Courses — semaine du ${weekId}`,
-      }),
-    });
+  function handleDelete(item: GroceryItem) {
+    if (!householdId) return;
+    remove.mutate({ householdId, weekId, itemId: item.id });
   }
 
   const remaining = items.length - checkedCount;
-  const nothingToSend = remaining === 0;
 
   return (
     <Screen>
       <View style={{ gap: theme.spacing.sm }}>
         <Text variant="overline" tone="faint">
-          DU {getWeekDates(weekId)[0]} AU {getWeekDates(weekId)[6]}
+          {formatWeekRange(weekId).toUpperCase()}
         </Text>
         <Text variant="title">Courses</Text>
-        <WeekSwitch showingCurrent={showingCurrent} onChange={setShowingCurrent} />
+        <WeekSwitch value={offset} onChange={setOffset} />
         {items.length > 0 ? (
           <Text tone="soft">
-            {nothingToSend
+            {remaining === 0
               ? 'Tout est dans le panier.'
               : `${remaining} article${remaining > 1 ? 's' : ''} à prendre sur ${items.length}`}
           </Text>
@@ -81,31 +75,42 @@ export default function GroceryScreen() {
       {toggle.error ? (
         <ErrorState message="La case n’a pas pu être enregistrée. Vérifie ta connexion." />
       ) : null}
+      {add.error || remove.error || saveCorrection.error ? (
+        <ErrorState message="La liste n’a pas pu être modifiée. Vérifie ta connexion et réessaie." />
+      ) : null}
+
+      {householdId ? (
+        <AddGroceryItem
+          isPending={add.isPending}
+          overrides={lexicon.overrides}
+          onAdd={({ correctsAisle, ...item }) => {
+            add.mutate({ householdId, weekId, ...item });
+            // Le rayon choisi à la main devient celui du foyer pour cet article,
+            // sur les deux téléphones et pour les semaines suivantes.
+            if (correctsAisle) {
+              saveCorrection.mutate({ householdId, name: item.name, aisle: item.aisle });
+            }
+          }}
+        />
+      ) : null}
 
       {isLoading ? (
         <LoadingState />
       ) : items.length === 0 ? (
         <EmptyState
           title="Aucune liste pour cette semaine"
-          description="La liste se construit toute seule à partir du plan de repas. Génère la semaine depuis l’accueil."
+          description="La liste se construit à partir du plan de repas, et tout ce que tu ajoutes à la main s’y range par rayon."
         />
       ) : (
         <>
-          <Button
-            label={nothingToSend ? 'Rien à partager' : 'Partager ce qui reste'}
-            variant="secondary"
-            disabled={nothingToSend}
-            onPress={() => {
-              void handleShare();
-            }}
-          />
-
+          <GroceryLegend />
           {groups.map((group) => (
             <AisleSection
               key={group.aisle}
               aisle={group.aisle}
               items={group.items}
               onToggle={handleToggle}
+              onDelete={handleDelete}
             />
           ))}
         </>

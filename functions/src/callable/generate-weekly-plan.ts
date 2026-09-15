@@ -2,6 +2,7 @@ import { onCall } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions';
 import {
   GenerateWeeklyPlanInputSchema,
+  isComposableWeek,
   paths,
   type GenerateWeeklyPlanInput,
   type GenerateWeeklyPlanResult,
@@ -25,6 +26,7 @@ import {
 import { writeWeeklyPlan } from '../lib/plan-writer';
 import { readHouseholdMemory } from '../lib/recipe-memory';
 import { rethrowIfUnavailable } from '../lib/callable-support';
+import { todayInParis } from '../lib/clock';
 import { PlanGenerationError, generateWeeklyPlanFromGemini } from '../gemini/generate-plan';
 
 /**
@@ -57,6 +59,15 @@ export const generateWeeklyPlan = onCall(
 
     await requireHouseholdMember(uid, input.householdId);
 
+    // La date du jour est celle du foyer, pas celle du serveur : les functions
+    // tournent en UTC, et le samedi à 0 h 30 à Paris est encore vendredi pour
+    // elles — exactement l'heure qui décide si la semaine a commencé.
+    if (!isComposableWeek(input.weekStart, todayInParis())) {
+      throw invalidArgument(
+        'Cette semaine a déjà commencé, ou elle n’est pas la prochaine : on ne compose que la semaine prochaine.',
+      );
+    }
+
     const planRef = db.doc(paths.weeklyPlan(input.householdId, input.weekStart));
     if (!input.force && (await planRef.get()).exists) {
       throw invalidArgument(
@@ -88,8 +99,8 @@ async function composePlan(
     generated = await generateWeeklyPlanFromGemini({
       weekStart: input.weekStart,
       batchRecipeCount: input.batchRecipeCount,
+      vegetarianCount: input.vegetarianCount,
       ...memory,
-      notes: input.notes,
     });
   } catch (error) {
     await rethrowIfUnavailable(error, input.householdId);

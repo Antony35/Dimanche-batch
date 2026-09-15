@@ -1,6 +1,5 @@
 import { z } from 'zod';
 import { AisleSchema, RecipeTagSchema, UnitSchema } from './common';
-import { MealKindSchema } from './weekly-plan';
 
 /**
  * Contrat de la réponse Gemini.
@@ -15,7 +14,8 @@ export const GeneratedRecipeSchema = z.object({
   name: z.string().min(1).max(120),
   servings: z.number().int().min(1).max(16),
   prepMinutes: z.number().int().min(1).max(240),
-  tags: z.array(RecipeTagSchema).min(1).max(9),
+  cookMinutes: z.number().int().min(0).max(480),
+  tags: z.array(RecipeTagSchema).min(1).max(11),
   ingredients: z
     .array(
       z.object({
@@ -30,22 +30,33 @@ export const GeneratedRecipeSchema = z.object({
   steps: z.array(z.string().min(1).max(600)).min(1).max(20),
 });
 
+/**
+ * Un repas de semaine, toujours une portion du batch.
+ *
+ * Le modèle ne décrit plus que le lundi au vendredi : le samedi et le dimanche
+ * sont décidés par le foyer après la génération. Ce qu'il ne peut pas décrire,
+ * il ne peut pas le rater — d'où un `kind` réduit à sa seule valeur possible.
+ */
 export const GeneratedMealSchema = z.object({
-  recipeSlug: z.string().nullable(),
-  kind: MealKindSchema,
+  recipeSlug: z.string().min(1),
+  kind: z.literal('batch-leftover'),
   withStarter: z.boolean(),
   withDessert: z.boolean(),
 });
 
 export const GeneratedDaySchema = z.object({
-  /** Index 0 = lundi. Plus robuste qu'une date, que le modèle calcule mal. */
-  dayIndex: z.number().int().min(0).max(6),
+  /**
+   * Index dans la semaine du samedi : 2 = lundi … 6 = vendredi. Plus robuste
+   * qu'une date, que le modèle calcule mal.
+   */
+  dayIndex: z.number().int().min(2).max(6),
   lunch: GeneratedMealSchema,
   dinner: GeneratedMealSchema,
 });
 
 export const GeneratedPlanSchema = z.object({
-  recipes: z.array(GeneratedRecipeSchema).min(3).max(12),
+  /** Les plats du batch, et eux seuls. */
+  recipes: z.array(GeneratedRecipeSchema).min(3).max(6),
   /**
    * Plats préparés le dimanche, dans l'ordre de préparation — c'est cet ordre
    * que suit l'écran de préparation, sans champ supplémentaire à demander.
@@ -53,8 +64,8 @@ export const GeneratedPlanSchema = z.object({
    * de schéma sans nommer le champ fautif, un niveau d'imbrication en moins est
    * un risque en moins (voir `functions/src/gemini/response-schema.ts`).
    */
-  batchRecipeSlugs: z.array(z.string()).min(1).max(8),
-  days: z.array(GeneratedDaySchema).length(7),
+  batchRecipeSlugs: z.array(z.string()).min(3).max(6),
+  days: z.array(GeneratedDaySchema).length(5),
 });
 
 /** Réponse attendue pour la régénération d'un seul repas. */
