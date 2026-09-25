@@ -185,6 +185,24 @@ export const ReplaceBatchRecipeResultSchema = z.object({
   itemCount: z.number().int().min(0),
 });
 
+/**
+ * Payload de la callable `removeBatchRecipe` : retirer un plat du batch, sans
+ * le remplacer. Ses repas passent à décider.
+ */
+export const RemoveBatchRecipeInputSchema = z.object({
+  householdId: z.string().min(1),
+  weekId: WeekIdSchema,
+  /** Plat du batch à retirer. */
+  recipeId: z.string().min(1),
+});
+
+export const RemoveBatchRecipeResultSchema = z.object({
+  weekId: WeekIdSchema,
+  /** Repas passés à décider. */
+  mealCount: z.number().int().min(0),
+  itemCount: z.number().int().min(0),
+});
+
 export const RegenerateMealResultSchema = z.object({
   weekId: WeekIdSchema,
   /** Identifiant de la recette qui occupe désormais le créneau. */
@@ -210,3 +228,5 @@ export type SwapMealsInput = z.infer<typeof SwapMealsInputSchema>;
 export type SwapMealsResult = z.infer<typeof SwapMealsResultSchema>;
 export type ReplaceBatchRecipeInput = z.infer<typeof ReplaceBatchRecipeInputSchema>;
 export type ReplaceBatchRecipeResult = z.infer<typeof ReplaceBatchRecipeResultSchema>;
+export type RemoveBatchRecipeInput = z.infer<typeof RemoveBatchRecipeInputSchema>;
+export type RemoveBatchRecipeResult = z.infer<typeof RemoveBatchRecipeResultSchema>;

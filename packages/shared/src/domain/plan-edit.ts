@@ -1,7 +1,7 @@
 import type { IsoDate } from '../schemas/common';
 import type { Meal, MealSlot, WeeklyPlan } from '../schemas/weekly-plan';
 import { countBatchMealsServing } from './batch';
-import { BATCH_DAY_INDEX, requiresFreezing } from './week';
+import { requiresFreezing } from './week';
 
 /**
  * Édition d'un plan existant, sans passer par une régénération complète.
@@ -113,6 +113,49 @@ export function replaceBatchRecipeInPlan(
   };
 }
 
+/**
+ * Retire un plat du batch : il ne sera ni cuisiné dimanche, ni acheté.
+ *
+ * Le cas qui l'impose : le frigo contient déjà de quoi tenir une partie de la
+ * semaine, et le foyer veut cuisiner moins. Les repas que servait le plat
+ * passent **à décider** — le foyer y posera un reste, un repas dehors ou une
+ * portion d'un autre plat du batch —, plutôt que d'en choisir un à sa place.
+ *
+ * Même ordre que `replaceBatchRecipeInPlan`, pour la même raison :
+ * `batchRecipeIds` est réécrit avant que `recipeIds` ne soit recalculé, sinon
+ * le plat y resterait, et `buildGroceryList` l'achèterait encore.
+ *
+ * Retirer le dernier plat est permis : une semaine sans batch se vit de restes.
+ */
+export function removeBatchRecipeFromPlan(plan: WeeklyPlan, recipeId: string): WeeklyPlan {
+  if (!plan.batchRecipeIds.includes(recipeId)) throw new BatchRecipeNotFoundError(recipeId);
+
+  const batchRecipeIds = plan.batchRecipeIds.filter((id) => id !== recipeId);
+  const release = (meal: Meal): Meal =>
+    meal.kind === 'batch-leftover' && meal.recipeId === recipeId ? undecidedMeal() : meal;
+
+  const days = plan.days.map((day) => ({
+    ...day,
+    lunch: release(day.lunch),
+    dinner: release(day.dinner),
+  }));
+
+  return {
+    ...plan,
+    days,
+    batchRecipeIds,
+    recipeIds: [...new Set([...collectRecipeIds(days), ...batchRecipeIds])],
+  };
+}
+
+/**
+ * Un créneau à décider. Une fonction et non une constante : chaque repas du
+ * plan est un objet à lui, qu'aucune édition ne doit partager avec un autre.
+ */
+export function undecidedMeal(): Meal {
+  return { recipeId: null, kind: 'undecided', withStarter: false, withDessert: false };
+}
+
 function swapRecipe(meal: Meal, oldRecipeId: string, newRecipeId: string): Meal {
   return meal.recipeId === oldRecipeId ? { ...meal, recipeId: newRecipeId } : meal;
 }
@@ -137,10 +180,11 @@ export interface MealSlotRef {
 /**
  * Vrai si ce créneau est le dernier repas que sert son plat du batch.
  *
- * Le remplacer par autre chose — un repas dehors, un reste, un autre plat —
- * laisserait un plat cuisiné le dimanche que plus personne ne mange : on
- * l'achèterait sans raison, ou la liste l'oublierait. Pour faire disparaître un
- * plat, on remplace le plat lui-même.
+ * Le vider sans rien faire d'autre laisserait un plat cuisiné le dimanche que
+ * plus personne ne mange. Vider ce repas est donc un geste qui **retire le
+ * plat du batch** (`removeBatchRecipeFromPlan`), annoncé comme tel par l'app ;
+ * y servir un autre plat du batch reste refusé — l'échange fait la même chose
+ * sans perdre de plat.
  */
 export function isLastMealOfBatchDish(plan: WeeklyPlan, date: IsoDate, slot: MealSlot): boolean {
   const meal = findMeal(plan, date, slot);
@@ -237,15 +281,15 @@ export function swapMealsInPlan(plan: WeeklyPlan, a: MealSlotRef, b: MealSlotRef
 }
 
 /**
- * Repas du samedi et du dimanche encore à décider.
+ * Repas encore à décider, sur toute la semaine.
  *
- * La génération les laisse ainsi. Tant qu'il en reste, l'accueil demande de
- * les décider **avant** les courses du samedi : ce qu'ils demandent doit être
- * acheté le matin même.
+ * La génération laisse ainsi le samedi et le dimanche, et retirer un plat du
+ * batch y laisse les jours qu'il servait. Tant qu'il en reste, l'accueil
+ * demande de les décider **avant** les courses du samedi : ce qu'ils demandent
+ * doit être acheté le matin même.
  */
-export function countUndecidedWeekendMeals(plan: WeeklyPlan): number {
+export function countUndecidedMeals(plan: WeeklyPlan): number {
   return plan.days
-    .slice(0, BATCH_DAY_INDEX + 1)
     .flatMap((day) => [day.lunch, day.dinner])
     .filter((meal) => meal.kind === 'undecided').length;
 }

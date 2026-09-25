@@ -8,7 +8,7 @@ vi.mock('firebase/functions', () => ({
 }));
 vi.mock('../firebase', () => ({ functions: {} }));
 
-const { setMeal } = await import('../callables');
+const { removeBatchRecipe, setMeal } = await import('../callables');
 
 /**
  * La réponse d'une callable est du `unknown` du point de vue du client. Ces
@@ -42,6 +42,21 @@ describe('appel d’une callable', () => {
   it('nomme la callable fautive dans le message', async () => {
     callable.mockResolvedValueOnce({ data: null });
     await expect(setMeal(input)).rejects.toThrow(/setMeal/);
+  });
+});
+
+describe('removeBatchRecipe', () => {
+  const removeInput = { householdId: 'foyer', weekId: '2026-09-12', recipeId: 'curry' };
+
+  it('appelle la callable du même nom et rend le nombre de repas libérés', async () => {
+    const result = { weekId: '2026-09-12', mealCount: 3, itemCount: 9 };
+    callable.mockResolvedValueOnce({ data: result });
+    await expect(removeBatchRecipe(removeInput)).resolves.toEqual(result);
+  });
+
+  it('refuse un résultat sans compte de repas', async () => {
+    callable.mockResolvedValueOnce({ data: { weekId: '2026-09-12', itemCount: 9 } });
+    await expect(removeBatchRecipe(removeInput)).rejects.toThrow(/removeBatchRecipe/);
   });
 });
 

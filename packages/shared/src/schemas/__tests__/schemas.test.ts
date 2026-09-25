@@ -13,6 +13,8 @@ import { RecipeSchema } from '../recipe';
 import {
   GenerateWeeklyPlanInputSchema,
   RegenerateMealInputSchema,
+  RemoveBatchRecipeInputSchema,
+  RemoveBatchRecipeResultSchema,
   SetMealInputSchema,
   WeeklyPlanSchema,
 } from '../weekly-plan';
@@ -388,6 +390,24 @@ describe('GenerateWeeklyPlanInputSchema', () => {
       expect(
         GenerateWeeklyPlanInputSchema.safeParse({ ...base, batchRecipeCount: 4, vegetarianCount })
           .success,
+describe('RemoveBatchRecipeInputSchema et son résultat', () => {
+  it('exige le plat à retirer', () => {
+    const base = { householdId: 'household-1', weekId: '2026-09-12' };
+    expect(RemoveBatchRecipeInputSchema.safeParse({ ...base, recipeId: 'curry' }).success).toBe(
+      true,
+    );
+    expectRejected(RemoveBatchRecipeInputSchema, base);
+    expectRejected(RemoveBatchRecipeInputSchema, { ...base, recipeId: '' });
+  });
+
+  it('refuse un compte négatif ou fractionnaire', () => {
+    const base = { weekId: '2026-09-12', mealCount: 3, itemCount: 12 };
+    expect(RemoveBatchRecipeResultSchema.safeParse(base).success).toBe(true);
+    expectRejected(RemoveBatchRecipeResultSchema, { ...base, mealCount: -1 });
+    expectRejected(RemoveBatchRecipeResultSchema, { ...base, itemCount: 1.5 });
+  });
+});
+
       ).toBe(true);
     }
     expectRejected(GenerateWeeklyPlanInputSchema, {

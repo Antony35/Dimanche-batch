@@ -263,6 +263,57 @@ describe('reste de la semaine précédente', () => {
   });
 });
 
+describe('vider le dernier repas d’un plat du batch', () => {
+  /** Curry lundi et mardi, chili mercredi midi seulement : le reste dehors. */
+  async function seedShortChili() {
+    await writeWeeklyPlan({
+      householdId: HOUSEHOLD_ID,
+      weekStart: WEEK_START,
+      generatedBy: ALICE,
+      plan: {
+        recipes: [curry, chili],
+        batchRecipeSlugs: ['batch-curry', 'batch-chili'],
+        days: [2, 3, 4, 5, 6].map((dayIndex) => {
+          const slug = dayIndex <= 3 ? 'batch-curry' : 'batch-chili';
+          return { dayIndex, lunch: portion(slug), dinner: portion(slug) };
+        }),
+      },
+      model: MODEL,
+    });
+    // On laisse au chili un seul repas, mercredi midi.
+    for (const [date, slot] of [
+      ['2026-09-16', 'dinner'],
+      ['2026-09-17', 'lunch'],
+      ['2026-09-17', 'dinner'],
+      ['2026-09-18', 'lunch'],
+      ['2026-09-18', 'dinner'],
+    ] as const) {
+      await choose(date, slot, { choice: 'eat-out' });
+    }
+  }
+
+  it('retire le plat du batch et de la liste de courses', async () => {
+    await seedShortChili();
+    const before = await readPlanForEdit(HOUSEHOLD_ID, WEEK_START);
+    expect(before.batchRecipeIds).toContain('batch-chili');
+
+    await choose('2026-09-16', 'lunch', { choice: 'eat-out' });
+
+    const plan = await readPlanForEdit(HOUSEHOLD_ID, WEEK_START);
+    expect(plan.batchRecipeIds).toEqual(['batch-curry']);
+    expect(plan.recipeIds).not.toContain('batch-chili');
+    expect(await readItemIds()).not.toContain('haricot-rouge--mass');
+  });
+
+  it('ne retire pas un plat qui sert encore d’autres repas', async () => {
+    await seedShortChili();
+    await choose(MARDI, 'dinner', { choice: 'eat-out' });
+
+    const plan = await readPlanForEdit(HOUSEHOLD_ID, WEEK_START);
+    expect(plan.batchRecipeIds).toEqual(['batch-curry', 'batch-chili']);
+  });
+});
+
 describe('échanger deux repas du batch', () => {
   it('garde la liste de courses identique et échange les deux créneaux', async () => {
     await seedPlan();

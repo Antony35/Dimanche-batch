@@ -145,10 +145,11 @@ export function countBatchMealsServing(plan: WeeklyPlan, recipeId: string): numb
  * huit un plat qu'on ne servait plus que six fois.
  *
  * Le plancher d'un repas n'est pas une commodité : un plat du batch est cuisiné
- * le dimanche, donc acheté, même si l'utilisateur a vidé tous les créneaux qu'il
- * occupait. L'interface interdit d'en arriver là — on remplace le plat plutôt
- * que de le vider — mais un plan écrit avant cette règle peut exister, et il ne
- * doit pas se traduire par une liste de courses qui oublie un plat entier.
+ * le dimanche, donc acheté, même si plus aucun créneau ne le sert. Les
+ * écrivains n'en arrivent pas là — vider le dernier repas d'un plat le retire
+ * du batch (`removeBatchRecipeFromPlan`) — mais un plan écrit avant cette règle
+ * peut exister, et il ne doit pas se traduire par une liste de courses qui
+ * oublie un plat entier.
  */
 export function getBatchPortions(plan: WeeklyPlan, recipeId: string): number {
   return Math.max(1, countBatchMealsServing(plan, recipeId)) * SERVINGS_PER_MEAL;

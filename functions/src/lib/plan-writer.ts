@@ -4,13 +4,16 @@ import {
   WeeklyPlanSchema,
   buildGroceryList,
   collectRecipeIds,
+  countBatchMealsServing,
   countMealsServing,
   getWeekDates,
   mergeGroceryLists,
   paths,
+  removeBatchRecipeFromPlan,
   replaceBatchRecipeInPlan,
   replaceMealInPlan,
   swapMealsInPlan,
+  undecidedMeal,
   type GeneratedMeal,
   type GeneratedPlan,
   type GeneratedRecipe,
@@ -22,6 +25,7 @@ import {
   type MealSlot,
   type Recipe,
   type RegenerateMealResult,
+  type RemoveBatchRecipeResult,
   type ReplaceBatchRecipeResult,
   type SetMealResult,
   type WeeklyPlan,
@@ -179,6 +183,40 @@ export async function replaceBatchRecipe(
   return { weekId, recipeId: nextRecipe.id, recipeName: nextRecipe.name, mealCount, itemCount };
 }
 
+export interface RemoveBatchRecipeParams {
+  householdId: string;
+  weekId: string;
+  /** Plat du batch à retirer. */
+  recipeId: string;
+}
+
+/**
+ * Retire un plat du batch ; ses repas passent à décider.
+ *
+ * Le plan est relu ici, sous le verrou que la callable a posé : c'est celui-là
+ * qu'on réécrit. Le document recette n'est pas touché — il est partagé entre
+ * les semaines, et l'historique le cite peut-être encore.
+ */
+export async function removeBatchRecipe(
+  params: RemoveBatchRecipeParams,
+): Promise<RemoveBatchRecipeResult> {
+  const { householdId, weekId, recipeId } = params;
+
+  const current = await readPlanForEdit(householdId, weekId);
+  const mealCount = countBatchMealsServing(current, recipeId);
+  const nextPlan = removeBatchRecipeFromPlan(current, recipeId);
+  const known = await readPlanRecipes(householdId, nextPlan);
+
+  const { itemCount } = await commitPlan({
+    householdId,
+    plan: nextPlan,
+    recipesToWrite: [],
+    allRecipes: [...known.values()],
+  });
+
+  return { weekId, mealCount, itemCount };
+}
+
 export interface SwapPlanMealsParams {
   householdId: string;
   plan: WeeklyPlan;
@@ -223,10 +261,17 @@ export interface SetPlanMealParams {
  * d'une recette générée ou d'un simple choix de l'utilisateur : la liste de
  * courses est recalculée au même endroit, et les cases déjà cochées survivent
  * de la même façon.
+ *
+ * Si le repas remplacé était le dernier d'un plat du batch, le plat sort du
+ * batch avec lui : il ne serait plus mangé, donc ni cuisiné ni acheté. La
+ * callable a déjà refusé les cas où ce n'est pas voulu.
  */
 export async function setPlanMeal(params: SetPlanMealParams): Promise<SetMealOutcome> {
   const { householdId, plan, date, slot, meal, recipeToWrite, knownRecipes } = params;
-  const nextPlan = replaceMealInPlan(plan, date, slot, meal);
+  const nextPlan = releaseEmptiedBatchDish(plan, replaceMealInPlan(plan, date, slot, meal), {
+    date,
+    slot,
+  });
 
   // Les recettes déjà en base servent au calcul des courses mais ne sont pas
   // réécrites : elles n'ont pas changé, et leur `lastUsedAt` non plus.
@@ -248,6 +293,24 @@ export async function setPlanMeal(params: SetPlanMealParams): Promise<SetMealOut
     recipeName: served?.name ?? null,
     itemCount,
   };
+}
+
+/**
+ * Retire du batch le plat que le créneau servait, s'il ne sert plus aucun repas.
+ *
+ * Un plat qui ne servait déjà plus rien avant l'édition — un plan antérieur à
+ * cette règle — n'est pas concerné : seul le plat qu'on vient de vider part.
+ */
+function releaseEmptiedBatchDish(
+  before: WeeklyPlan,
+  after: WeeklyPlan,
+  ref: MealSlotRef,
+): WeeklyPlan {
+  const previous = before.days.find((day) => day.date === ref.date)?.[ref.slot];
+  if (!previous || previous.kind !== 'batch-leftover' || previous.recipeId === null) return after;
+  if (!after.batchRecipeIds.includes(previous.recipeId)) return after;
+  if (countBatchMealsServing(after, previous.recipeId) > 0) return after;
+  return removeBatchRecipeFromPlan(after, previous.recipeId);
 }
 
 /** Plan tel qu'il est en base, juste avant d'être modifié. */
@@ -442,7 +505,6 @@ function toWeeklyPlan(
   // Le modèle ne décrit que le lundi au vendredi. Le samedi et le dimanche
   // restent à décider : les générer achèterait un repas qu'on prendra peut-être
   // dehors.
-  const undecided: Meal = { recipeId: null, kind: 'undecided', withStarter: false, withDessert: false };
   const toMeal = (meal: GeneratedMeal): Meal => ({
     recipeId: meal.recipeSlug,
     kind: meal.kind,
@@ -453,7 +515,7 @@ function toWeeklyPlan(
   const days = context.dates.map((date, index) => {
     const day = byIndex.get(index);
     // `day` est défini pour les index 2 à 6 : validateGeneratedPlan les a vérifiés.
-    if (!day) return { date, lunch: { ...undecided }, dinner: { ...undecided } };
+    if (!day) return { date, lunch: undecidedMeal(), dinner: undecidedMeal() };
     return { date, lunch: toMeal(day.lunch), dinner: toMeal(day.dinner) };
   });
 

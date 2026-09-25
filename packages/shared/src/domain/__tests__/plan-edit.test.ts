@@ -3,12 +3,13 @@ import {
   BatchRecipeNotFoundError,
   MealNotFoundError,
   collectRecipeIds,
-  countUndecidedWeekendMeals,
+  countUndecidedMeals,
   countMealsServing,
   findMeal,
   findSwapCounterpart,
   isLastMealOfBatchDish,
   listSwapTargets,
+  removeBatchRecipeFromPlan,
   replaceBatchRecipeInPlan,
   replaceMealInPlan,
   swapMealsInPlan,
@@ -364,15 +365,107 @@ describe('isLastMealOfBatchDish', () => {
   });
 });
 
-describe('countUndecidedWeekendMeals', () => {
-  it('compte les repas du samedi et du dimanche encore à décider, et eux seuls', () => {
+describe('countUndecidedMeals', () => {
+  it('compte les repas encore à décider, week-end et semaine', () => {
     const undecided = { recipeId: null, kind: 'undecided' as const };
     const plan = makePlan([
       { lunch: undecided, dinner: undecided },
       { lunch: { recipeId: null, kind: 'eat-out' }, dinner: undecided },
       { lunch: undecided },
     ]);
-    // Le lundi « à décider » ne compte pas : seul le week-end se décide.
-    expect(countUndecidedWeekendMeals(plan)).toBe(3);
+    // Le lundi compte aussi : un plat retiré du batch y laisse ses repas, et
+    // ce qu'on y posera s'achète le samedi.
+    expect(countUndecidedMeals(plan)).toBe(4);
+  });
+});
+
+/**
+ * Retirer un plat, c'est ne plus le cuisiner ni l'acheter. L'invariant protégé
+ * est le même que pour un remplacement : si le plat reste dans
+ * `batchRecipeIds`, il reste dans `recipeIds`, et la liste l'achète encore.
+ */
+describe('removeBatchRecipeFromPlan', () => {
+  const portion = (recipeId: string) => ({ recipeId, kind: 'batch-leftover' as const });
+
+  /** Curry lundi midi et soir, chili mardi midi, soupe mardi soir, reste samedi. */
+  function planWithBatch() {
+    return makePlan(
+      [
+        { lunch: { recipeId: 'gratin', kind: 'freezer-backup' } },
+        {},
+        { lunch: portion('curry'), dinner: portion('curry') },
+        { lunch: portion('chili'), dinner: portion('soupe') },
+      ],
+      '2026-09-12',
+      ['curry', 'chili', 'soupe'],
+    );
+  }
+
+  it('passe à décider tous les repas du plat, et eux seuls', () => {
+    const next = removeBatchRecipeFromPlan(planWithBatch(), 'curry');
+
+    expect(next.days[2]?.lunch).toEqual(makeMeal({ recipeId: null, kind: 'undecided' }));
+    expect(next.days[2]?.dinner.kind).toBe('undecided');
+    expect(next.days[3]?.lunch.recipeId).toBe('chili');
+    expect(next.days[0]?.lunch.recipeId).toBe('gratin');
+  });
+
+  it('sort le plat du batch en gardant l’ordre des autres', () => {
+    const next = removeBatchRecipeFromPlan(planWithBatch(), 'chili');
+    expect(next.batchRecipeIds).toEqual(['curry', 'soupe']);
+  });
+
+  it('sort le plat de recipeIds, donc de la liste de courses', () => {
+    const recipes = [
+      makeRecipe({
+        id: 'curry',
+        ingredients: [{ name: 'lait de coco', qty: 400, unit: 'ml', aisle: 'epicerie' }],
+      }),
+      makeRecipe({ id: 'chili' }),
+      makeRecipe({ id: 'soupe' }),
+    ];
+    const next = removeBatchRecipeFromPlan(planWithBatch(), 'curry');
+
+    expect(next.recipeIds).not.toContain('curry');
+    expect(next.recipeIds).toEqual(expect.arrayContaining(['chili', 'soupe', 'gratin']));
+    expect(buildGroceryList(next, recipes).map((item) => item.name)).not.toContain('lait de coco');
+  });
+
+  it('permet de retirer le dernier plat : la semaine se vit de restes', () => {
+    let plan = planWithBatch();
+    for (const id of ['curry', 'chili', 'soupe']) plan = removeBatchRecipeFromPlan(plan, id);
+
+    expect(plan.batchRecipeIds).toEqual([]);
+    expect(plan.recipeIds).toEqual(['gratin']);
+    expect(buildGroceryList(plan, [makeRecipe({ id: 'gratin' })])).toEqual([]);
+  });
+
+  it('libère aussi le dernier repas d’un plat déjà vidé ailleurs', () => {
+    // Le geste « vider le dernier repas » : le repas est d'abord remplacé,
+    // puis le plat, qui ne sert plus rien, est désinscrit.
+    const emptied = replaceMealInPlan(
+      planWithBatch(),
+      '2026-09-15',
+      'lunch',
+      makeMeal({ recipeId: 'gratin', kind: 'freezer-backup' }),
+    );
+    const next = removeBatchRecipeFromPlan(emptied, 'chili');
+
+    expect(next.days[3]?.lunch.recipeId).toBe('gratin');
+    expect(next.batchRecipeIds).toEqual(['curry', 'soupe']);
+    expect(next.recipeIds).not.toContain('chili');
+  });
+
+  it('refuse un plat qui n’est pas au batch', () => {
+    expect(() => removeBatchRecipeFromPlan(planWithBatch(), 'gratin')).toThrow(
+      BatchRecipeNotFoundError,
+    );
+  });
+
+  it('ne modifie pas le plan reçu', () => {
+    const plan = planWithBatch();
+    removeBatchRecipeFromPlan(plan, 'curry');
+    expect(plan.batchRecipeIds).toEqual(['curry', 'chili', 'soupe']);
+    expect(plan.days[2]?.lunch.recipeId).toBe('curry');
   });
 });

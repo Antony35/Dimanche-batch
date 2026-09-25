@@ -232,7 +232,8 @@ households/{hid}/lexicon/overrides        # rayons attribués par le foyer
 Un repas porte l'un de cinq `kind` : `batch-leftover` (portion du batch de la
 semaine), `cooked` (cuisiné le samedi ou le dimanche), `freezer-backup` (reste du
 batch de la semaine précédente, n'achète rien), `eat-out`, et `undecided` — le
-samedi et le dimanche tels que la génération les laisse. Une recette porte
+samedi et le dimanche tels que la génération les laisse, et les jours d'un plat
+retiré du batch. Une recette porte
 `prepMinutes` (présence en cuisine) **et** `cookMinutes` (cuisson sans
 surveillance) : le budget du dimanche ne compte que le premier.
 
@@ -279,15 +280,16 @@ règle sans ajouter son test n'est pas une modification terminée.
 
 Une responsabilité par function, nommage `verbeNom`.
 
-| Function                | Rôle                                                                                                                                                                                                                                                                                                                                                                                                        |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `generateWeeklyPlan`    | Compose le batch d'une semaine **qui n'a pas commencé** — la semaine prochaine, et elle seule (`isComposableWeek`, date du jour prise à Paris). Reçoit le nombre de plats et de plats végétariens, construit le prompt avec l'historique des 3 dernières semaines, appelle Gemini, valide via Zod, écrit `weeklyPlans` + `recipes` + `groceryLists` dans un batch, incrémente `usage`.                      |
-| `setMeal`               | Pose un repas choisi par l'utilisateur : une portion d'un plat du batch, un repas à l'extérieur, ou un reste du batch de la **semaine précédente** — vérifié contre son `batchRecipeIds`. **Aucun appel Gemini, donc aucun quota décompté** — mais le verrou de semaine est pris, car la liste de courses est intégralement recalculée. Refuse de vider le dernier repas d'un plat du batch.                |
-| `swapMeals`             | Échange deux repas du batch. L'app dit quel plat elle veut sur un créneau ; `findSwapCounterpart` choisit le créneau qui cède sa place — le plus éloigné dans la semaine, sans jamais envoyer en fin de semaine un plat qui ne se congèle pas. Chaque plat sert le même nombre de repas : la liste de courses ne change pas. Ni Gemini ni quota.                                                            |
-| `regenerateMeal`        | Compose une recette pour un repas du **samedi ou du dimanche** seulement — on ne cuisine plus en semaine. Style `one-pot` (une casserole, 45 min) ou `elaborate`. Passe par le même écrivain que la génération complète : la liste de courses est intégralement recalculée, jamais rapiécée.                                                                                                                |
-| `replaceBatchRecipe`    | Remplace un plat du batch, et avec lui **tous les repas qu'il servait**. Callable à part et non un paramètre de `regenerateMeal` : un plat du batch n'occupe pas un créneau mais plusieurs, et le remplacer repas par repas coûterait autant de générations qu'il sert de repas, en laissant la semaine incohérente entre deux appels. Seul écrivain du dépôt à muter `batchRecipeIds` sur un plan existant |
-| `composeCookingSession` | Compose la session de cuisson du dimanche — la découpe de chaque ingrédient et les étapes de cuisson de chaque plat —, **à la demande puis conservée** : une génération par batch, jamais une par consultation. Si une session à jour existe, elle est rendue sans rien décompter — vérification faite sous le verrou, sans quoi deux téléphones ouvrant l'onglet ensemble paieraient deux fois             |
-| `joinHousehold`         | Consomme un code d'invitation et ajoute l'uid aux `members`. Côté serveur pour que le code reste à usage unique.                                                                                                                                                                                                                                                                                            |
+| Function                | Rôle                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `generateWeeklyPlan`    | Compose le batch d'une semaine **qui n'a pas commencé** — la semaine prochaine, et elle seule (`isComposableWeek`, date du jour prise à Paris). Reçoit le nombre de plats et de plats végétariens, construit le prompt avec l'historique des 3 dernières semaines, appelle Gemini, valide via Zod, écrit `weeklyPlans` + `recipes` + `groceryLists` dans un batch, incrémente `usage`.                                                      |
+| `setMeal`               | Pose un repas choisi par l'utilisateur : une portion d'un plat du batch, un repas à l'extérieur, ou un reste du batch de la **semaine précédente** — vérifié contre son `batchRecipeIds`. **Aucun appel Gemini, donc aucun quota décompté** — mais le verrou de semaine est pris, car la liste de courses est intégralement recalculée. Vider le dernier repas d'un plat du batch retire le plat ; refusé une fois le batch cuisiné.        |
+| `swapMeals`             | Échange deux repas du batch. L'app dit quel plat elle veut sur un créneau ; `findSwapCounterpart` choisit le créneau qui cède sa place — le plus éloigné dans la semaine, sans jamais envoyer en fin de semaine un plat qui ne se congèle pas. Chaque plat sert le même nombre de repas : la liste de courses ne change pas. Ni Gemini ni quota.                                                                                            |
+| `regenerateMeal`        | Compose une recette pour un repas du **samedi ou du dimanche** seulement — on ne cuisine plus en semaine. Style `one-pot` (une casserole, 45 min) ou `elaborate`. Passe par le même écrivain que la génération complète : la liste de courses est intégralement recalculée, jamais rapiécée.                                                                                                                                                |
+| `replaceBatchRecipe`    | Remplace un plat du batch, et avec lui **tous les repas qu'il servait**. Callable à part et non un paramètre de `regenerateMeal` : un plat du batch n'occupe pas un créneau mais plusieurs, et le remplacer repas par repas coûterait autant de générations qu'il sert de repas, en laissant la semaine incohérente entre deux appels. Avec `removeBatchRecipe` et `setMeal`, seuls écrivains à muter `batchRecipeIds` sur un plan existant |
+| `removeBatchRecipe`     | Retire un plat du batch **sans le remplacer** — le frigo est déjà plein. Ses repas passent à décider, ses ingrédients quittent la liste. Ni Gemini ni quota, verrou pris. Refusée une fois le dimanche du batch passé (`isBatchDayPast`) : le plat est au frigo                                                                                                                                                                             |
+| `composeCookingSession` | Compose la session de cuisson du dimanche — la découpe de chaque ingrédient et les étapes de cuisson de chaque plat —, **à la demande puis conservée** : une génération par batch, jamais une par consultation. Si une session à jour existe, elle est rendue sans rien décompter — vérification faite sous le verrou, sans quoi deux téléphones ouvrant l'onglet ensemble paieraient deux fois                                             |
+| `joinHousehold`         | Consomme un code d'invitation et ajoute l'uid aux `members`. Côté serveur pour que le code reste à usage unique.                                                                                                                                                                                                                                                                                                                            |
 
 Contrat Gemini :
 
@@ -363,10 +365,18 @@ règle vit dans `getComposableWeekId`, lue
 par l'accueil comme par la callable ; celle-ci prend la date du jour à Paris
 (`lib/clock.ts`), les functions tournant en UTC.
 
-**Un plat du batch ne se vide jamais.** Le dernier repas d'un plat
-(`isLastMealOfBatchDish`) ne se remplace ni par un reste, ni par un repas dehors,
-ni par une recette : le plat serait cuisiné sans être mangé. On l'échange, ou on
-remplace le plat lui-même.
+**Un plat du batch ne se vide pas en silence.** Un plat que plus aucun repas
+ne sert serait cuisiné sans être mangé. Cuisiner moins — le frigo est déjà
+plein — passe donc par un geste qui **retire le plat du batch**
+(`removeBatchRecipeFromPlan`) : explicitement, avec `removeBatchRecipe`, dont
+les repas passent à décider ; ou en vidant son dernier repas
+(`isLastMealOfBatchDish`) par un reste ou un repas dehors, auquel cas
+`setPlanMeal` retire le plat derrière. Y servir un autre plat du batch reste
+refusé — l'échange fait la même chose sans perdre de plat —, et tout retrait
+l'est une fois le dimanche du batch passé : le plat est au frigo. Un créneau à
+décider en semaine peut reprendre une portion du batch tant qu'il n'est pas
+cuisiné, et l'accueil compte les repas à décider sur toute la semaine
+(`countUndecidedMeals`) : ce qu'on y posera s'achète le samedi.
 
 **Un temps de cuisson, une seule vérité.** `cookMinutes` et le texte des étapes
 sont produits séparément, et une fiche a annoncé 60 minutes de cuisson en
@@ -465,7 +475,8 @@ refuse un plan, et la mention « à congeler » de l'écran du batch. Elle vit d
 `domain/week.ts`, et nulle part ailleurs — elle était écrite deux fois avant.
 
 Corollaire non évident, protégé par un test : **un plat du batch ne quitte
-jamais `recipeIds`**, même si plus aucun repas ne le sert. Il est cuisiné donc
+jamais `recipeIds` tant qu'il est au batch**, même si plus aucun repas ne le
+sert — seul son retrait de `batchRecipeIds` l'en fait sortir. Il est cuisiné donc
 acheté ; l'en retirer ferait disparaître ses ingrédients de la liste sans le
 moindre message, et le foyer sous-achèterait.
 
@@ -894,6 +905,7 @@ Ce qui reste à faire hors code, dans l'ordre :
 7. **Environnement EAS `development`** : y créer les six `EXPO_PUBLIC_FIREBASE_*`
    du projet de dev — le profil `preview` s'y rattache désormais.
 
+| Retrait       | **fait** | Retirer un plat du batch quand le frigo est plein : callable `removeBatchRecipe`, sans Gemini ni quota, ses repas passent à décider. Vider le dernier repas d'un plat par un reste ou un repas dehors le retire aussi. Portion du batch possible sur un créneau libre en semaine ; l'accueil compte les repas à décider sur toute la semaine                                                                              |
 Le compte de service `<numéro>-compute@developer.gserviceaccount.com` doit porter
 **deux rôles** que Google n'accorde plus par défaut sur les projets récents :
 

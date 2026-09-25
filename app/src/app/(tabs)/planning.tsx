@@ -4,10 +4,12 @@ import { View } from 'react-native';
 import {
   addDays,
   capitalize,
+  countBatchMealsServing,
   formatWeekRange,
   getBatchSession,
   getCurrentWeekId,
   getDayNameForDate,
+  isBatchDayPast,
   isLastMealOfBatchDish,
   listSwapTargets,
   toIsoDate,
@@ -25,6 +27,8 @@ import {
 } from '@/features/meal-plan/components/meal-choice-sheet';
 import { WeekSwitch, type WeekOffset } from '@/features/meal-plan/components/week-switch';
 import { useRecipes } from '@/features/meal-plan/api/use-recipes';
+import { useRemoveBatchRecipe } from '@/features/meal-plan/api/use-remove-batch-recipe';
+import { confirmBatchRemoval } from '@/features/meal-plan/components/confirm-batch-removal';
 import { useGenerationProgress } from '@/features/meal-plan/api/use-generation-progress';
 import { useRegenerateMeal } from '@/features/meal-plan/api/use-regenerate-meal';
 import { useSetMeal } from '@/features/meal-plan/api/use-set-meal';
@@ -53,6 +57,7 @@ export default function PlanningScreen() {
   const regenerate = useRegenerateMeal();
   const choose = useSetMeal();
   const swap = useSwapMeals();
+  const remove = useRemoveBatchRecipe();
   const dislike = useToggleDislike();
 
   const [target, setTarget] = useState<MealChoiceTarget | null>(null);
@@ -80,7 +85,7 @@ export default function PlanningScreen() {
       ? (regenerate.variables ?? choose.variables ?? swap.variables)
       : undefined;
 
-  const mutationError = regenerate.error ?? choose.error ?? swap.error;
+  const mutationError = regenerate.error ?? choose.error ?? swap.error ?? remove.error;
 
   return (
     <Screen withTabBar>
@@ -132,6 +137,8 @@ export default function PlanningScreen() {
                   recipeId !== null &&
                   plan.batchRecipeIds.includes(recipeId),
                 isLastMealOfDish: isLastMealOfBatchDish(plan, day.date, slot),
+                isUndecided: meal.kind === 'undecided',
+                isBatchCooked: isBatchDayPast(plan.weekStart, today),
               });
             }}
           />
@@ -197,6 +204,16 @@ export default function PlanningScreen() {
             });
           }
           closeSheet();
+        }}
+        onRemoveDish={() => {
+          const recipeId = target?.currentRecipeId;
+          if (!householdId || !plan || !recipeId) return;
+          closeSheet();
+          confirmBatchRemoval(
+            target.currentRecipeName ?? 'ce plat',
+            countBatchMealsServing(plan, recipeId),
+            () => remove.mutate({ householdId, weekId, recipeId }),
+          );
         }}
         onDislike={(isDisliked) => {
           if (householdId && target?.currentRecipeId) {

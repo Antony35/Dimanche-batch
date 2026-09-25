@@ -24,8 +24,12 @@ export interface MealChoiceTarget {
   isCurrentDisliked: boolean;
   /** Vrai si le créneau sert une portion du batch de cette semaine. */
   isBatchPortion: boolean;
-  /** Vrai si c'est le dernier repas de son plat du batch : il ne se vide pas. */
+  /** Vrai si c'est le dernier repas de son plat du batch : le vider retire le plat. */
   isLastMealOfDish: boolean;
+  /** Vrai si le créneau est encore à décider. */
+  isUndecided: boolean;
+  /** Vrai si le dimanche du batch est passé : les plats sont au frigo. */
+  isBatchCooked: boolean;
 }
 
 export interface MealChoiceSheetProps {
@@ -42,6 +46,8 @@ export interface MealChoiceSheetProps {
   onPreviousLeftover: (recipeId: string) => void;
   onEatOut: () => void;
   onCook: (style: MealStyle) => void;
+  /** Retire du batch le plat que sert ce créneau. */
+  onRemoveDish: () => void;
   /** Bannit le plat en place, ou lève son bannissement. */
   onDislike: (isDisliked: boolean) => void;
 }
@@ -50,10 +56,14 @@ export interface MealChoiceSheetProps {
  * Les façons de remplir un créneau, selon le jour.
  *
  * Du lundi au vendredi, on ne cuisine pas : on échange avec un autre plat du
- * batch, on finit un reste, ou on mange dehors. Le samedi et le dimanche, on
- * peut aussi cuisiner. L'ordre et les libellés disent le coût : échanger ne
- * change pas la liste de courses, un reste ou un repas dehors l'allège,
- * cuisiner l'alourdit et consomme une génération.
+ * batch, on finit un reste, ou on mange dehors — et un créneau à décider peut
+ * reprendre une portion du batch. Le samedi et le dimanche, on peut aussi
+ * cuisiner. L'ordre et les libellés disent le coût : échanger ne change pas la
+ * liste de courses, un reste ou un repas dehors l'allège, cuisiner l'alourdit
+ * et consomme une génération.
+ *
+ * Vider le dernier repas d'un plat du batch retire le plat, tant qu'il n'est
+ * pas cuisiné : la feuille le dit avant qu'on choisisse.
  */
 export function MealChoiceSheet({
   target,
@@ -66,11 +76,21 @@ export function MealChoiceSheet({
   onPreviousLeftover,
   onEatOut,
   onCook,
+  onRemoveDish,
   onDislike,
 }: MealChoiceSheetProps) {
   const theme = useTheme();
   const isWeekend = (target?.dayIndex ?? 0) <= BATCH_DAY_INDEX;
-  const canEmpty = !target?.isLastMealOfDish;
+  const isLastMeal = target?.isLastMealOfDish ?? false;
+  const isBatchCooked = target?.isBatchCooked ?? false;
+  // Le dernier repas d'un plat ne se vide qu'avant le batch : après, le plat
+  // est au frigo, et il faudra bien le manger.
+  const canEmpty = !isLastMeal || !isBatchCooked;
+  // Une portion de plus, c'est deux portions de plus à cuisiner : possible le
+  // week-end, ou sur un créneau libre tant que le batch n'est pas fait. Jamais
+  // sur le dernier repas d'un plat — l'échange fait la même chose sans le perdre.
+  const canServeBatch =
+    !isLastMeal && (isWeekend || ((target?.isUndecided ?? false) && !isBatchCooked));
 
   return (
     <Modal
@@ -135,7 +155,7 @@ export function MealChoiceSheet({
             </Section>
           ) : null}
 
-          {isWeekend && batchRecipes.length > 0 ? (
+          {canServeBatch && batchRecipes.length > 0 ? (
             <Section title="UNE PORTION DU BATCH">
               {batchRecipes.map(({ recipe }) => (
                 <Card key={recipe.id} onPress={() => onServeBatch(recipe.id)}>
@@ -150,6 +170,16 @@ export function MealChoiceSheet({
 
           {canEmpty ? (
             <>
+              {isLastMeal ? (
+                <Card>
+                  <Text variant="bodyStrong">C’est le dernier repas de ce plat</Text>
+                  <Text variant="caption" tone="soft">
+                    Le remplacer par un reste ou un repas dehors retire le plat du batch : il ne
+                    sera ni cuisiné dimanche ni acheté.
+                  </Text>
+                </Card>
+              ) : null}
+
               {previousLeftovers.length > 0 ? (
                 <Section title="UN RESTE DE LA SEMAINE DERNIÈRE">
                   {previousLeftovers.map((recipe) => (
@@ -172,13 +202,13 @@ export function MealChoiceSheet({
             <Card>
               <Text variant="bodyStrong">C’est le dernier repas de ce plat</Text>
               <Text variant="caption" tone="soft">
-                Le vider laisserait un plat cuisiné dimanche que personne ne mange. Échange-le, ou
-                remplace le plat lui-même depuis l’écran du dimanche.
+                Le batch est cuisiné : le plat attend au frigo. Échange-le plutôt avec un autre
+                repas.
               </Text>
             </Card>
           )}
 
-          {isWeekend && canEmpty ? (
+          {isWeekend && !isLastMeal ? (
             <Section title="CUISINER CE JOUR-LÀ">
               <Button
                 label="Un one-pot, rapide"
@@ -197,6 +227,16 @@ export function MealChoiceSheet({
                 Sans limite de temps ni d’ustensiles. Les deux demandent une recette au modèle :
                 cela consomme une génération du foyer, et ses ingrédients s’ajoutent à la liste en «
                 frais ».
+              </Text>
+            </Section>
+          ) : null}
+
+          {target?.isBatchPortion && !isBatchCooked ? (
+            <Section title="CUISINER MOINS">
+              <Button label="Retirer ce plat du batch" variant="ghost" onPress={onRemoveDish} />
+              <Text variant="caption" tone="faint">
+                Le frigo est déjà plein ? Le plat n’est ni cuisiné ni acheté, et tous ses repas
+                passent à décider. Rien n’est consommé.
               </Text>
             </Section>
           ) : null}

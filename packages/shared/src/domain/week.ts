@@ -168,6 +168,17 @@ export function isComposableWeek(weekStart: WeekId, today: IsoDate): boolean {
   return weekStart === getComposableWeekId(today);
 }
 
+/**
+ * Vrai si le batch de cette semaine est déjà derrière nous.
+ *
+ * Le dimanche lui-même compte encore comme « avant » : on peut renoncer à un
+ * plat le matin, avant de l'avoir commencé. Au-delà, le plat est cuisiné, et
+ * le retirer du plan n'effacerait que la trace de ce qu'on a au frigo.
+ */
+export function isBatchDayPast(weekStart: WeekId, today: IsoDate): boolean {
+  return today > addDays(weekStart, BATCH_DAY_INDEX);
+}
+
 /** « 45 min », « 2 h », « 2 h 30 » : une durée telle qu'on la dit en cuisine. */
 export function formatDuration(minutes: number): string {
   if (minutes < 60) return `${minutes} min`;

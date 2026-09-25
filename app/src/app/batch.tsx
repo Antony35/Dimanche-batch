@@ -11,8 +11,10 @@ import {
   getBatchSession,
   getDayName,
   getUpcomingWeekId,
+  isBatchDayPast,
   capitalize,
   scaleIngredients,
+  toIsoDate,
   type BatchRecipe,
   type GenerationLock,
 } from '@dimanche-batch/shared';
@@ -36,8 +38,10 @@ import {
 import { useCookingSession } from '@/features/meal-plan/api/use-cooking-session';
 import { useComposeCookingSession } from '@/features/meal-plan/api/use-compose-cooking-session';
 import { useRecipes } from '@/features/meal-plan/api/use-recipes';
+import { useRemoveBatchRecipe } from '@/features/meal-plan/api/use-remove-batch-recipe';
 import { useReplaceBatchRecipe } from '@/features/meal-plan/api/use-replace-batch-recipe';
 import { BatchSessionView } from '@/features/meal-plan/components/batch-session-view';
+import { confirmBatchRemoval } from '@/features/meal-plan/components/confirm-batch-removal';
 import { GenerationProgress } from '@/features/meal-plan/components/generation-progress';
 import { useGenerationProgress } from '@/features/meal-plan/api/use-generation-progress';
 import { useWeeklyPlan } from '@/features/meal-plan/api/use-weekly-plan';
@@ -79,6 +83,7 @@ export default function BatchScreen() {
   const { recipesById } = useRecipes(householdId);
   const progress = useBatchProgress(householdId, weekId);
   const replace = useReplaceBatchRecipe();
+  const remove = useRemoveBatchRecipe();
   const generation = useGenerationProgress(householdId, weekId);
   const cookingSession = useCookingSession(householdId, weekId);
   const composeSession = useComposeCookingSession();
@@ -107,13 +112,15 @@ export default function BatchScreen() {
   }
 
   const session = getBatchSession(plan, recipesById);
+  // Une fois le batch cuisiné, le plat est au frigo : on ne le retire plus.
+  const canRemove = !isBatchDayPast(plan.weekStart, toIsoDate(new Date()));
 
   if (session.recipes.length === 0) {
     return (
       <Screen>
         <EmptyState
-          title="Pas de batch pour cette semaine"
-          description="Cette semaine a été composée avant l’arrivée du batch. Régénère-la pour obtenir la session du dimanche."
+          title="Rien à cuisiner dimanche"
+          description="Aucun plat au batch cette semaine : les repas se décident dans le planning, avec les restes du frigo."
         />
       </Screen>
     );
@@ -140,6 +147,7 @@ export default function BatchScreen() {
       </View>
 
       {replace.error ? <ErrorState message={replace.error.message} /> : null}
+      {remove.error ? <ErrorState message={remove.error.message} /> : null}
 
       {view === 'session' ? (
         <BatchSessionView
@@ -171,6 +179,16 @@ export default function BatchScreen() {
                 replace.mutate({ householdId, weekId, recipeId: entry.recipe.id });
               }
             }}
+            canRemove={canRemove}
+            isRemoving={remove.isPending && remove.variables?.recipeId === entry.recipe.id}
+            onRemove={() => {
+              const mealCount = countBatchMealsServing(plan, entry.recipe.id);
+              confirmBatchRemoval(entry.recipe.name, mealCount, () => {
+                if (householdId) {
+                  remove.mutate({ householdId, weekId, recipeId: entry.recipe.id });
+                }
+              });
+            }}
           />
         ))}
     </Screen>
@@ -185,6 +203,9 @@ function BatchRecipeCard({
   isReplacing,
   generation,
   onReplace,
+  canRemove,
+  isRemoving,
+  onRemove,
 }: {
   entry: BatchRecipe;
   position: number;
@@ -194,6 +215,9 @@ function BatchRecipeCard({
   isReplacing: boolean;
   generation: GenerationLock | null;
   onReplace: () => void;
+  canRemove: boolean;
+  isRemoving: boolean;
+  onRemove: () => void;
 }) {
   const theme = useTheme();
   const { recipe } = entry;
@@ -320,6 +344,20 @@ function BatchRecipeCard({
           jour la liste de courses — les articles déjà cochés que les deux plats partagent gardent
           leur case, avec une quantité qui change.
         </Text>
+        {canRemove ? (
+          <>
+            <Button
+              label="Retirer ce plat du batch"
+              variant="ghost"
+              loading={isRemoving}
+              onPress={onRemove}
+            />
+            <Text variant="caption" tone="faint">
+              Le frigo est déjà plein ? Le plat n’est ni cuisiné ni acheté, et ses {mealCount} repas
+              passent à décider. Rien n’est consommé.
+            </Text>
+          </>
+        ) : null}
       </View>
     </Card>
   );

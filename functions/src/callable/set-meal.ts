@@ -3,6 +3,7 @@ import { logger } from 'firebase-functions';
 import {
   SetMealInputSchema,
   addDays,
+  isBatchDayPast,
   isLastMealOfBatchDish,
   type Meal,
   type SetMealChoice,
@@ -10,6 +11,7 @@ import {
   type SetMealResult,
 } from '@dimanche-batch/shared';
 import { DEFAULT_MEMORY, DEFAULT_TIMEOUT_SECONDS, MAX_INSTANCES, REGION } from '../config';
+import { todayInParis } from '../lib/clock';
 import { internal, invalidArgument, notFound, parseInput } from '../lib/errors';
 import {
   acquireGenerationLock,
@@ -30,7 +32,9 @@ import {
  *
  * Trois gestes : servir une portion d'un plat du batch, déclarer qu'on mange
  * dehors, ou finir un reste du batch de la semaine précédente — qui n'achète
- * rien, et allège donc la liste de courses. Aucun appel à Gemini, donc **aucun quota
+ * rien, et allège donc la liste de courses. Vider ainsi le dernier repas d'un
+ * plat du batch retire le plat : on le cuisinerait sinon pour personne.
+ * Aucun appel à Gemini, donc **aucun quota
  * consommé** — décompter une génération pour un choix que l'utilisateur fait
  * lui-même n'aurait aucun sens.
  *
@@ -72,15 +76,24 @@ export const setMeal = onCall(
       throw invalidArgument('Ce jour ne fait pas partie de la semaine planifiée.');
     }
 
-    // Le dernier repas d'un plat du batch ne se remplace pas : le plat serait
-    // cuisiné sans que personne ne le mange. On remplace alors le plat lui-même.
+    // Vider le dernier repas d'un plat du batch retire le plat (`setPlanMeal`).
+    // Deux cas restent refusés : y servir un autre plat du batch — l'échange
+    // fait la même chose sans perdre de plat —, et le faire une fois le batch
+    // cuisiné, quand le plat est au frigo et qu'il faudra bien le manger.
     const current = plan.days.find((day) => day.date === input.date)?.[input.slot];
     const keepsSameDish =
       input.meal.choice === 'batch' && current?.recipeId === input.meal.recipeId;
     if (isLastMealOfBatchDish(plan, input.date, input.slot) && !keepsSameDish) {
-      throw invalidArgument(
-        'C’est le dernier repas de ce plat du batch : remplace plutôt le plat depuis l’écran du dimanche.',
-      );
+      if (isBatchDayPast(plan.weekStart, todayInParis())) {
+        throw invalidArgument(
+          'C’est le dernier repas de ce plat, déjà cuisiné : échange-le plutôt avec un autre repas.',
+        );
+      }
+      if (input.meal.choice === 'batch') {
+        throw invalidArgument(
+          'C’est le dernier repas de ce plat du batch : échange-le, ou retire le plat pour cuisiner moins.',
+        );
+      }
     }
 
     const previousBatchRecipeIds =

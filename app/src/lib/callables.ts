@@ -5,6 +5,7 @@ import {
   GenerateWeeklyPlanResultSchema,
   JoinHouseholdResultSchema,
   RegenerateMealResultSchema,
+  RemoveBatchRecipeResultSchema,
   ReplaceBatchRecipeResultSchema,
   SetMealResultSchema,
   SwapMealsResultSchema,
@@ -16,6 +17,8 @@ import {
   type JoinHouseholdResult,
   type RegenerateMealInput,
   type RegenerateMealResult,
+  type RemoveBatchRecipeInput,
+  type RemoveBatchRecipeResult,
   type ReplaceBatchRecipeInput,
   type ReplaceBatchRecipeResult,
   type SetMealInput,
@@ -87,6 +90,10 @@ export function replaceBatchRecipe(
   input: ReplaceBatchRecipeInput,
 ): Promise<ReplaceBatchRecipeResult> {
   return call('replaceBatchRecipe', ReplaceBatchRecipeResultSchema, input);
+}
+
+export function removeBatchRecipe(input: RemoveBatchRecipeInput): Promise<RemoveBatchRecipeResult> {
+  return call('removeBatchRecipe', RemoveBatchRecipeResultSchema, input);
 }
 
 export function composeCookingSession(

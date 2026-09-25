@@ -9,4 +9,5 @@ export { regenerateMeal } from './callable/regenerate-meal';
 export { setMeal } from './callable/set-meal';
 export { swapMeals } from './callable/swap-meals';
 export { replaceBatchRecipeCallable as replaceBatchRecipe } from './callable/replace-batch-recipe';
+export { removeBatchRecipeCallable as removeBatchRecipe } from './callable/remove-batch-recipe';
 export { composeCookingSession } from './callable/compose-cooking-session';

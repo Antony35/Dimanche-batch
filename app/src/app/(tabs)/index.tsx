@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useRouter } from 'expo-router';
 import { View } from 'react-native';
 import {
-  countUndecidedWeekendMeals,
+  countUndecidedMeals,
   formatWeekRange,
   getComposableWeekId,
   getCurrentWeekId,
@@ -186,17 +186,17 @@ function NextStep({
     );
   }
 
-  const undecided = nextPlan ? countUndecidedWeekendMeals(nextPlan) : 0;
+  const undecided = nextPlan ? countUndecidedMeals(nextPlan) : 0;
   if (nextPlan && undecided > 0) {
     return (
       <Card style={{ gap: theme.spacing.md, borderColor: theme.colors.spice, borderWidth: 1 }}>
-        <Text variant="heading">Décider le samedi et le dimanche</Text>
+        <Text variant="heading">Décider les repas restants</Text>
         <Text tone="soft">
           Le batch de la semaine {formatWeekRange(nextWeekId)} est prêt. Il reste {undecided} repas
-          du week-end à décider : un reste, un repas dehors ou un plat cuisiné. Fais-le avant les
-          courses du samedi — ce qu’ils demandent s’ajoute à la liste.
+          à décider : un reste, un repas dehors, une portion du batch ou, le week-end, un plat
+          cuisiné. Fais-le avant les courses du samedi — ce qu’ils demandent s’ajoute à la liste.
         </Text>
-        <Button label="Décider le week-end" onPress={() => router.push('/planning?week=1')} />
+        <Button label="Décider les repas" onPress={() => router.push('/planning?week=1')} />
         <Button
           label="Voir le batch du dimanche"
           variant="ghost"

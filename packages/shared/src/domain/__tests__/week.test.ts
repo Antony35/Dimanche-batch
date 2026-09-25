@@ -12,6 +12,7 @@ import {
   getUpcomingWeekId,
   getWeekDates,
   getWeekId,
+  isBatchDayPast,
   isComposableWeek,
   parseIsoDate,
   requiresFreezing,
@@ -212,6 +213,16 @@ describe('semaine composable', () => {
   it('refuse la semaine d’après, et une date qui n’est pas un samedi', () => {
     expect(isComposableWeek('2026-09-26', '2026-09-15')).toBe(false);
     expect(isComposableWeek('2026-09-21', '2026-09-15')).toBe(false);
+  });
+});
+
+describe('isBatchDayPast', () => {
+  it('laisse renoncer à un plat jusqu’au dimanche du batch inclus', () => {
+    // Semaine du samedi 12 : batch le dimanche 13.
+    expect(isBatchDayPast('2026-09-12', '2026-09-08')).toBe(false);
+    expect(isBatchDayPast('2026-09-12', '2026-09-12')).toBe(false);
+    expect(isBatchDayPast('2026-09-12', '2026-09-13')).toBe(false);
+    expect(isBatchDayPast('2026-09-12', '2026-09-14')).toBe(true);
   });
 });
 
