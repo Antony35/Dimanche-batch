@@ -20,6 +20,7 @@ export const cacheKeys = {
   weeklyPlan: (householdId: string, weekId: string) => `cache.plan.${householdId}.${weekId}`,
   groceryItems: (householdId: string, weekId: string) => `cache.grocery.${householdId}.${weekId}`,
   recipes: (householdId: string) => `cache.recipes.${householdId}`,
+  manualItems: (householdId: string) => `cache.manual.${householdId}`,
   /** Étapes cochées pendant le batch. Local, jamais partagé — préfixe distinct. */
   batchProgress: (householdId: string, weekId: string) =>
     `progress.batch.${householdId}.${weekId}`,

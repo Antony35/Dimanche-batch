@@ -40,6 +40,30 @@ service cloud.firestore {
       return data.origin == 'manual';
     }
 
+    /** Identifiant de semaine : la date ISO d'un samedi, comme `WeekIdSchema`. */
+    function isWeekId(value) {
+      return value is string && value.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$');
+    }
+
+    /**
+     * Un article manuel du foyer, complet et borné. Vaut pour la création comme
+     * pour la mise à jour : ajouter deux fois le même article réécrit sa ligne,
+     * et le rayer n'en change que `checkedWeekId`.
+     */
+    function isValidManualItem(data) {
+      return data.keys().hasOnly(['name', 'qty', 'unit', 'aisle', 'addedWeekId', 'checkedWeekId'])
+        && data.keys().hasAll(['name', 'qty', 'unit', 'aisle', 'addedWeekId', 'checkedWeekId'])
+        && data.name is string
+        && data.name.size() > 0
+        && data.name.size() <= 80
+        && data.qty is number
+        && data.qty > 0
+        && data.unit in unitValues()
+        && data.aisle in aisleValues()
+        && isWeekId(data.addedWeekId)
+        && (data.checkedWeekId == null || isWeekId(data.checkedWeekId));
+    }
+
     /**
      * Recopiés de `packages/shared/src/schemas/common.ts`. Les Security Rules
      * n'importent rien : c'est la seule duplication du dépôt, et elle est
@@ -122,6 +146,20 @@ service cloud.firestore {
 
           allow delete: if isMember(householdId) && isManualItem(resource.data);
         }
+      }
+
+      // Articles ajoutés à la main, rattachés au foyer et non à une semaine :
+      // ils restent sur les listes suivantes jusqu'à être rayés ou supprimés.
+      // Même espace de noms `manual--` que dans les listes, et même raison
+      // d'être en écriture directe : on les ajoute et on les raye en magasin.
+      // Rien de ce que le batch achète ne vit ici, donc rien à protéger d'un
+      // recalcul : tout article du foyer se supprime.
+      match /manualItems/{itemId} {
+        allow read: if isMember(householdId);
+        allow create, update: if isMember(householdId)
+          && itemId.matches('^manual--.+')
+          && isValidManualItem(request.resource.data);
+        allow delete: if isMember(householdId);
       }
 
       // Lexique des rayons du foyer : ce que l'utilisateur a corrigé ou ajouté

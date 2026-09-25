@@ -53,6 +53,31 @@ export const GroceryListSchema = z.object({
 });
 
 /**
+ * Article ajouté à la main, rattaché au foyer et non à une semaine.
+ *
+ * On ajoute « sel » parce qu'il n'y en a plus : tant qu'il n'est pas acheté, il
+ * doit figurer sur toutes les listes qui suivent, pas seulement sur celle où il
+ * a été saisi. Un article par semaine obligerait à le recopier de liste en
+ * liste, et à décider quoi faire d'une copie supprimée ici et pas là.
+ *
+ * Il apparaît dans la liste de `addedWeekId` et de toutes les semaines
+ * suivantes, jusqu'à être rayé — il reste alors visible, coché, dans la
+ * semaine où il l'a été, puis disparaît des suivantes — ou supprimé.
+ */
+export const ManualItemSchema = z.object({
+  /** `manualItemId(nom, dimension)` : ajouter deux fois le même article le met à jour. */
+  id: z.string().min(1),
+  name: z.string().min(1).max(80),
+  qty: z.number().positive(),
+  unit: UnitSchema,
+  aisle: AisleSchema,
+  /** Semaine de la liste où il a été saisi. */
+  addedWeekId: WeekIdSchema,
+  /** Semaine de la liste où il a été rayé, `null` tant qu'il reste à acheter. */
+  checkedWeekId: WeekIdSchema.nullable(),
+});
+
+/**
  * Rayons que le foyer a lui-même attribués, un seul document par foyer.
  *
  * Quand la table livrée ne connaît pas un article, ou le range mal, la
@@ -68,4 +93,5 @@ export const AisleLexiconSchema = z.object({
 export type AisleLexicon = z.infer<typeof AisleLexiconSchema>;
 export type GroceryOrigin = z.infer<typeof GroceryOriginSchema>;
 export type GroceryItem = z.infer<typeof GroceryItemSchema>;
+export type ManualItem = z.infer<typeof ManualItemSchema>;
 export type GroceryList = z.infer<typeof GroceryListSchema>;

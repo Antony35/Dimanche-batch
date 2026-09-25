@@ -12,7 +12,7 @@ export interface SaveAisleCorrectionInput {
 /**
  * Enregistre le rayon que le foyer a choisi pour un article.
  *
- * Huitième écriture cliente, bornée par la règle du lexique : un seul document,
+ * Écriture cliente bornée par la règle du lexique : un seul document,
  * une seule clé, et des rayons connus. Écrite en fusion, jamais en
  * remplacement : deux téléphones qui corrigent chacun un article en même temps
  * ne s'effacent pas l'un l'autre.

@@ -3,9 +3,12 @@ import {
   buildGroceryList,
   groupByAisle,
   makeManualGroceryItem,
+  makeManualItem,
   manualItemId,
+  manualItemsForWeek,
   mergeGroceryLists,
   normalizeIngredientName,
+  withManualItems,
 } from '../grocery';
 import { makePlan, makeRecipe } from './fixtures';
 import type { GroceryItem } from '../../schemas/grocery-list';
@@ -325,6 +328,73 @@ describe('makeManualGroceryItem', () => {
       origin: 'manual',
       fromRecipeIds: [],
     });
+  });
+});
+
+/**
+ * Un article saisi à la main reste sur les listes jusqu'à être acheté. Les
+ * semaines vont du samedi au vendredi : 12, 19 et 26 septembre se suivent.
+ */
+describe('articles manuels du foyer, d’une semaine à l’autre', () => {
+  const sel = makeManualItem({
+    name: 'Sel',
+    qty: 1,
+    unit: 'piece',
+    aisle: 'epicerie',
+    weekId: '2026-09-19',
+  });
+
+  it('se construit rattaché à sa semaine de saisie, à acheter', () => {
+    expect(sel).toEqual({
+      id: 'manual--sel--piece',
+      name: 'sel',
+      qty: 1,
+      unit: 'piece',
+      aisle: 'epicerie',
+      addedWeekId: '2026-09-19',
+      checkedWeekId: null,
+    });
+  });
+
+  it('apparaît dans sa semaine et toutes les suivantes, jamais avant', () => {
+    expect(manualItemsForWeek([sel], '2026-09-12')).toEqual([]);
+    expect(manualItemsForWeek([sel], '2026-09-19')).toHaveLength(1);
+    expect(manualItemsForWeek([sel], '2026-10-24')).toHaveLength(1);
+  });
+
+  it('reste coché dans la semaine où il est rayé, puis disparaît des suivantes', () => {
+    const bought = { ...sel, checkedWeekId: '2026-09-26' };
+    expect(manualItemsForWeek([bought], '2026-09-19')[0]?.checked).toBe(true);
+    expect(manualItemsForWeek([bought], '2026-09-26')[0]?.checked).toBe(true);
+    expect(manualItemsForWeek([bought], '2026-10-03')).toEqual([]);
+  });
+
+  it('se présente comme un article manuel ordinaire', () => {
+    expect(manualItemsForWeek([sel], '2026-09-19')[0]).toEqual({
+      id: 'manual--sel--piece',
+      name: 'sel',
+      qty: 1,
+      unit: 'piece',
+      aisle: 'epicerie',
+      checked: false,
+      origin: 'manual',
+      fromRecipeIds: [],
+    });
+  });
+
+  it('s’ajoute à la liste de la semaine, dans l’ordre du magasin', () => {
+    const week = [makeItem({ id: 'poireau--piece', name: 'poireau' })];
+    expect(withManualItems(week, [sel], '2026-09-26').map((item) => item.id)).toEqual([
+      'poireau--piece',
+      'manual--sel--piece',
+    ]);
+  });
+
+  it('ne double pas un article manuel de l’ancienne forme, rangé dans la semaine', () => {
+    const legacy = makeItem({ id: 'manual--sel--piece', name: 'sel', origin: 'manual' });
+    const merged = withManualItems([legacy], [sel], '2026-09-19');
+    expect(merged).toHaveLength(1);
+    expect(merged[0]?.fromRecipeIds).toEqual([]);
   });
 });
 

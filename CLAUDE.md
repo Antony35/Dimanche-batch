@@ -17,7 +17,7 @@ dernier jour aurait attendu huit jours au frigo.
 **Statut : v1 en cours — J1 à J6 livrés, modèle du batch refondu.** Le monorepo, le domaine partagé, les
 Security Rules, l'authentification, le foyer partagé, la génération Gemini, le
 planning des 7 jours, la régénération d'un repas isolé, la liste de courses, la
-fiche recette, l'historique et le fonctionnement hors ligne ; 459 tests couvrent
+fiche recette, l'historique et le fonctionnement hors ligne ; 518 tests couvrent
 le domaine, les schémas, les callables et les règles. Reste le build (J7). Ce
 document fait autorité sur l'architecture ; il est mis à jour en même temps que
 le code, jamais après.
@@ -209,7 +209,14 @@ households/{hid}/groceryLists/{weekId}/items/{itemId}
   name, qty, unit, aisle, checked, fromRecipeIds[]
   origin: 'batch' | 'fresh' | 'manual'
   # itemId dérivé du nom normalisé + dimension d'unité (domain/grocery.ts)
-  # préfixé `manual--` pour un article ajouté à la main
+  # préfixé `manual--` : article ajouté à la main avant `manualItems`,
+  # encore lu et supprimable, plus jamais écrit
+
+households/{hid}/manualItems/{itemId}      # ajoutés à la main, sans semaine
+  name, qty, unit, aisle
+  addedWeekId: string                      # semaine de la liste où il a été saisi
+  checkedWeekId: string | null             # semaine où il a été rayé
+  # itemId = manualItemId(nom, dimension), sous `manual--`
 
 households/{hid}/usage/{yyyy-mm-dd}        # rate limiting
   generations: number
@@ -257,6 +264,10 @@ surveillance) : le budget du dimanche ne compte que le premier.
   partent ensemble parce qu'ils s'excluent — mettre en favori lève le
   bannissement — et la règle ne peut borner que les champs, jamais leur
   cohérence : celle-ci s'écrit une seule fois, dans `use-recipe-verdict.ts`.
+- `manualItems` : un membre crée, réécrit, raye et supprime un article du foyer,
+  sous `manual--`, aux champs bornés comme dans les listes. Rien de ce que le
+  batch achète n'y vit : tout y est supprimable. La règle vaut aussi pour la
+  mise à jour, parce qu'ajouter deux fois le même article réécrit sa ligne.
 - `lexicon/overrides` : un membre écrit le seul champ `entries`, dont les valeurs
   sont restreintes aux rayons connus. L'app l'écrit en fusion, pour que deux
   téléphones qui corrigent en même temps ne s'écrasent pas.
@@ -404,8 +415,17 @@ le samedi et le dimanche s'ajoutent pour deux portions par repas, en origine
 
 **Le recalcul est intégral, les ajouts à la main survivent.** `commitPlan`
 supprime tout article absent de la liste recalculée ; `mergeGroceryLists` y
-reporte donc les cases cochées **et** les articles `manual`, qu'aucune recette
-ne reproduit. Un repas `cooked` citant un plat du batch est ignoré : la contrainte
+reporte donc les cases cochées **et** les articles `manual` de l'ancienne
+forme, qu'aucune recette ne reproduit. Les articles ajoutés depuis vivent dans
+`manualItems`, hors de portée du recalcul.
+
+**Un article ajouté à la main suit le foyer, pas la semaine.** On note « sel »
+parce qu'il n'y en a plus : tant qu'il n'est pas acheté, il doit figurer sur
+toutes les listes suivantes. `manualItemsForWeek` le montre à partir de sa
+semaine de saisie, coché jusqu'à la semaine où il a été rayé incluse, puis plus
+du tout ; supprimé, il quitte toutes les listes. `withManualItems` l'ajoute
+aux articles de la semaine dans `useGroceryList`. Une copie par semaine aurait
+obligé à décider quoi faire d'une copie supprimée ici et pas là. Un repas `cooked` citant un plat du batch est ignoré : la contrainte
 de génération l'interdit, mais un plan édité repas par repas peut produire ce
 cas, et il ne doit pas coûter le double.
 
@@ -537,20 +557,22 @@ refuserait des recettes légitimes, et chaque refus coûte une reprise.
 - Composants fonctionnels, un composant par fichier, nommage `PascalCase.tsx`.
 - Les hooks de données vivent dans `features/<x>/api/`, préfixés `use` — un composant
   ne consomme jamais le SDK Firestore en direct.
-- **Huit écritures Firestore partent du client, et huit seulement.** Toute
-  autre passe par une Cloud Function ; en ajouter une neuvième demande d'abord
+- **Dix écritures Firestore partent du client, et dix seulement.** Toute
+  autre passe par une Cloud Function ; en ajouter une onzième demande d'abord
   sa règle et son test.
 
-  | Écriture                           | Pourquoi elle est sûre                                                                                                       |
-  | ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-  | `useToggleGroceryItem` → `checked` | La règle borne l'écriture à ce seul champ. Passer par une callable n'ajouterait qu'une latence au milieu d'un magasin        |
-  | `useToggleFavorite` → `isFavorite` | Même mécanisme, même raison : le geste doit répondre à l'instant                                                             |
-  | `useToggleDislike` → `isDisliked`  | Même règle, même fichier : les deux verdicts s'excluent et s'écrivent ensemble                                               |
-  | `createHousehold`                  | La règle exige `members == [uid]` et `createdBy == uid` : on ne peut créer qu'un foyer dont on est le seul membre            |
-  | `refreshInviteCode`                | `onlyChanges(['name', 'inviteCode'])` : `members` reste inaccessible au client                                               |
-  | `useAddGroceryItem`                | Identifiant sous `manual--`, `origin == 'manual'`, champs et valeurs bornés : on ajoute du sac poubelle debout dans un rayon |
-  | `useDeleteGroceryItem`             | Seul un article `manual` est supprimable : un article calculé reviendrait au recalcul, et le retirer ferait sous-acheter     |
-  | `useSaveAisleCorrection`           | Un seul document, le seul champ `entries`, des rayons connus ; écrit en fusion pour que deux téléphones ne s'écrasent pas    |
+  | Écriture                           | Pourquoi elle est sûre                                                                                                     |
+  | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+  | `useToggleGroceryItem` → `checked` | La règle borne l'écriture à ce seul champ. Passer par une callable n'ajouterait qu'une latence au milieu d'un magasin      |
+  | `useToggleFavorite` → `isFavorite` | Même mécanisme, même raison : le geste doit répondre à l'instant                                                           |
+  | `useToggleDislike` → `isDisliked`  | Même règle, même fichier : les deux verdicts s'excluent et s'écrivent ensemble                                             |
+  | `createHousehold`                  | La règle exige `members == [uid]` et `createdBy == uid` : on ne peut créer qu'un foyer dont on est le seul membre          |
+  | `refreshInviteCode`                | `onlyChanges(['name', 'inviteCode'])` : `members` reste inaccessible au client                                             |
+  | `useAddGroceryItem`                | Dans `manualItems`, identifiant sous `manual--`, champs et valeurs bornés : on ajoute du sac poubelle debout dans un rayon |
+  | `useToggleManualItem`              | Même règle ; écrit la semaine où l'article est rayé, qui le retire des listes suivantes                                    |
+  | `useDeleteManualItem`              | Rien de calculé ne vit dans `manualItems` : tout y est supprimable sans faire sous-acheter                                 |
+  | `useDeleteGroceryItem`             | Articles manuels de l'ancienne forme, rangés dans la semaine. Seul un article `manual` y est supprimable                   |
+  | `useSaveAisleCorrection`           | Un seul document, le seul champ `entries`, des rayons connus ; écrit en fusion pour que deux téléphones ne s'écrasent pas  |
 
 - Pas d'état optimiste écrit à la main sur une donnée Firestore : le SDK
   applique l'écriture localement avant de la confirmer, et le listener la
@@ -575,6 +597,18 @@ refuserait des recettes légitimes, et chaque refus coûte une reprise.
   depuis le disque est asynchrone par nature et fait exception — elle s'écrit
   alors dans l'état, et la course avec le premier snapshot serveur se tranche
   par un drapeau, jamais en espérant un ordre d'arrivée.
+- **L'affichage doit tenir sur tous les Android, sans changer là où il tenait
+  déjà.** Trois réglages du téléphone l'ont pris en défaut, sur un Samsung à
+  police par défaut et navigation à trois boutons :
+  - la **taille de police** : un libellé de `SegmentedSwitch` tient sur une
+    ligne et se réduit s'il manque de place (`adjustsFontSizeToFit`), plutôt que
+    de passer à la ligne et de désaligner les onglets ;
+  - la **barre de navigation** : Android dessine l'app dessous. `Screen` ajoute
+    en bas la hauteur de cette barre, sauf sur les écrans d'onglets
+    (`withTabBar`), où la barre d'onglets la couvre déjà ;
+  - le **clavier** : en plein écran, la fenêtre ne se réduit plus quand il
+    s'ouvre. `Screen` enveloppe le contenu d'un `KeyboardAvoidingView`, sans quoi
+    le champ du mot de passe restait caché et impossible à atteindre.
 - **L'écran de préparation garde le téléphone allumé** (`useKeepAwake`), et
   seulement lui. Trois heures de cuisine les mains prises ne se font pas en
   rallumant l'écran toutes les trente secondes.
@@ -592,7 +626,7 @@ refuserait des recettes légitimes, et chaque refus coûte une reprise.
   document. Elle refuse, et sans reprise le planning, la progression de
   génération et les courses restent morts jusqu'au prochain montage, alors que
   tout est en ordre une seconde plus tard. Un `onSnapshot` posé en direct est
-  donc une erreur ; il y en a huit, tous enveloppés.
+  donc une erreur ; il y en a neuf, tous enveloppés.
 - **Ce qui vient du cache local n'est jamais persisté.** `metadata.fromCache`
   distingue un snapshot confirmé par le serveur d'un snapshot qui reflète nos
   propres écritures en attente. Persister le second figerait une vue partielle
@@ -608,18 +642,6 @@ refuserait des recettes légitimes, et chaque refus coûte une reprise.
   à la lecture.
 - Aucun `as` sur une donnée externe, et aucun dans le projet aujourd'hui.
 - Commits conventionnels (`feat:`, `fix:`, `chore:`).
-- **L'affichage doit tenir sur tous les Android, sans changer là où il tenait
-  déjà.** Trois réglages du téléphone l'ont pris en défaut, sur un Samsung à
-  police par défaut et navigation à trois boutons :
-  - la **taille de police** : un libellé de `SegmentedSwitch` tient sur une
-    ligne et se réduit s'il manque de place (`adjustsFontSizeToFit`), plutôt que
-    de passer à la ligne et de désaligner les onglets ;
-  - la **barre de navigation** : Android dessine l'app dessous. `Screen` ajoute
-    en bas la hauteur de cette barre, sauf sur les écrans d'onglets
-    (`withTabBar`), où la barre d'onglets la couvre déjà ;
-  - le **clavier** : en plein écran, la fenêtre ne se réduit plus quand il
-    s'ouvre. `Screen` enveloppe le contenu d'un `KeyboardAvoidingView`, sans quoi
-    le champ du mot de passe restait caché et impossible à atteindre.
 
 ### Où va quel test
 
@@ -883,6 +905,9 @@ Ce qui est **délibérément** simple en v1, et où brancher la suite :
 | Refonte       | **fait** | Plan réduit au batch : portions imposées et vérifiées, végétariens comptés, plat qui cuit seul, `cookMinutes`, saisons dans le prompt (v8). Samedi et dimanche à décider ; restes de la semaine précédente, échange de deux repas, plat jamais vidé ; `regenerateMeal` limité au week-end. Composition limitée à la semaine prochaine, jamais entamée. Lexique des rayons partagé par le foyer. Dates en français partout |
 | Dimanche 2    | **fait** | « Tout en parallèle » remplacé par « Mise en place puis cuisson » : mise en place calculée dans l'ordre de la planche, sans placard, quantités des portions cuisinées ; découpes et étapes de cuisson réécrites par Gemini (prompt v9), fiches du plus long au plus court. Collection `batchSessions`. Les quatre chaînes sondées contre Gemini                                                                           |
 | Dimanche 3    | **fait** | Mise en place : groupe Aromates en tête, herbes en branche exclues, une ligne par ingrédient quelle que soit l'unité. Temps de cuisson : concordance vérifiée entre `cookMinutes` et les durées des étapes, à la génération comme dans la session, qui rend son temps par plat (prompt v10)                                                                                                                               |
+| Profil        | **fait** | L'onglet Historique devient Profil : foyer, code d'invitation, historique, rayons, goûts, apparence et compte au même endroit. Affichage robuste à la police système, à la navigation à trois boutons et au clavier                                                                                                                                                                                                       |
+| Retrait       | **fait** | Retirer un plat du batch quand le frigo est plein : callable `removeBatchRecipe`, sans Gemini ni quota, ses repas passent à décider. Vider le dernier repas d'un plat par un reste ou un repas dehors le retire aussi. Portion du batch possible sur un créneau libre en semaine ; l'accueil compte les repas à décider sur toute la semaine                                                                              |
+| Courses 2     | **fait** | Un article ajouté à la main reste sur les listes des semaines suivantes jusqu'à être rayé ou supprimé : collection `manualItems` du foyer, règle et tests, deux écritures client de plus                                                                                                                                                                                                                                  |
 | J7            | à faire  | Build EAS, installation, premier vrai dimanche                                                                                                                                                                                                                                                                                                                                                                            |
 
 Ce qui reste à faire hors code, dans l'ordre :
@@ -905,7 +930,6 @@ Ce qui reste à faire hors code, dans l'ordre :
 7. **Environnement EAS `development`** : y créer les six `EXPO_PUBLIC_FIREBASE_*`
    du projet de dev — le profil `preview` s'y rattache désormais.
 
-| Retrait       | **fait** | Retirer un plat du batch quand le frigo est plein : callable `removeBatchRecipe`, sans Gemini ni quota, ses repas passent à décider. Vider le dernier repas d'un plat par un reste ou un repas dehors le retire aussi. Portion du batch possible sur un créneau libre en semaine ; l'accueil compte les repas à décider sur toute la semaine                                                                              |
 Le compte de service `<numéro>-compute@developer.gserviceaccount.com` doit porter
 **deux rôles** que Google n'accorde plus par défaut sur les projets récents :
 
@@ -916,4 +940,3 @@ Le compte de service `<numéro>-compute@developer.gserviceaccount.com` doit port
 
 Ce refus-là ne vient jamais des Security Rules : l'admin SDK n'y est pas soumis.
 Chercher le problème dans `firestore.rules` est une impasse.
-| Profil        | **fait** | L'onglet Historique devient Profil : foyer, code d'invitation, historique, rayons, goûts, apparence et compte au même endroit. Affichage robuste à la police système, à la navigation à trois boutons et au clavier                                                                                                                                                                                                       |

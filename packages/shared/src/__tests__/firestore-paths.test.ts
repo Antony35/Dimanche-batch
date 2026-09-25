@@ -31,6 +31,7 @@ describe('forme des chemins', () => {
       paths.groceryItems(HID, WEEK),
       paths.usage(HID),
       paths.locks(HID),
+      paths.manualItems(HID),
     ]) {
       expect(segments(collection) % 2, `${collection} devrait être une collection`).toBe(1);
     }
@@ -45,6 +46,7 @@ describe('forme des chemins', () => {
       paths.generationLock(HID, WEEK),
       paths.batchSession(HID, WEEK),
       paths.aisleLexicon(HID),
+      paths.manualItem(HID, 'manual--sel--piece'),
     ]) {
       expect(segments(document) % 2, `${document} devrait être un document`).toBe(0);
     }
@@ -59,6 +61,14 @@ describe('forme des chemins', () => {
     expect(paths.generationLock(HID, WEEK)).toBe(`${paths.locks(HID)}/${WEEK}`);
     expect(paths.batchSession(HID, WEEK)).toBe(`households/${HID}/batchSessions/${WEEK}`);
     expect(paths.aisleLexicon(HID)).toBe(`households/${HID}/lexicon/overrides`);
+    expect(paths.manualItem(HID, 'manual--sel--piece')).toBe(
+      `${paths.manualItems(HID)}/manual--sel--piece`,
+    );
+  });
+
+  it('range les articles manuels sous le foyer, hors de toute semaine', () => {
+    // Ils passent d'une liste à l'autre : aucune semaine ne doit les porter.
+    expect(paths.manualItems(HID)).toBe(`households/${HID}/manualItems`);
   });
 
   it('imbrique les articles sous la liste de la semaine', () => {
@@ -82,6 +92,7 @@ describe('forme des chemins', () => {
         paths.groceryItems(HID, WEEK),
         paths.usage(HID),
         paths.locks(HID),
+        paths.manualItems(HID),
       ].map((path) => path.split('/')[0]),
     );
     expect([...roots]).toEqual([COLLECTIONS.households]);

@@ -5,12 +5,14 @@ import {
   GroceryItemSchema,
   groupByAisle,
   paths,
+  withManualItems,
   type Aisle,
   type GroceryItem,
 } from '@dimanche-batch/shared';
 import { db } from '@/lib/firebase';
 import { subscribeWithRetry } from '@/lib/firestore-subscribe';
 import { cacheKeys, readCache, writeCache } from '@/lib/offline-cache';
+import { useManualItems } from './use-manual-items';
 
 const CachedItemsSchema = z.array(GroceryItemSchema);
 
@@ -19,6 +21,11 @@ export interface GroceryListState {
   /** Articles regroupés dans l'ordre de parcours du magasin. */
   groups: { aisle: Aisle; items: GroceryItem[] }[];
   checkedCount: number;
+  /**
+   * Articles manuels du foyer montrés dans cette semaine : ils se rayent et se
+   * suppriment dans leur propre collection, pas dans celle de la semaine.
+   */
+  manualIds: ReadonlySet<string>;
   isLoading: boolean;
   /** Vrai tant que le serveur n'a pas confirmé ce qui est affiché. */
   isStale: boolean;
@@ -34,9 +41,14 @@ interface SnapshotState {
 }
 
 const INITIAL: SnapshotState = { key: null, items: [], isStale: false, error: null };
+const NO_IDS: ReadonlySet<string> = new Set();
 
 /**
  * Liste de courses d'une semaine, en temps réel et disponible hors ligne.
+ *
+ * Deux sources : les articles de la semaine, et les articles ajoutés à la main
+ * par le foyer, qui passent d'une semaine à l'autre jusqu'à être rayés
+ * (`withManualItems`).
  *
  * L'écoute porte sur la sous-collection plutôt que sur un tableau : c'est ce
  * qui permet aux Security Rules de n'autoriser que `checked`, et c'est aussi ce
@@ -49,6 +61,7 @@ const INITIAL: SnapshotState = { key: null, items: [], isStale: false, error: nu
  */
 export function useGroceryList(householdId: string | null, weekId: string): GroceryListState {
   const [state, setState] = useState<SnapshotState>(INITIAL);
+  const manual = useManualItems(householdId);
   const key = householdId ? `${householdId}/${weekId}` : null;
 
   useEffect(() => {
@@ -124,21 +137,32 @@ export function useGroceryList(householdId: string | null, weekId: string): Groc
       items: [],
       groups: [],
       checkedCount: 0,
+      manualIds: NO_IDS,
       isLoading: false,
       isStale: false,
       error: null,
     };
   }
-  if (state.key !== key) {
-    return { items: [], groups: [], checkedCount: 0, isLoading: true, isStale: false, error: null };
+  if (state.key !== key || manual.isLoading) {
+    return {
+      items: [],
+      groups: [],
+      checkedCount: 0,
+      manualIds: NO_IDS,
+      isLoading: true,
+      isStale: false,
+      error: null,
+    };
   }
 
+  const items = withManualItems(state.items, manual.items, weekId);
   return {
-    items: state.items,
-    groups: groupByAisle(state.items),
-    checkedCount: state.items.filter((item) => item.checked).length,
+    items,
+    groups: groupByAisle(items),
+    checkedCount: items.filter((item) => item.checked).length,
+    manualIds: new Set(manual.items.map((item) => item.id)),
     isLoading: false,
-    isStale: state.isStale,
-    error: state.error,
+    isStale: state.isStale || manual.isStale,
+    error: state.error ?? manual.error,
   };
 }

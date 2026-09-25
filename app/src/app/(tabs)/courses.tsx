@@ -14,8 +14,10 @@ import { useAddGroceryItem } from '@/features/grocery-list/api/use-add-grocery-i
 import { useAisleLexicon } from '@/features/grocery-list/api/use-aisle-lexicon';
 import { useSaveAisleCorrection } from '@/features/grocery-list/api/use-save-aisle-correction';
 import { useDeleteGroceryItem } from '@/features/grocery-list/api/use-delete-grocery-item';
+import { useDeleteManualItem } from '@/features/grocery-list/api/use-delete-manual-item';
 import { useGroceryList } from '@/features/grocery-list/api/use-grocery-list';
 import { useToggleGroceryItem } from '@/features/grocery-list/api/use-toggle-grocery-item';
+import { useToggleManualItem } from '@/features/grocery-list/api/use-toggle-manual-item';
 import { useHousehold } from '@/features/household/api/use-household';
 import { WeekSwitch, type WeekOffset } from '@/features/meal-plan/components/week-switch';
 import { useTheme } from '@/theme';
@@ -31,23 +33,39 @@ export default function GroceryScreen() {
   const weekId = addDays(getCurrentWeekId(), 7 * offset);
 
   const householdId = household?.id ?? null;
-  const { items, groups, checkedCount, isLoading, isStale, error } = useGroceryList(
+  const { items, groups, checkedCount, manualIds, isLoading, isStale, error } = useGroceryList(
     householdId,
     weekId,
   );
   const toggle = useToggleGroceryItem();
+  const toggleManual = useToggleManualItem();
   const add = useAddGroceryItem();
   const remove = useDeleteGroceryItem();
+  const removeManual = useDeleteManualItem();
   const lexicon = useAisleLexicon(householdId);
   const saveCorrection = useSaveAisleCorrection();
 
+  // Un article ajouté à la main vit dans le foyer, pas dans la semaine : le
+  // rayer ici le retire des listes suivantes, le supprimer de toutes.
   function handleToggle(item: GroceryItem) {
     if (!householdId) return;
+    if (manualIds.has(item.id)) {
+      toggleManual.mutate({
+        householdId,
+        itemId: item.id,
+        checkedWeekId: item.checked ? null : weekId,
+      });
+      return;
+    }
     toggle.mutate({ householdId, weekId, itemId: item.id, checked: !item.checked });
   }
 
   function handleDelete(item: GroceryItem) {
     if (!householdId) return;
+    if (manualIds.has(item.id)) {
+      removeManual.mutate({ householdId, itemId: item.id });
+      return;
+    }
     remove.mutate({ householdId, weekId, itemId: item.id });
   }
 
@@ -72,10 +90,10 @@ export default function GroceryScreen() {
 
       {isStale && items.length > 0 ? <StaleNotice /> : null}
       {error ? <ErrorState message={error.message} /> : null}
-      {toggle.error ? (
+      {toggle.error || toggleManual.error ? (
         <ErrorState message="La case n’a pas pu être enregistrée. Vérifie ta connexion." />
       ) : null}
-      {add.error || remove.error || saveCorrection.error ? (
+      {add.error || remove.error || removeManual.error || saveCorrection.error ? (
         <ErrorState message="La liste n’a pas pu être modifiée. Vérifie ta connexion et réessaie." />
       ) : null}
 

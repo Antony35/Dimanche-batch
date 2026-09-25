@@ -1,6 +1,6 @@
-import type { Aisle, Unit } from '../schemas/common';
+import type { Aisle, Unit, WeekId } from '../schemas/common';
 import { AISLES } from '../schemas/common';
-import type { GroceryItem, GroceryOrigin } from '../schemas/grocery-list';
+import type { GroceryItem, GroceryOrigin, ManualItem } from '../schemas/grocery-list';
 import type { Recipe } from '../schemas/recipe';
 import type { WeeklyPlan } from '../schemas/weekly-plan';
 import { getBatchPortions } from './batch';
@@ -202,6 +202,61 @@ export function makeManualGroceryItem(input: {
     origin: 'manual',
     fromRecipeIds: [],
   };
+}
+
+/** Article manuel du foyer, saisi dans la liste de `weekId`. */
+export function makeManualItem(input: {
+  name: string;
+  qty: number;
+  unit: Unit;
+  aisle: Aisle;
+  weekId: WeekId;
+}): ManualItem {
+  const { id, name, qty, unit, aisle } = makeManualGroceryItem(input);
+  return { id, name, qty, unit, aisle, addedWeekId: input.weekId, checkedWeekId: null };
+}
+
+/**
+ * Les articles manuels tels que la liste d'une semaine les montre.
+ *
+ * Présent à partir de la semaine où il a été saisi, et jusqu'à celle où il a
+ * été rayé, incluse : on doit le voir coché dans le magasin où on l'a pris.
+ * Coché aussi dans les semaines d'avant qui l'affichent encore — la case est
+ * celle de l'article, pas d'une semaine, et les deux onglets doivent dire la
+ * même chose. Les identifiants de semaine sont des dates ISO : l'ordre
+ * alphabétique est l'ordre chronologique.
+ */
+export function manualItemsForWeek(items: ManualItem[], weekId: WeekId): GroceryItem[] {
+  return items
+    .filter((item) => item.addedWeekId <= weekId)
+    .filter((item) => item.checkedWeekId === null || weekId <= item.checkedWeekId)
+    .map((item) => ({
+      id: item.id,
+      name: item.name,
+      qty: item.qty,
+      unit: item.unit,
+      aisle: item.aisle,
+      checked: item.checkedWeekId !== null,
+      origin: 'manual' as const,
+      fromRecipeIds: [],
+    }));
+}
+
+/**
+ * La liste d'une semaine : ses articles, plus les articles manuels du foyer.
+ *
+ * Un article manuel de l'ancienne forme — rangé dans la semaine — et un
+ * article du foyer de même nom ne font qu'une ligne : celle du foyer, qui est
+ * la seule qu'on écrit encore.
+ */
+export function withManualItems(
+  weekItems: GroceryItem[],
+  manualItems: ManualItem[],
+  weekId: WeekId,
+): GroceryItem[] {
+  const standing = manualItemsForWeek(manualItems, weekId);
+  const standingIds = new Set(standing.map((item) => item.id));
+  return sortGroceryItems([...weekItems.filter((item) => !standingIds.has(item.id)), ...standing]);
 }
 
 /**

@@ -7,7 +7,7 @@ import {
   GeneratedCookingSessionSchema,
 } from '../cooking-session';
 import { GenerationLockSchema } from '../generation';
-import { GroceryItemSchema, GroceryListSchema } from '../grocery-list';
+import { GroceryItemSchema, GroceryListSchema, ManualItemSchema } from '../grocery-list';
 import { HouseholdSchema, InviteCodeSchema } from '../household';
 import { RecipeSchema } from '../recipe';
 import {
@@ -227,6 +227,30 @@ describe('GroceryItemSchema', () => {
   });
 });
 
+describe('ManualItemSchema', () => {
+  const sel = {
+    id: 'manual--sel--piece',
+    name: 'sel',
+    qty: 1,
+    unit: 'piece',
+    aisle: 'epicerie',
+    addedWeekId: '2026-09-19',
+    checkedWeekId: null,
+  };
+
+  it('accepte un article à acheter, et un article rayé une semaine donnée', () => {
+    expect(ManualItemSchema.safeParse(sel).success).toBe(true);
+    expect(ManualItemSchema.safeParse({ ...sel, checkedWeekId: '2026-09-26' }).success).toBe(true);
+  });
+
+  it('refuse une semaine qui n’est pas une date, et une case réduite à un booléen', () => {
+    expectRejected(ManualItemSchema, { ...sel, addedWeekId: 'semaine 38' });
+    expectRejected(ManualItemSchema, { ...sel, checkedWeekId: true });
+    const { addedWeekId: _added, ...withoutWeek } = sel;
+    expectRejected(ManualItemSchema, withoutWeek);
+  });
+});
+
 describe('GroceryListSchema', () => {
   it('décrit le document parent de la sous-collection', () => {
     const list = { id: '2026-09-14', itemCount: 12, generatedAt: 1_757_000_000_000 };
@@ -366,6 +390,24 @@ describe('SetMealInputSchema', () => {
   });
 });
 
+describe('RemoveBatchRecipeInputSchema et son résultat', () => {
+  it('exige le plat à retirer', () => {
+    const base = { householdId: 'household-1', weekId: '2026-09-12' };
+    expect(RemoveBatchRecipeInputSchema.safeParse({ ...base, recipeId: 'curry' }).success).toBe(
+      true,
+    );
+    expectRejected(RemoveBatchRecipeInputSchema, base);
+    expectRejected(RemoveBatchRecipeInputSchema, { ...base, recipeId: '' });
+  });
+
+  it('refuse un compte négatif ou fractionnaire', () => {
+    const base = { weekId: '2026-09-12', mealCount: 3, itemCount: 12 };
+    expect(RemoveBatchRecipeResultSchema.safeParse(base).success).toBe(true);
+    expectRejected(RemoveBatchRecipeResultSchema, { ...base, mealCount: -1 });
+    expectRejected(RemoveBatchRecipeResultSchema, { ...base, itemCount: 1.5 });
+  });
+});
+
 describe('GenerateWeeklyPlanInputSchema', () => {
   const base = { householdId: 'household-1', weekStart: '2026-09-12' };
 
@@ -390,24 +432,6 @@ describe('GenerateWeeklyPlanInputSchema', () => {
       expect(
         GenerateWeeklyPlanInputSchema.safeParse({ ...base, batchRecipeCount: 4, vegetarianCount })
           .success,
-describe('RemoveBatchRecipeInputSchema et son résultat', () => {
-  it('exige le plat à retirer', () => {
-    const base = { householdId: 'household-1', weekId: '2026-09-12' };
-    expect(RemoveBatchRecipeInputSchema.safeParse({ ...base, recipeId: 'curry' }).success).toBe(
-      true,
-    );
-    expectRejected(RemoveBatchRecipeInputSchema, base);
-    expectRejected(RemoveBatchRecipeInputSchema, { ...base, recipeId: '' });
-  });
-
-  it('refuse un compte négatif ou fractionnaire', () => {
-    const base = { weekId: '2026-09-12', mealCount: 3, itemCount: 12 };
-    expect(RemoveBatchRecipeResultSchema.safeParse(base).success).toBe(true);
-    expectRejected(RemoveBatchRecipeResultSchema, { ...base, mealCount: -1 });
-    expectRejected(RemoveBatchRecipeResultSchema, { ...base, itemCount: 1.5 });
-  });
-});
-
       ).toBe(true);
     }
     expectRejected(GenerateWeeklyPlanInputSchema, {

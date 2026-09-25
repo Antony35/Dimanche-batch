@@ -75,4 +75,12 @@ describe('cacheKeys', () => {
     expect(cacheKeys.batchProgress('foyer', '2026-09-12')).toMatch(/^progress\./);
     expect(cacheKeys.weeklyPlan('foyer', '2026-09-12')).toMatch(/^cache\./);
   });
+
+  // Les articles manuels sont ceux du foyer, sans semaine : une seule clé par
+  // foyer, qui ne se confond pas avec celle des listes hebdomadaires.
+  it('range les articles manuels par foyer, à part des listes de la semaine', () => {
+    expect(cacheKeys.manualItems('foyer-a')).toMatch(/^cache\./);
+    expect(cacheKeys.manualItems('foyer-a')).not.toBe(cacheKeys.manualItems('foyer-b'));
+    expect(cacheKeys.manualItems('foyer')).not.toBe(cacheKeys.groceryItems('foyer', '2026-09-12'));
+  });
 });

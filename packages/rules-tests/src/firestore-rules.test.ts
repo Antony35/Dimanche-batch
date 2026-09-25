@@ -235,6 +235,69 @@ describe('liste de courses', () => {
  * L'app l'écrit en fusion (`merge`) pour que deux téléphones qui corrigent en
  * même temps ne s'écrasent pas.
  */
+/**
+ * Les articles manuels du foyer passent d'une semaine à l'autre. Écriture
+ * directe, comme cocher : ce qui la borne est l'espace de noms et la forme.
+ */
+describe('articles manuels du foyer', () => {
+  const selPath = `households/${HOUSEHOLD_ID}/manualItems/manual--sel--piece`;
+  const sel = {
+    name: 'sel',
+    qty: 1,
+    unit: 'piece',
+    aisle: 'epicerie',
+    addedWeekId: WEEK_ID,
+    checkedWeekId: null,
+  };
+
+  it('autorise un membre à ajouter, rayer, décocher et supprimer un article', async () => {
+    await assertSucceeds(setDoc(doc(memberDb(), selPath), sel));
+    await assertSucceeds(getDoc(doc(memberDb(), selPath)));
+    await assertSucceeds(updateDoc(doc(memberDb(), selPath), { checkedWeekId: WEEK_ID }));
+    await assertSucceeds(updateDoc(doc(memberDb(), selPath), { checkedWeekId: null }));
+    await assertSucceeds(deleteDoc(doc(memberDb(), selPath)));
+  });
+
+  it('autorise à ajouter de nouveau le même article, ce qui réécrit sa ligne', async () => {
+    await setDoc(doc(memberDb(), selPath), sel);
+    await assertSucceeds(setDoc(doc(memberDb(), selPath), { ...sel, qty: 2 }));
+  });
+
+  it('refuse un identifiant hors de l’espace de noms `manual--`', async () => {
+    await assertFails(
+      setDoc(doc(memberDb(), `households/${HOUSEHOLD_ID}/manualItems/sel--piece`), sel),
+    );
+  });
+
+  it('refuse un article mal formé, à la création comme en le rayant', async () => {
+    const invalid = [
+      { ...sel, aisle: 'cave-a-vin' },
+      { ...sel, unit: 'tonne' },
+      { ...sel, qty: 0 },
+      { ...sel, name: '' },
+      { ...sel, addedWeekId: 'bientôt' },
+      { ...sel, checkedWeekId: true },
+      { ...sel, surprise: 'champ en trop' },
+    ];
+    for (const payload of invalid) {
+      await assertFails(setDoc(doc(memberDb(), selPath), payload));
+    }
+    const { addedWeekId: _added, ...withoutWeek } = sel;
+    await assertFails(setDoc(doc(memberDb(), selPath), withoutWeek));
+
+    await setDoc(doc(memberDb(), selPath), sel);
+    await assertFails(updateDoc(doc(memberDb(), selPath), { checkedWeekId: 'hier' }));
+  });
+
+  it('refuse tout accès à qui n’est pas membre', async () => {
+    await setDoc(doc(memberDb(), selPath), sel);
+    await assertFails(getDoc(doc(outsiderDb(), selPath)));
+    await assertFails(setDoc(doc(outsiderDb(), selPath), sel));
+    await assertFails(deleteDoc(doc(outsiderDb(), selPath)));
+    await assertFails(getDoc(doc(anonDb(), selPath)));
+  });
+});
+
 describe('lexique des rayons', () => {
   const lexiconPath = `households/${HOUSEHOLD_ID}/lexicon/overrides`;
 

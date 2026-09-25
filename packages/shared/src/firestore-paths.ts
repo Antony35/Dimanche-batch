@@ -17,6 +17,7 @@ export const COLLECTIONS = {
   locks: 'locks',
   batchSessions: 'batchSessions',
   lexicon: 'lexicon',
+  manualItems: 'manualItems',
 } as const;
 
 /** Identifiant de l'unique document de lexique d'un foyer. */
@@ -45,6 +46,11 @@ export const paths = {
     `${COLLECTIONS.households}/${householdId}/${COLLECTIONS.groceryLists}/${weekId}/${COLLECTIONS.groceryItems}`,
   groceryItem: (householdId: string, weekId: string, itemId: string) =>
     `${COLLECTIONS.households}/${householdId}/${COLLECTIONS.groceryLists}/${weekId}/${COLLECTIONS.groceryItems}/${itemId}`,
+
+  manualItems: (householdId: string) =>
+    `${COLLECTIONS.households}/${householdId}/${COLLECTIONS.manualItems}`,
+  manualItem: (householdId: string, itemId: string) =>
+    `${COLLECTIONS.households}/${householdId}/${COLLECTIONS.manualItems}/${itemId}`,
 
   usage: (householdId: string) => `${COLLECTIONS.households}/${householdId}/${COLLECTIONS.usage}`,
   usageDay: (householdId: string, isoDate: string) =>
