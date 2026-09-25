@@ -597,6 +597,18 @@ refuserait des recettes légitimes, et chaque refus coûte une reprise.
   à la lecture.
 - Aucun `as` sur une donnée externe, et aucun dans le projet aujourd'hui.
 - Commits conventionnels (`feat:`, `fix:`, `chore:`).
+- **L'affichage doit tenir sur tous les Android, sans changer là où il tenait
+  déjà.** Trois réglages du téléphone l'ont pris en défaut, sur un Samsung à
+  police par défaut et navigation à trois boutons :
+  - la **taille de police** : un libellé de `SegmentedSwitch` tient sur une
+    ligne et se réduit s'il manque de place (`adjustsFontSizeToFit`), plutôt que
+    de passer à la ligne et de désaligner les onglets ;
+  - la **barre de navigation** : Android dessine l'app dessous. `Screen` ajoute
+    en bas la hauteur de cette barre, sauf sur les écrans d'onglets
+    (`withTabBar`), où la barre d'onglets la couvre déjà ;
+  - le **clavier** : en plein écran, la fenêtre ne se réduit plus quand il
+    s'ouvre. `Screen` enveloppe le contenu d'un `KeyboardAvoidingView`, sans quoi
+    le champ du mot de passe restait caché et impossible à atteindre.
 
 ### Où va quel test
 
@@ -892,3 +904,4 @@ Le compte de service `<numéro>-compute@developer.gserviceaccount.com` doit port
 
 Ce refus-là ne vient jamais des Security Rules : l'admin SDK n'y est pas soumis.
 Chercher le problème dans `firestore.rules` est une impasse.
+| Profil        | **fait** | L'onglet Historique devient Profil : foyer, code d'invitation, historique, rayons, goûts, apparence et compte au même endroit. Affichage robuste à la police système, à la navigation à trois boutons et au clavier                                                                                                                                                                                                       |

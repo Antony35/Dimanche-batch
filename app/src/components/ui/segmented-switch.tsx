@@ -74,8 +74,16 @@ function Option({
         backgroundColor: active ? theme.colors.accentSoft : 'transparent',
       }}
     >
+      {/*
+        Une seule ligne, réduite si la place manque. Avec une police système
+        plus grande, « Mise en place puis cuisson » passait sur deux lignes et
+        désalignait les deux onglets ; quand le libellé tient, rien ne change.
+      */}
       <Text
         variant="caption"
+        numberOfLines={1}
+        adjustsFontSizeToFit
+        minimumFontScale={0.7}
         style={{ color: active ? theme.colors.accent : theme.colors.inkSoft }}
       >
         {label}

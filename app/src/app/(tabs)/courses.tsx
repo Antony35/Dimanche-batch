@@ -54,7 +54,7 @@ export default function GroceryScreen() {
   const remaining = items.length - checkedCount;
 
   return (
-    <Screen>
+    <Screen withTabBar>
       <View style={{ gap: theme.spacing.sm }}>
         <Text variant="overline" tone="faint">
           {formatWeekRange(weekId).toUpperCase()}

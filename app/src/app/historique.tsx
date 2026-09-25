@@ -1,5 +1,4 @@
-import Ionicons from '@expo/vector-icons/Ionicons';
-import { Link, useRouter } from 'expo-router';
+import { Link } from 'expo-router';
 import { Pressable, View } from 'react-native';
 import { formatWeekRange, type Recipe, type WeeklyPlan } from '@dimanche-batch/shared';
 import { Card, EmptyState, ErrorState, LoadingState, Screen, Text } from '@/components/ui';
@@ -11,8 +10,8 @@ import { useTheme } from '@/theme';
 /**
  * Les semaines déjà composées, et rien d'autre.
  *
- * Ce que le foyer aime ou refuse vit dans « Goûts du foyer », atteint par le
- * rouage : ce sont des préférences durables, pas un journal.
+ * Ouvert depuis le profil. Ce que le foyer aime ou refuse vit dans « Goûts du
+ * foyer » : ce sont des préférences durables, pas un journal.
  */
 export default function HistoryScreen() {
   const theme = useTheme();
@@ -25,13 +24,6 @@ export default function HistoryScreen() {
 
   return (
     <Screen>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md }}>
-        <Text variant="title" style={{ flex: 1 }}>
-          Historique
-        </Text>
-        <SettingsButton />
-      </View>
-
       {error ? <ErrorState message={error.message} /> : null}
 
       <View style={{ gap: theme.spacing.sm }}>
@@ -51,22 +43,6 @@ export default function HistoryScreen() {
         )}
       </View>
     </Screen>
-  );
-}
-
-function SettingsButton() {
-  const theme = useTheme();
-  const router = useRouter();
-
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel="Réglages du foyer"
-      hitSlop={12}
-      onPress={() => router.push('/reglages')}
-    >
-      <Ionicons name="settings-outline" size={24} color={theme.colors.inkSoft} />
-    </Pressable>
   );
 }
 

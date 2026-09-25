@@ -51,7 +51,7 @@ export default function TodayScreen() {
   const toThaw = current.plan ? getThawReminders(current.plan, recipesById, today) : [];
 
   return (
-    <Screen>
+    <Screen withTabBar>
       <View style={{ gap: theme.spacing.xs }}>
         <Text variant="overline" tone="faint">
           {getDayNameForDate(today).toUpperCase()}
@@ -61,6 +61,16 @@ export default function TodayScreen() {
 
       {current.isStale && current.plan !== null ? <StaleNotice /> : null}
       {current.error ? <ErrorState message={current.error.message} /> : null}
+      {/*
+        L'écoute de la semaine prochaine peut échouer elle aussi — typiquement
+        juste après la création du foyer. Sans ce message, elle meurt en
+        silence et un plan généré ensuite n'apparaît jamais.
+      */}
+      {next.error ? (
+        <ErrorState
+          message={`La semaine prochaine n’a pas pu être chargée : ${next.error.message}`}
+        />
+      ) : null}
 
       {toThaw.length > 0 ? <ThawReminder recipes={toThaw} /> : null}
 

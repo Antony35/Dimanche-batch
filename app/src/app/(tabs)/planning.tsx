@@ -83,7 +83,7 @@ export default function PlanningScreen() {
   const mutationError = regenerate.error ?? choose.error ?? swap.error;
 
   return (
-    <Screen>
+    <Screen withTabBar>
       <View style={{ gap: theme.spacing.sm }}>
         <Text variant="overline" tone="faint">
           {formatWeekRange(weekId).toUpperCase()}

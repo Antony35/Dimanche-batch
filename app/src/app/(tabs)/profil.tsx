@@ -5,14 +5,10 @@ import { splitByVerdict } from '@dimanche-batch/shared';
 import { Button, Card, Screen, SegmentedSwitch, Text } from '@/components/ui';
 import { useAuth } from '@/features/auth/auth-provider';
 import { refreshInviteCode, useHousehold } from '@/features/household/api/use-household';
+import { useWeekHistory } from '@/features/history/api/use-week-history';
 import { useRecipes } from '@/features/meal-plan/api/use-recipes';
 import { useTheme, useThemePreference, type ThemePreference } from '@/theme';
 
-/**
- * Réglages du foyer : qui en fait partie, comment y relier un second
- * téléphone, et comment en sortir. Hors des onglets à dessein — on y vient
- * rarement, et jamais au milieu des courses.
- */
 /** Ce que chaque choix promet, sous le sélecteur. */
 const THEME_HINTS: Record<ThemePreference, string> = {
   system: 'L’app suit le réglage du téléphone, et bascule avec lui.',
@@ -26,7 +22,14 @@ const THEME_OPTIONS = [
   { value: 'dark', label: 'Sombre' },
 ] as const;
 
-export default function SettingsScreen() {
+/**
+ * Profil : le foyer, ses goûts, son historique, l'apparence et le compte.
+ *
+ * C'était un onglet « Historique » avec un rouage vers des réglages cachés ;
+ * les deux se cherchaient. Tout ce qui concerne le foyer et la personne vit
+ * désormais au même endroit, et l'historique n'en est qu'une entrée.
+ */
+export default function ProfileScreen() {
   const theme = useTheme();
   const { preference, setPreference } = useThemePreference();
   const router = useRouter();
@@ -37,9 +40,12 @@ export default function SettingsScreen() {
   // des goûts. Deux nombres valent mieux qu'une ligne muette.
   const { recipesById } = useRecipes(household?.id ?? null);
   const tastes = splitByVerdict(recipesById.values());
+  const { weeks } = useWeekHistory(household?.id ?? null);
 
   return (
-    <Screen>
+    <Screen withTabBar>
+      <Text variant="title">Profil</Text>
+
       <Card>
         <Text variant="overline" tone="faint">
           FOYER
@@ -85,6 +91,19 @@ export default function SettingsScreen() {
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md }}>
           <Text tone="soft" style={{ flex: 1 }}>
             Mes corrections de rayon
+          </Text>
+          <Ionicons name="chevron-forward" size={18} color={theme.colors.inkFaint} />
+        </View>
+      </Card>
+
+      <Card onPress={() => router.push('/historique')}>
+        <Text variant="overline" tone="faint">
+          HISTORIQUE
+        </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md }}>
+          <Text tone="soft" style={{ flex: 1 }}>
+            {weeks.length} semaine{weeks.length > 1 ? 's' : ''} composée
+            {weeks.length > 1 ? 's' : ''}
           </Text>
           <Ionicons name="chevron-forward" size={18} color={theme.colors.inkFaint} />
         </View>
