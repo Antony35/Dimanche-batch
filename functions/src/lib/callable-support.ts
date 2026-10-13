@@ -36,6 +36,9 @@ const UNAVAILABLE_MESSAGES: Record<GeminiUnavailableReason, string> = {
   quota:
     'Le quota gratuit de Gemini est épuisé pour aujourd’hui, sur les trois modèles. Ta ' +
     'génération n’a pas été décomptée : réessaie demain.',
+  'invalid-key':
+    'La clé de l’API Gemini est refusée par Google : rien n’a été généré, et ta génération ' +
+    'n’a pas été décomptée. Il faut reposer la clé côté serveur.',
   billing:
     'Le crédit de l’API Gemini est épuisé : rien n’a été généré, et ta génération n’a ' +
     'pas été décomptée. Recharge-le dans AI Studio, puis réessaie.',

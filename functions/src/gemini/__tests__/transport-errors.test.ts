@@ -145,6 +145,17 @@ describe('classifyCallFailure', () => {
     expect(classifyCallFailure(apiError(402), false)).toEqual({ kind: 'billing' });
   });
 
+  // Forme observée en production le 2026-10-13 : un identifiant de projet
+  // collé à la place de la clé.
+  it('reconnaît une clé refusée, commune à tous les modèles', () => {
+    const invalid = apiError(
+      400,
+      'API key not valid. Please pass a valid API key.","reason":"API_KEY_INVALID',
+    );
+    expect(classifyCallFailure(invalid, false)).toEqual({ kind: 'invalid-key' });
+    expect(classifyCallFailure(apiError(403), false)).toEqual({ kind: 'invalid-key' });
+  });
+
   it('ne masque pas une faute de notre côté', () => {
     expect(classifyCallFailure(apiError(400), false)).toEqual({ kind: 'fatal' });
     expect(classifyCallFailure(new Error('socket hang up'), false)).toEqual({ kind: 'fatal' });

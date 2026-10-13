@@ -17,7 +17,7 @@ import { callTimeoutMs, classifyCallFailure, hasTimeForAttempt } from './transpo
  * attend le lendemain, `billing` demande que quelqu'un recharge le crédit de
  * la clé.
  */
-export type GeminiUnavailableReason = 'saturated' | 'quota' | 'billing';
+export type GeminiUnavailableReason = 'saturated' | 'quota' | 'billing' | 'invalid-key';
 
 /**
  * Gemini n'a rien pu produire — aucun modèle de la chaîne n'a répondu, ou le
@@ -114,6 +114,10 @@ export async function generateJson(options: GenerateJsonOptions): Promise<Genera
       if (failure.kind === 'billing') {
         logger.error('gemini: crédit épuisé', details);
         throw new GeminiUnavailableError(attempt, 402, 'billing', { cause: error });
+      }
+      if (failure.kind === 'invalid-key') {
+        logger.error('gemini: clé refusée', details);
+        throw new GeminiUnavailableError(attempt, null, 'invalid-key', { cause: error });
       }
       if (failure.kind === 'fatal') {
         logger.error('gemini: appel refusé', details);

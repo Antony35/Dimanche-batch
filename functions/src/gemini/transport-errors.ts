@@ -21,6 +21,7 @@ export function isRetryableStatus(status: number | null): boolean {
 export type CallFailure =
   | { kind: 'next-model'; dailyQuota: boolean }
   | { kind: 'billing' }
+  | { kind: 'invalid-key' }
   | { kind: 'fatal' };
 
 /**
@@ -38,11 +39,21 @@ export function classifyCallFailure(error: unknown, timedOut: boolean): CallFail
 
   const status = httpStatusOf(error);
   if (isBillingStatus(status)) return { kind: 'billing' };
+  // Une clé refusée arrive en 400, comme un schéma refusé : seule la raison
+  // les distingue. Observé le 2026-10-13, un identifiant de projet collé à la
+  // place de la clé. Aucun modèle ne passera avec la même clé.
+  if (isInvalidKeyError(status, error)) return { kind: 'invalid-key' };
   if (isRetryableStatus(status) || status === 404) {
     const message = error instanceof Error ? error.message : '';
     return { kind: 'next-model', dailyQuota: status === 429 && /PerDay/.test(message) };
   }
   return { kind: 'fatal' };
+}
+
+function isInvalidKeyError(status: number | null, error: unknown): boolean {
+  if (status === 401 || status === 403) return true;
+  const message = error instanceof Error ? error.message : '';
+  return status === 400 && /API_KEY_INVALID|API key not valid/.test(message);
 }
 
 /**
