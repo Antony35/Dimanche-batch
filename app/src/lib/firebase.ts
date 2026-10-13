@@ -9,7 +9,12 @@ import {
   initializeAuth,
   type Auth,
 } from '@firebase/auth';
-import { connectFirestoreEmulator, getFirestore, type Firestore } from 'firebase/firestore';
+import {
+  connectFirestoreEmulator,
+  getFirestore,
+  initializeFirestore,
+  type Firestore,
+} from 'firebase/firestore';
 import { connectFunctionsEmulator, getFunctions, type Functions } from 'firebase/functions';
 import { EMULATOR_HOST, env } from './env';
 
@@ -28,6 +33,9 @@ function createApp(): FirebaseApp {
   });
 }
 
+// Lu avant `createApp` : un rechargement à chaud réévalue ce module sur une
+// app déjà initialisée, et `initializeFirestore` refuse d'être appelé deux fois.
+const isFirstInit = getApps().length === 0;
 const firebaseApp = createApp();
 
 /**
@@ -39,7 +47,18 @@ export const auth: Auth = initializeAuth(firebaseApp, {
   persistence: getReactNativePersistence(AsyncStorage),
 });
 
-export const db: Firestore = getFirestore(firebaseApp);
+/**
+ * Long polling forcé, et non le flux WebChannel par défaut.
+ *
+ * Sous React Native, le réseau garde en tampon la réponse en streaming : ce
+ * qu'écrit le serveur — le plan qu'une function vient de composer — n'arrivait
+ * au listener qu'au prochain échange, typiquement en changeant d'onglet. Nos
+ * propres écritures, appliquées localement d'abord, masquaient le défaut. Le
+ * long polling rend chaque réponse dès qu'elle arrive.
+ */
+export const db: Firestore = isFirstInit
+  ? initializeFirestore(firebaseApp, { experimentalForceLongPolling: true })
+  : getFirestore(firebaseApp);
 export const functions: Functions = getFunctions(firebaseApp, FUNCTIONS_REGION);
 
 if (env.useEmulators) {

@@ -682,6 +682,11 @@ refuserait des recettes légitimes, et chaque refus coûte une reprise.
   rendu.** Lue au rendu, elle restait figée : une app ouverte du vendredi soir
   au samedi matin affichait l'ancienne semaine. Le hook la relit après minuit
   et au retour au premier plan. La règle `react(purity)` d'oxlint le vérifie.
+- **Firestore en long polling** (`experimentalForceLongPolling`,
+  `lib/firebase.ts`). Sous React Native, le flux WebChannel par défaut restait
+  en tampon : un plan écrit par une function n'apparaissait sur l'accueil qu'en
+  changeant d'onglet. Nos propres écritures, appliquées localement d'abord,
+  masquaient le défaut.
 - **Tout abonnement Firestore passe par `subscribeWithRetry`.** Firestore
   **arrête définitivement** un listener qui échoue : après une erreur il ne
   reçoit plus rien, même si la cause a disparu. Le cas qui l'impose : à la
