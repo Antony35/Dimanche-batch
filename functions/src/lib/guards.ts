@@ -2,12 +2,12 @@ import {
   DAILY_GENERATION_LIMIT,
   GENERATION_LOCK_TTL_MS,
   paths,
-  toIsoDate,
   type GenerationLock,
   type GenerationStep,
 } from '@dimanche-batch/shared';
 import { FieldValue } from 'firebase-admin/firestore';
 import { logger } from 'firebase-functions';
+import { todayInParis } from './clock';
 import { db } from './firestore';
 import { failedPrecondition, internal, permissionDenied, resourceExhausted } from './errors';
 
@@ -60,7 +60,9 @@ export async function requireHouseholdMember(uid: string, householdId: string): 
  * même si les deux téléphones lancent une génération en même temps.
  */
 export async function consumeGenerationQuota(householdId: string): Promise<number> {
-  const today = toIsoDate(new Date());
+  // La journée du foyer, pas celle des serveurs : en UTC, le compteur ne
+  // repartait qu'à 2 h du matin à Paris, et « réessaie demain » mentait.
+  const today = todayInParis();
   const usageRef = db.doc(paths.usageDay(householdId, today));
 
   try {
@@ -102,7 +104,7 @@ export async function consumeGenerationQuota(householdId: string): Promise<numbe
  * l'erreur qui l'intéresse, et une seconde erreur par-dessus ne l'aiderait pas.
  */
 export async function refundGenerationQuota(householdId: string): Promise<void> {
-  const today = toIsoDate(new Date());
+  const today = todayInParis();
   const usageRef = db.doc(paths.usageDay(householdId, today));
 
   try {

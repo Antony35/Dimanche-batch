@@ -4,11 +4,11 @@ import {
   GENERATION_LOCK_TTL_MS,
   GenerationLockSchema,
   paths,
-  toIsoDate,
 } from '@dimanche-batch/shared';
 import { HttpsError } from 'firebase-functions/v2/https';
 import { clearFirestore } from '../../__tests__/emulator';
 import { ALICE, BOB, HOUSEHOLD_ID, MALLORY } from '../../__tests__/fixtures';
+import { todayInParis } from '../clock';
 import { db } from '../firestore';
 import {
   acquireGenerationLock,
@@ -25,7 +25,7 @@ import {
  * pas soumis aux Security Rules. Ce qu'ils laissent passer, rien ne le rattrape.
  */
 
-const TODAY = toIsoDate(new Date());
+const TODAY = todayInParis();
 
 async function expectHttpsError(promise: Promise<unknown>, code: string): Promise<void> {
   await expect(promise).rejects.toBeInstanceOf(HttpsError);
