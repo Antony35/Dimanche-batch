@@ -34,7 +34,7 @@ import {
   validateCookingSession,
   validateMealReplacement,
 } from '@dimanche-batch/shared';
-import { GEMINI_MODEL } from '../src/config';
+import { GEMINI_MODELS } from '../src/config';
 import {
   MEAL_REPLACEMENT_SYSTEM_INSTRUCTION,
   SYSTEM_INSTRUCTION,
@@ -54,7 +54,8 @@ import {
 const args = process.argv.slice(2);
 const CHAINS = new Set(['plan', 'meal', 'batch', 'session']);
 const targets = args.filter((arg) => CHAINS.has(arg));
-const model = args.find((arg) => !CHAINS.has(arg)) ?? GEMINI_MODEL;
+/** Premier modèle de la chaîne par défaut ; un autre se passe en argument. */
+const model = args.find((arg) => !CHAINS.has(arg)) ?? GEMINI_MODELS[0];
 const weekStart = getUpcomingWeekId();
 /** Ce que demanderait un foyer par défaut. */
 const BATCH_RECIPE_COUNT = 4;
@@ -160,7 +161,7 @@ async function probePlan(): Promise<void> {
 
   const parsed = GeneratedPlanSchema.safeParse(data);
   if (!parsed.success) {
-    reportSchemaFailure(parsed.error.issues);
+    reportSchemaFailure(parsed.error.issues, data);
     process.exit(1);
   }
   console.log(
@@ -231,7 +232,7 @@ async function probeMeal(): Promise<void> {
 
   const parsed = GeneratedMealReplacementSchema.safeParse(data);
   if (!parsed.success) {
-    reportSchemaFailure(parsed.error.issues);
+    reportSchemaFailure(parsed.error.issues, data);
     process.exit(1);
   }
 
@@ -257,10 +258,23 @@ async function probeMeal(): Promise<void> {
   );
 }
 
-function reportSchemaFailure(issues: Array<{ path: PropertyKey[]; message: string }>): void {
+/**
+ * Chaque refus avec la valeur que le modèle a écrite : savoir qu'un slug est
+ * refusé ne dit pas s'il porte un accent, une majuscule ou une espace.
+ */
+function reportSchemaFailure(
+  issues: Array<{ path: PropertyKey[]; message: string }>,
+  data: unknown,
+): void {
   console.error('❌ Schéma Zod refusé :');
   for (const issue of issues.slice(0, 10)) {
-    console.error(`   ${issue.path.join('.') || 'racine'} : ${issue.message}`);
+    const value = issue.path.reduce<unknown>(
+      (node, key) =>
+        typeof node === 'object' && node !== null ? Reflect.get(node, key) : undefined,
+      data,
+    );
+    const shown = JSON.stringify(value)?.slice(0, 80) ?? 'absent';
+    console.error(`   ${issue.path.join('.') || 'racine'} : ${issue.message} — reçu ${shown}`);
   }
 }
 
@@ -320,7 +334,7 @@ async function probeBatchRecipe(): Promise<void> {
 
   const parsed = GeneratedMealReplacementSchema.safeParse(data);
   if (!parsed.success) {
-    reportSchemaFailure(parsed.error.issues);
+    reportSchemaFailure(parsed.error.issues, data);
     process.exit(1);
   }
 
@@ -413,7 +427,7 @@ async function probeSession(): Promise<void> {
 
   const parsed = GeneratedCookingSessionSchema.safeParse(data);
   if (!parsed.success) {
-    reportSchemaFailure(parsed.error.issues);
+    reportSchemaFailure(parsed.error.issues, data);
     process.exit(1);
   }
   console.log(

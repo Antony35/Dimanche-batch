@@ -2,6 +2,7 @@ import type { Schema } from '@google/genai';
 import { logger } from 'firebase-functions';
 import type { z } from 'zod';
 import type { ConstraintViolation } from '@dimanche-batch/shared';
+import { GEMINI_BUDGET_MS } from '../config';
 import { generateJson } from './client';
 import { buildRetryPrompt } from './prompt';
 
@@ -44,6 +45,9 @@ export async function generateWithContentRetry<T>(
 ): Promise<ContentRetryOutcome<T>> {
   let prompt = request.prompt;
   let lastViolations: ConstraintViolation[] = [];
+  // Un seul budget pour les deux tentatives : la reprise de contenu ne doit
+  // pas repartir avec un délai neuf quand la function, elle, n'en a pas.
+  const deadline = Date.now() + GEMINI_BUDGET_MS;
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
     request.onAttempt?.(attempt);
@@ -53,6 +57,7 @@ export async function generateWithContentRetry<T>(
       prompt,
       responseSchema: request.responseSchema,
       temperature: request.temperature,
+      deadline,
     });
 
     const parsed = request.schema.safeParse(data);

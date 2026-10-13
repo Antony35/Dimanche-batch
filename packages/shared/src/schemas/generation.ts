@@ -38,5 +38,13 @@ export const GenerationLockSchema = z.object({
   attempt: z.number().int().min(1).max(2),
 });
 
+/**
+ * Durée maximale d'une callable, côté serveur comme côté app. Une seule valeur
+ * pour les deux : l'app abandonnait à 70 s, le délai par défaut du SDK, quand
+ * la function tournait jusqu'à 120 s — une génération réussie en 75 s
+ * s'affichait en erreur.
+ */
+export const CALLABLE_TIMEOUT_SECONDS = 120;
+
 export type GenerationStep = z.infer<typeof GenerationStepSchema>;
 export type GenerationLock = z.infer<typeof GenerationLockSchema>;

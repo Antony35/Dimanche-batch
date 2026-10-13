@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { FirebaseError } from 'firebase/app';
+import { CALLABLE_TIMEOUT_SECONDS } from '@dimanche-batch/shared';
 
 const callable = vi.fn();
+const httpsCallable = vi.fn((..._args: unknown[]) => callable);
 
 vi.mock('firebase/functions', () => ({
-  httpsCallable: () => callable,
+  httpsCallable: (...args: unknown[]) => httpsCallable(...args),
 }));
 vi.mock('../firebase', () => ({ functions: {} }));
 
@@ -37,6 +39,15 @@ describe('appel d’une callable', () => {
   it('refuse une réponse hors contrat et dit quoi faire', async () => {
     callable.mockResolvedValueOnce({ data: { weekId: '2026-09-12' } });
     await expect(setMeal(input)).rejects.toThrow(/Mets l’application à jour/);
+  });
+
+  // L'app abandonnait à 70 s, le défaut du SDK, une génération qui réussissait en 75.
+  it('attend plus longtemps que la function ne peut tourner', async () => {
+    callable.mockResolvedValueOnce({ data: validResult });
+    await setMeal(input);
+    const options: unknown = httpsCallable.mock.calls[0]?.[2];
+    expect(options).toEqual({ timeout: expect.any(Number) });
+    expect(Reflect.get(Object(options), 'timeout')).toBeGreaterThan(CALLABLE_TIMEOUT_SECONDS * 1_000);
   });
 
   it('nomme la callable fautive dans le message', async () => {

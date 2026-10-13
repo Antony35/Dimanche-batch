@@ -1,6 +1,7 @@
 import { httpsCallable, type HttpsCallableResult } from 'firebase/functions';
 import { FirebaseError } from 'firebase/app';
 import {
+  CALLABLE_TIMEOUT_SECONDS,
   ComposeCookingSessionResultSchema,
   GenerateWeeklyPlanResultSchema,
   JoinHouseholdResultSchema,
@@ -30,6 +31,13 @@ import type { z } from 'zod';
 import { functions } from './firebase';
 
 /**
+ * L'app attend un peu plus longtemps que la function ne peut tourner : la
+ * réponse, bonne ou mauvaise, arrive toujours avant l'abandon. Sans cela, le
+ * SDK coupait à 70 s une génération qui réussissait en 75.
+ */
+const CALL_TIMEOUT_MS = (CALLABLE_TIMEOUT_SECONDS + 10) * 1_000;
+
+/**
  * Un seul point d'appel des Cloud Functions, typé et validé.
  *
  * La réponse d'une callable est du `unknown` du point de vue du client : la
@@ -43,7 +51,9 @@ async function call<TInput, TOutput>(
 ): Promise<TOutput> {
   let result: HttpsCallableResult<unknown>;
   try {
-    result = await httpsCallable<TInput, unknown>(functions, name)(input);
+    result = await httpsCallable<TInput, unknown>(functions, name, { timeout: CALL_TIMEOUT_MS })(
+      input,
+    );
   } catch (error) {
     throw toReadableError(error);
   }

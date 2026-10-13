@@ -1,5 +1,5 @@
 import type { WeeklyPlan } from '@dimanche-batch/shared';
-import { GeminiUnavailableError } from '../gemini/client';
+import { GeminiUnavailableError, type GeminiUnavailableReason } from '../gemini/client';
 import { notFound, unavailable } from './errors';
 import { refundGenerationQuota } from './guards';
 import { PlanNotFoundError, readPlanForEdit } from './plan-writer';
@@ -29,18 +29,26 @@ export async function readPlanOrFail(
   }
 }
 
+const UNAVAILABLE_MESSAGES: Record<GeminiUnavailableReason, string> = {
+  saturated:
+    'Le service de génération est saturé en ce moment. Ta génération n’a pas été ' +
+    'décomptée : réessaie dans une minute.',
+  quota:
+    'Le quota gratuit de Gemini est épuisé pour aujourd’hui, sur les trois modèles. Ta ' +
+    'génération n’a pas été décomptée : réessaie demain.',
+  billing:
+    'Le crédit de l’API Gemini est épuisé : rien n’a été généré, et ta génération n’a ' +
+    'pas été décomptée. Recharge-le dans AI Studio, puis réessaie.',
+};
+
 /**
  * Si Gemini n'a rien pu produire, rend au foyer la génération décomptée et le
  * dit. Le quota protège la clé, pas le budget de l'utilisateur : une
- * saturation chez Google ne doit rien lui coûter. Sans effet sur toute autre
- * erreur, que l'appelant traduit lui-même.
+ * saturation chez Google ou un crédit épuisé ne doit rien lui coûter. Sans
+ * effet sur toute autre erreur, que l'appelant traduit lui-même.
  */
 export async function rethrowIfUnavailable(error: unknown, householdId: string): Promise<void> {
   if (!(error instanceof GeminiUnavailableError)) return;
   await refundGenerationQuota(householdId);
-  throw unavailable(
-    'Le service de génération est saturé en ce moment. Ta génération n’a pas été ' +
-      'décomptée : réessaie dans une minute.',
-    error,
-  );
+  throw unavailable(UNAVAILABLE_MESSAGES[error.reason], error);
 }
