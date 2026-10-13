@@ -327,6 +327,7 @@ Contrat Gemini :
 | Contenu   | Le modèle a répondu, mais hors schéma ou hors contraintes | **1 seule**, en réinjectant les violations     |
 | Transport | 404/429/5xx, ou appel annulé faute de temps               | un appel par modèle de la chaîne, sans attente |
 | Crédit    | 402 — crédit prépayé épuisé                               | **aucune**, génération rendue                  |
+| Clé       | 400 `API_KEY_INVALID`, 401, 403 — clé refusée             | **aucune**, génération rendue                  |
 
 **Une chaîne de modèles** (`GEMINI_MODELS` : `gemini-3.6-flash`, puis
 `gemini-3.5-flash-lite`, puis `gemini-3.1-flash-lite`) remplace les trois essais
