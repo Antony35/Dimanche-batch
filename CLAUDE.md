@@ -767,7 +767,7 @@ CI pour que ce pari reste tenable.
 `.github/workflows/ci.yml` lance sur chaque push et chaque PR ce que `test:all`
 lance en local, sur une machine qui n'a rien d'installé : Node lu dans `.nvmrc`
 (**24**, celui du runtime déployé — l'`engines` racine et `firebase.json`
-disaient deux choses différentes), Java 21 pour l'émulateur, puis typage, lint et
+disaient deux choses différentes), Java 25 pour l'émulateur (21 suffit en local), puis typage, lint et
 les quatre suites.
 
 Elle **alerte sans bloquer** : `main` n'est pas protégée, on y pousse
