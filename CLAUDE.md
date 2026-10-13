@@ -644,7 +644,11 @@ refuserait des recettes légitimes, et chaque refus coûte une reprise.
 - **Auth : importer depuis `@firebase/auth`, pas `firebase/auth`.** Le package
   meta ne publie que la variante navigateur, dépourvue de
   `getReactNativePersistence` — sans elle, la session est perdue à chaque
-  redémarrage de l'app. Un `paths` dans `app/tsconfig.json` réaligne le typage
+  redémarrage de l'app. Corollaire : `@firebase/auth` doit rester à la
+  version qu'embarque `firebase`, et `@firebase/app` exister en un seul
+  exemplaire (`npm ls @firebase/app`). Deux copies, c'est deux registres de
+  composants, et des callables qui ne trouvent plus le jeton de l'utilisateur.
+  Après une montée de `firebase`, `npm dedupe`. Un `paths` dans `app/tsconfig.json` réaligne le typage
   sur ce que Metro résout réellement.
 - Pas de `setState` synchrone dans un `useEffect` : dériver l'état au rendu
   (voir `useHousehold`). La règle est appliquée par le lint. Une hydratation
