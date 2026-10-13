@@ -35,8 +35,39 @@
     "oxlint": "^1.88.0",
     "typescript": "^7.0.2"
   },
+  "overrides": {
+    "@grpc/grpc-js": "^1.14.6",
+    "archiver-utils": {
+      "glob": "^13.0.6"
+    },
+    "exegesis": {
+      "glob": "^13.0.6"
+    },
+    "firebase-tools": {
+      "glob": "^13.0.6"
+    },
+    "gaxios": {
+      "uuid": "^11.1.1"
+    },
+    "get-uri": {
+      "basic-ftp": "^6.2.3"
+    },
+    "rimraf": {
+      "glob": "^13.0.6"
+    },
+    "xcode": {
+      "uuid": "^11.1.1"
+    }
+  },
   "engines": {
     "node": ">=24"
+  },
+  "allowScripts": {
+    "esbuild": true,
+    "@firebase/util": false,
+    "@google/genai": false,
+    "protobufjs": false,
+    "re2": false
   },
   "expo": {
     "install": {

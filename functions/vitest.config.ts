@@ -17,5 +17,9 @@ export default defineConfig({
     testTimeout: 20_000,
     hookTimeout: 30_000,
     setupFiles: ['./src/__tests__/emulator.ts'],
+    // Hors de Google Cloud, l'admin SDK cherche un serveur de métadonnées qui
+    // n'existe pas et le dit par un MetadataLookupWarning à chaque fichier.
+    // Les tests parlent à l'émulateur : rien à détecter.
+    env: { METADATA_SERVER_DETECTION: 'none' },
   },
 });

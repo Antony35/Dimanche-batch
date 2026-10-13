@@ -737,6 +737,30 @@ dans cet ordre d'importance :
 
 Ce qu'on a perdu est en §9 : les trois règles d'`eslint-plugin-expo`.
 
+### Les dépendances
+
+Deux champs du `package.json` racine ont chacun leur raison, et ne doivent
+pas être retirés sans la relire.
+
+- **`allowScripts`** : npm 11 demande d'approuver chaque script d'installation
+  (consultatif aujourd'hui, bloquant demain). Seul `esbuild` est autorisé — il
+  vérifie le binaire qui empaquette les functions. `@firebase/util` (App
+  Hosting seulement, ses fichiers par défaut sont livrés), `@google/genai` (un
+  `echo`), `protobufjs` (un contrôle de version) et `re2` (compilation native
+  optionnelle, pour l'émulateur d'hébergement) sont refusés.
+- **`overrides`** : des correctifs de sécurité que les paquets parents
+  n'ont pas encore repris — `@grpc/grpc-js` (figé en 1.9 par Firestore
+  Node), `uuid` sous `xcode` et `gaxios`, `basic-ftp` sous `get-uri`, et
+  `glob` 13 sous `firebase-tools`, `exegesis`, `archiver-utils` et `rimraf`,
+  qui n'en appellent que `glob`, `sync` et `globSync`, inchangés. À retirer
+  quand le parent remonte de lui-même.
+
+Ce qui reste signalé par `npm audit` n'a pas de correctif sûr : `braces` et
+`node-forge` n'ont aucune version corrigée, `decode-uri-component` n'en a
+qu'une en ESM pur, que `query-string` charge en CommonJS dans le routeur de
+l'app. Le forcer casserait la navigation à l'exécution, sans que la CI le
+voie.
+
 ### Le code mort
 
 `knip` cherche ce que ni le typage ni le lint ne voient : un fichier que plus
