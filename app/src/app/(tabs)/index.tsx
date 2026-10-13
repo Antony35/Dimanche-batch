@@ -8,7 +8,7 @@ import {
   getCurrentWeekId,
   getDayNameForDate,
   getThawReminders,
-  toIsoDate,
+  parseIsoDate,
   type Recipe,
   type WeeklyPlan,
 } from '@dimanche-batch/shared';
@@ -31,15 +31,16 @@ import { useGeneratePlan } from '@/features/meal-plan/api/use-generate-plan';
 import { useGenerationProgress } from '@/features/meal-plan/api/use-generation-progress';
 import { useRecipes } from '@/features/meal-plan/api/use-recipes';
 import { useWeeklyPlan } from '@/features/meal-plan/api/use-weekly-plan';
+import { useToday } from '@/lib/use-today';
 import { useTheme } from '@/theme';
 
 /** Écran d'accueil : ce qu'on mange aujourd'hui, et l'étape suivante du cycle. */
 export default function TodayScreen() {
   const theme = useTheme();
   const { household } = useHousehold();
-  const today = toIsoDate(new Date());
+  const today = useToday();
 
-  const currentWeekId = getCurrentWeekId();
+  const currentWeekId = getCurrentWeekId(parseIsoDate(today));
   const nextWeekId = getComposableWeekId(today);
 
   const householdId = household?.id ?? null;

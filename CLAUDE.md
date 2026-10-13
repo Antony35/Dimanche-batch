@@ -672,6 +672,10 @@ refuserait des recettes légitimes, et chaque refus coûte une reprise.
   entrée dont le compte ne correspond plus est ignorée : un plat remplacé
   repart de zéro plutôt que d'afficher des cases fausses au milieu d'une
   session de cuisine.
+- **La date du jour se lit par `useToday()`, jamais par `new Date()` au
+  rendu.** Lue au rendu, elle restait figée : une app ouverte du vendredi soir
+  au samedi matin affichait l'ancienne semaine. Le hook la relit après minuit
+  et au retour au premier plan. La règle `react(purity)` d'oxlint le vérifie.
 - **Tout abonnement Firestore passe par `subscribeWithRetry`.** Firestore
   **arrête définitivement** un listener qui échoue : après une erreur il ne
   reçoit plus rien, même si la cause a disparu. Le cas qui l'impose : à la

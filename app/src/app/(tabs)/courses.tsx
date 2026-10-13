@@ -4,6 +4,7 @@ import {
   addDays,
   formatWeekRange,
   getCurrentWeekId,
+  parseIsoDate,
   type GroceryItem,
 } from '@dimanche-batch/shared';
 import { EmptyState, ErrorState, LoadingState, Screen, StaleNotice, Text } from '@/components/ui';
@@ -20,6 +21,7 @@ import { useToggleGroceryItem } from '@/features/grocery-list/api/use-toggle-gro
 import { useToggleManualItem } from '@/features/grocery-list/api/use-toggle-manual-item';
 import { useHousehold } from '@/features/household/api/use-household';
 import { WeekSwitch, type WeekOffset } from '@/features/meal-plan/components/week-switch';
+import { useToday } from '@/lib/use-today';
 import { useTheme } from '@/theme';
 
 /** Liste de courses de la semaine, groupée dans l'ordre de parcours du magasin. */
@@ -30,7 +32,8 @@ export default function GroceryScreen() {
   // Les courses s'ouvrent sur la semaine à préparer : c'est pour elle qu'on
   // achète. Celle en cours reste consultable, on peut avoir oublié un article.
   const [offset, setOffset] = useState<WeekOffset>(1);
-  const weekId = addDays(getCurrentWeekId(), 7 * offset);
+  const today = useToday();
+  const weekId = addDays(getCurrentWeekId(parseIsoDate(today)), 7 * offset);
 
   const householdId = household?.id ?? null;
   const { items, groups, checkedCount, manualIds, isLoading, isStale, error } = useGroceryList(

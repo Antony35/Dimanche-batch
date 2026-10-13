@@ -12,7 +12,7 @@ import {
   isBatchDayPast,
   isLastMealOfBatchDish,
   listSwapTargets,
-  toIsoDate,
+  parseIsoDate,
   type DayPlan,
   type GenerationLock,
   type MealSlot,
@@ -35,19 +35,20 @@ import { useSetMeal } from '@/features/meal-plan/api/use-set-meal';
 import { useSwapMeals } from '@/features/meal-plan/api/use-swap-meals';
 import { useWeeklyPlan } from '@/features/meal-plan/api/use-weekly-plan';
 import { useToggleDislike } from '@/features/recipes/api/use-recipe-verdict';
+import { useToday } from '@/lib/use-today';
 import { useTheme } from '@/theme';
 
 /** Les 7 jours de la semaine, du samedi au vendredi. */
 export default function PlanningScreen() {
   const theme = useTheme();
   const { household } = useHousehold();
-  const today = toIsoDate(new Date());
+  const today = useToday();
 
   // Le planning s'ouvre sur ce qu'on mange ; les semaines à préparer sont à un
   // geste, parce que c'est elles qu'on ajuste avant les courses.
   const { week } = useLocalSearchParams<{ week?: string }>();
   const [offset, setOffset] = useState<WeekOffset>(week === '1' ? 1 : 0);
-  const weekId = addDays(getCurrentWeekId(), 7 * offset);
+  const weekId = addDays(getCurrentWeekId(parseIsoDate(today)), 7 * offset);
 
   const householdId = household?.id ?? null;
   const { plan, isLoading, isStale, error } = useWeeklyPlan(householdId, weekId);

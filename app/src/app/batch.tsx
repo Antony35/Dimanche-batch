@@ -3,17 +3,17 @@ import { useLocalSearchParams } from 'expo-router';
 import { useKeepAwake } from 'expo-keep-awake';
 import { Pressable, View } from 'react-native';
 import {
+  capitalize,
+  countBatchMealsServing,
   formatDateLong,
   formatDuration,
-  countBatchMealsServing,
   getBatchSession,
   getDayName,
   getUpcomingWeekId,
   isBatchDayPast,
-  capitalize,
+  parseIsoDate,
   scaleIngredients,
   substituteCategory,
-  toIsoDate,
   type BatchRecipe,
   type GenerationLock,
   type Ingredient,
@@ -49,6 +49,7 @@ import { useWeeklyPlan } from '@/features/meal-plan/api/use-weekly-plan';
 import { useSubstituteIngredient } from '@/features/recipes/api/use-substitute-ingredient';
 import { IngredientLine, SubstitutionNote } from '@/features/recipes/components/ingredient-line';
 import { SubstituteIngredientSheet } from '@/features/recipes/components/substitute-ingredient-sheet';
+import { useToday } from '@/lib/use-today';
 import { useTheme } from '@/theme';
 
 /**
@@ -81,7 +82,8 @@ export default function BatchScreen() {
   const { week } = useLocalSearchParams<{ week?: string }>();
   const { household } = useHousehold();
 
-  const weekId = week ?? getUpcomingWeekId();
+  const today = useToday();
+  const weekId = week ?? getUpcomingWeekId(parseIsoDate(today));
   const householdId = household?.id ?? null;
   const { plan, isLoading, error } = useWeeklyPlan(householdId, weekId);
   const { recipesById } = useRecipes(householdId);
@@ -122,7 +124,7 @@ export default function BatchScreen() {
 
   const session = getBatchSession(plan, recipesById);
   // Une fois le batch cuisiné, le plat est au frigo : on ne le retire plus.
-  const canRemove = !isBatchDayPast(plan.weekStart, toIsoDate(new Date()));
+  const canRemove = !isBatchDayPast(plan.weekStart, today);
 
   if (session.recipes.length === 0) {
     return (

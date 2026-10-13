@@ -37,6 +37,16 @@ export function addDays(iso: IsoDate, days: number): IsoDate {
   return toIsoDate(date);
 }
 
+/**
+ * Millisecondes jusqu'au prochain minuit local. C'est là que la date du jour
+ * change, et avec elle, le samedi, la semaine affichée : une app laissée
+ * ouverte du vendredi soir au samedi matin doit basculer d'elle-même.
+ */
+export function msUntilNextDay(now: Date): number {
+  const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+  return midnight.getTime() - now.getTime();
+}
+
 /** Samedi de la semaine contenant `date`. C'est l'identifiant d'un plan. */
 export function getWeekId(date: Date = new Date()): WeekId {
   const saturday = new Date(date.getFullYear(), date.getMonth(), date.getDate());

@@ -14,6 +14,7 @@ import {
   getWeekId,
   isBatchDayPast,
   isComposableWeek,
+  msUntilNextDay,
   parseIsoDate,
   requiresFreezing,
   toIsoDate,
@@ -231,5 +232,16 @@ describe('formatDuration', () => {
     expect(formatDuration(45)).toBe('45 min');
     expect(formatDuration(120)).toBe('2 h');
     expect(formatDuration(150)).toBe('2 h 30');
+  });
+});
+
+describe('msUntilNextDay', () => {
+  it('compte jusqu’au prochain minuit local', () => {
+    expect(msUntilNextDay(new Date(2026, 9, 16, 23, 59, 0))).toBe(60_000);
+    expect(msUntilNextDay(new Date(2026, 9, 16, 0, 0, 0))).toBe(24 * 3_600_000);
+  });
+
+  it('passe d’un mois à l’autre', () => {
+    expect(msUntilNextDay(new Date(2026, 9, 31, 23, 0, 0))).toBe(3_600_000);
   });
 });
