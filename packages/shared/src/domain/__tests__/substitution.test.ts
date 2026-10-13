@@ -8,6 +8,7 @@ import {
   substitutionProblem,
   type SubstituteCandidate,
 } from '../substitution';
+import type { Recipe } from '../../schemas/recipe';
 import { makeRecipe } from './fixtures';
 
 const ratatouille = makeRecipe({
@@ -202,5 +203,15 @@ describe('problème de remplacement', () => {
   it('rend le message du refus, ou null si le remplacement passe', () => {
     expect(substitutionProblem(ratatouille, 'courgette', 'aubergine')).toBeNull();
     expect(substitutionProblem(ratatouille, 'courgette', 'lardons')).toMatch(/même catégorie/);
+  });
+
+  // Seul un refus de la règle devient un message : une panne reste une panne.
+  it('laisse remonter une erreur qui n’est pas un refus', () => {
+    const broken = {
+      get ingredients(): Recipe['ingredients'] {
+        throw new TypeError('recette illisible');
+      },
+    };
+    expect(() => substitutionProblem(broken, 'courgette', 'aubergine')).toThrow(TypeError);
   });
 });
