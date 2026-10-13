@@ -159,7 +159,8 @@ Règles non négociables :
 - Les functions sont des **callables** (`onCall`) : le token Firebase Auth est vérifié
   par le runtime. Chaque function commence par un guard qui vérifie (a) que l'appelant
   est authentifié, (b) qu'il est membre du `householdId` visé.
-- **Rate limiting** obligatoire : un compteur de générations par foyer et par jour,
+- **Rate limiting** obligatoire : un compteur de générations par foyer et par jour (100,
+  `DAILY_GENERATION_LIMIT`),
   stocké dans Firestore et vérifié avant l'appel Gemini. La clé est partagée avec ton
   quota étudiant — une boucle de retry mal écrite coûte cher.
 - **App Check** est prévu pour la v1.1 : il empêche les appels provenant d'autre chose

@@ -116,21 +116,26 @@ describe('consumeGenerationQuota', () => {
 
   it('tient le plafond quand les deux téléphones génèrent en même temps', async () => {
     // La raison d'être de la transaction : sans elle, des lectures simultanées
-    // liraient toutes la même valeur et le plafond sauterait.
-    const attempts = DAILY_GENERATION_LIMIT + 4;
+    // liraient toutes la même valeur et le plafond sauterait. On part juste
+    // sous le plafond : la propriété est la même qu'en partant de zéro, sans
+    // une centaine de transactions concurrentes sur un seul document.
+    const remaining = 3;
+    const start = DAILY_GENERATION_LIMIT - remaining;
+    await db.doc(paths.usageDay(HOUSEHOLD_ID, TODAY)).set({ generations: start });
+
     const results = await Promise.allSettled(
-      Array.from({ length: attempts }, () => consumeGenerationQuota(HOUSEHOLD_ID)),
+      Array.from({ length: remaining + 5 }, () => consumeGenerationQuota(HOUSEHOLD_ID)),
     );
 
     const accepted = results.filter((result) => result.status === 'fulfilled').length;
     const usage = await db.doc(paths.usageDay(HOUSEHOLD_ID, TODAY)).get();
 
-    // La propriété qui compte n'est pas « exactement dix » — sous contention,
+    // La propriété qui compte n'est pas « exactement trois » — sous contention,
     // une transaction peut légitimement abandonner — mais qu'aucun appel
     // accepté ne soit perdu, et qu'aucun refusé n'ait consommé du quota.
     expect(accepted).toBeGreaterThan(0);
-    expect(accepted).toBeLessThanOrEqual(DAILY_GENERATION_LIMIT);
-    expect(usage.get('generations')).toBe(accepted);
+    expect(accepted).toBeLessThanOrEqual(remaining);
+    expect(usage.get('generations')).toBe(start + accepted);
   });
 });
 

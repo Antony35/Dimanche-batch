@@ -67,8 +67,15 @@ export const paths = {
     `${COLLECTIONS.households}/${householdId}/${COLLECTIONS.lexicon}/${AISLE_LEXICON_DOC_ID}`,
 } as const;
 
-/** Plafond de générations Gemini par foyer et par jour. Voir CLAUDE.md §4. */
-export const DAILY_GENERATION_LIMIT = 10;
+/**
+ * Plafond de générations Gemini par foyer et par jour. Voir CLAUDE.md §4.
+ *
+ * 100 depuis le 2026-10-14, contre 10. Le plafond protégeait le quota d'un
+ * seul modèle ; la chaîne en compte trois, chacun avec son quota gratuit, et
+ * une génération qui n'aboutit pas est rendue. Il reste le rempart contre une
+ * boucle côté app, pas une ration pour le foyer.
+ */
+export const DAILY_GENERATION_LIMIT = 100;
 
 /**
  * Durée au-delà de laquelle un verrou de génération est considéré abandonné.
