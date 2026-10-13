@@ -755,7 +755,10 @@ pas être retirés sans la relire.
   qui n'en appellent que `glob`, `sync` et `globSync`, inchangés ; et
   `@google-cloud/pubsub` 6 sous `firebase-tools`, pour son `@opentelemetry/core`
   corrigé — seul l'émulateur Pub/Sub s'en sert, que le projet n'utilise pas.
-  À retirer quand le parent remonte de lui-même.
+  À retirer quand le parent remonte de lui-même. `npm ls` marque `uuid` « invalid » sous
+  `xcode` : npm n'y reconnaît pas un override de la racine sur une dépendance
+  de workspace. `npm ci`, la CI et le build l'appliquent bien ; Renovate est
+  borné à `uuid` < 12, l'ESM pur cassant ces `require()`.
 
 Ce qui reste signalé par `npm audit` n'a pas de correctif sûr : `braces` et
 `node-forge` n'ont aucune version corrigée, `decode-uri-component` n'en a

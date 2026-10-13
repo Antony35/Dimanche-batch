@@ -26,6 +26,11 @@
         "eslint-config-expo"
       ],
       "enabled": false
+    },
+    {
+      "description": "uuid n'est déclaré que dans les overrides du package.json racine, pour corriger la copie qu'en tirent xcode (plugins de config d'Expo) et gaxios (firebase-tools). Tous deux le chargent par require() : uuid 12 et suivants sont en ESM pur, et xcode tourne aussi sur le serveur de build EAS, dont la version de Node n'est pas fixée. Les correctifs de la v11 restent proposés.",
+      "matchPackageNames": ["uuid"],
+      "allowedVersions": "<12"
     }
   ]
 }
