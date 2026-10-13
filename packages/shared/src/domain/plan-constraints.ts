@@ -20,8 +20,11 @@ export interface ConstraintViolation {
   message: string;
 }
 
-/** Plats distincts préparés le dimanche. Le foyer choisit dans cet intervalle. */
-export const MIN_BATCH_RECIPES = 3;
+/**
+ * Plats distincts préparés le dimanche. Le foyer choisit dans cet intervalle.
+ * Un ou deux plats : un dimanche express, au prix d'une semaine répétitive.
+ */
+export const MIN_BATCH_RECIPES = 1;
 export const MAX_BATCH_RECIPES = 6;
 /** Taille du foyer, en dur en v1. Voir CLAUDE.md §9. */
 export const SERVINGS_PER_MEAL = 2;
@@ -31,6 +34,11 @@ export const MAX_BATCH_TOTAL_MINUTES = 240;
 export const MAX_ONE_POT_MINUTES = 45;
 /** En deçà, un plat marqué `mijote` ou `four-lent` ne libère pas vraiment le cuisinier. */
 export const MIN_SLOW_COOK_MINUTES = 60;
+/**
+ * À partir de ce nombre de plats, le dimanche s'organise autour d'un plat qui
+ * cuit seul. En deçà, il n'y a rien d'autre à préparer pendant qu'il cuit.
+ */
+export const SLOW_COOK_FROM = 3;
 /** Au-delà de ce nombre de plats, le dimanche demande un mijoté **et** un plat au four. */
 export const BOTH_SLOW_COOKS_FROM = 5;
 /** Repas nourris par le batch : cinq midis et cinq soirs, du lundi au vendredi. */
@@ -351,8 +359,9 @@ const SLOW_COOK_TAGS: ReadonlySet<RecipeTag> = new Set(['mijote', 'four-lent']);
  * Le dimanche s'organise autour d'un plat qui cuit longtemps sans surveillance :
  * pendant qu'il mijote ou qu'il est au four, on prépare les autres.
  *
- * Trois ou quatre plats : au moins un mijoté ou un plat au four. Cinq ou six :
- * un de chaque, parce qu'une seule cocotte ne couvre plus l'après-midi.
+ * Un ou deux plats : aucune exigence, il n'y a rien d'autre à préparer pendant
+ * la cuisson. Trois ou quatre : au moins un mijoté ou un plat au four. Cinq ou
+ * six : un de chaque, parce qu'une seule cocotte ne couvre plus l'après-midi.
  *
  * Une étiquette ne suffit pas à le prouver : un plat marqué `mijote` qui cuit
  * vingt minutes ne libère personne. D'où le plancher de cuisson.
@@ -383,7 +392,7 @@ export function slowCookViolations(
         message: `Avec ${dishCount} plats, le batch doit compter au moins un plat « mijote » ET un plat « four-lent », qui cuisent pendant qu'on prépare les autres.`,
       });
     }
-  } else if (!hasMijote && !hasOven) {
+  } else if (dishCount >= SLOW_COOK_FROM && !hasMijote && !hasOven) {
     violations.push({
       code: 'batch-slow-cook',
       message: `Le batch doit compter au moins un plat « mijote » ou « four-lent », qui cuit pendant qu'on prépare les autres.`,

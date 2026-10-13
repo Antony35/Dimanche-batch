@@ -28,6 +28,10 @@ const base: PlanPromptInput = {
 describe('buildPlanPrompt', () => {
   it('dit combien de plats le foyer veut préparer', () => {
     expect(buildPlanPrompt({ ...base, batchRecipeCount: 5 })).toContain('exactement 5 plats');
+    // Un plat seul sert toute la semaine, et se dit au singulier.
+    const one = buildPlanPrompt({ ...base, batchRecipeCount: 1 });
+    expect(one).toContain('exactement 1 plat le dimanche');
+    expect(one).toContain('un plat servi à 10 repas (20 portions)');
   });
 
   /**
@@ -241,8 +245,8 @@ describe('instructions système', () => {
     expect(SYSTEM_INSTRUCTION).toContain("DANS L'ORDRE");
   });
 
-  it('porte la version 10, stockée avec chaque plan', () => {
-    expect(PROMPT_VERSION).toBe(10);
+  it('porte la version 11, stockée avec chaque plan', () => {
+    expect(PROMPT_VERSION).toBe(11);
   });
 });
 

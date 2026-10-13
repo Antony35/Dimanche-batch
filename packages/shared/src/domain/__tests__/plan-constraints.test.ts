@@ -82,9 +82,9 @@ describe('validateGeneratedPlan, structure', () => {
 });
 
 describe('validateGeneratedPlan, batch', () => {
-  it('exige un batch d’au moins trois plats', () => {
+  it('exige un batch d’au moins un plat', () => {
     const plan = makeValidGeneratedPlan();
-    plan.batchRecipeSlugs = ['batch-curry', 'chili-sin-carne'];
+    plan.batchRecipeSlugs = [];
 
     expect(codes(plan)).toContain('batch-size');
   });
@@ -221,6 +221,16 @@ describe('validateGeneratedPlan, plat qui cuit longtemps', () => {
     curry.tags = [...curry.tags.filter((tag) => tag !== 'mijote'), 'four-lent'];
 
     expect(codes(plan)).not.toContain('batch-slow-cook');
+  });
+
+  // Seul ou à deux, le plat n'a rien à libérer : il n'y a rien d'autre à préparer.
+  it('n’exige rien pour un ou deux plats', () => {
+    const simple = { name: 'a', tags: [], cookMinutes: 0 };
+    expect(slowCookViolations([simple], 1)).toEqual([]);
+    expect(slowCookViolations([simple, { ...simple, name: 'b' }], 2)).toEqual([]);
+    expect(
+      slowCookViolations([simple, { ...simple, name: 'b' }, { ...simple, name: 'c' }], 3),
+    ).toHaveLength(1);
   });
 
   it('exige un mijoté ET un plat au four à partir de cinq plats', () => {
@@ -483,6 +493,8 @@ describe('validateBatchRecipeReplacement', () => {
  */
 describe('distributeMeals', () => {
   it('répartit les dix repas au plus égal, les grosses parts d’abord', () => {
+    expect(distributeMeals(WEEKDAY_MEAL_COUNT, 1)).toEqual([10]);
+    expect(distributeMeals(WEEKDAY_MEAL_COUNT, 2)).toEqual([5, 5]);
     expect(distributeMeals(WEEKDAY_MEAL_COUNT, 3)).toEqual([4, 3, 3]);
     expect(distributeMeals(WEEKDAY_MEAL_COUNT, 4)).toEqual([3, 3, 2, 2]);
     expect(distributeMeals(WEEKDAY_MEAL_COUNT, 5)).toEqual([2, 2, 2, 2, 2]);
@@ -504,6 +516,8 @@ describe('distributeMeals', () => {
 
   // C'est l'exemple qui a motivé la règle : 8, 6 et 6, jamais 7, 7 et 6.
   it('donne des portions toujours paires', () => {
+    // Un seul plat sert toute la semaine : 20 portions, que le schéma doit accepter.
+    expect(distributePortions(1)).toEqual([20]);
     expect(distributePortions(3)).toEqual([8, 6, 6]);
     expect(distributePortions(4)).toEqual([6, 6, 4, 4]);
     for (let dishes = MIN_BATCH_RECIPES; dishes <= MAX_BATCH_RECIPES; dishes += 1) {

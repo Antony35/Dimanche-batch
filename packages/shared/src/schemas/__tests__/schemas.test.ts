@@ -53,11 +53,19 @@ describe('GeneratedRecipeSchema', () => {
   });
 
   it('impose un slug en minuscules, chiffres et tirets', () => {
-    // Le slug devient l'identifiant du document Firestore : une majuscule ou un
-    // espace y produirait deux documents pour une même recette.
-    for (const slug of ['Curry', 'curry lentilles', 'curry_lentilles', 'ab', 'curry/lentilles']) {
+    // Le slug devient l'identifiant du document Firestore : un espace y
+    // produirait deux documents pour une même recette.
+    for (const slug of ['curry lentilles', 'curry_lentilles', 'ab', 'curry/lentilles']) {
       expectRejected(GeneratedRecipeSchema, makeGeneratedRecipe({ slug }));
     }
+  });
+
+  // gemini-3.1-flash-lite écrit « sauté-de-porc » une fois sur deux.
+  it('ramène un slug accentué ou en majuscules à sa forme sûre', () => {
+    const parsed = GeneratedRecipeSchema.safeParse(
+      makeGeneratedRecipe({ slug: 'Sauté-de-Bœuf-à-la-crème' }),
+    );
+    expect(parsed.success && parsed.data.slug).toBe('saute-de-boeuf-a-la-creme');
   });
 
   it('refuse une quantité nulle ou négative', () => {
@@ -85,6 +93,37 @@ describe('GeneratedRecipeSchema', () => {
 });
 
 describe('GeneratedPlanSchema', () => {
+  // Les références suivent la même normalisation que les slugs : sans quoi
+  // « sauté-de-porc » cité par un repas ne retrouverait plus sa recette.
+  it('normalise les références aux slugs comme les slugs eux-mêmes', () => {
+    const plan = makeValidGeneratedPlan();
+    const accented = {
+      ...plan,
+      recipes: plan.recipes.map((recipe) => ({ ...recipe, slug: `${recipe.slug}-é` })),
+      batchRecipeSlugs: plan.batchRecipeSlugs.map((slug) => `${slug}-é`),
+      days: plan.days.map((day) => ({
+        ...day,
+        lunch: { ...day.lunch, recipeSlug: `${day.lunch.recipeSlug}-é` },
+        dinner: { ...day.dinner, recipeSlug: `${day.dinner.recipeSlug}-é` },
+      })),
+    };
+    const parsed = GeneratedPlanSchema.safeParse(accented);
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    const slugs = new Set(parsed.data.recipes.map((recipe) => recipe.slug));
+    expect(parsed.data.batchRecipeSlugs.every((slug) => slugs.has(slug))).toBe(true);
+    expect(parsed.data.days.every((day) => slugs.has(day.lunch.recipeSlug))).toBe(true);
+  });
+
+  it('accepte un batch d’un seul plat, refuse un batch vide', () => {
+    const plan = makeValidGeneratedPlan();
+    const [first] = plan.recipes;
+    if (!first) throw new Error('fixture vide');
+    const single = { ...plan, recipes: [first], batchRecipeSlugs: [first.slug] };
+    expect(GeneratedPlanSchema.safeParse(single).success).toBe(true);
+    expectRejected(GeneratedPlanSchema, { ...plan, recipes: [], batchRecipeSlugs: [] });
+  });
+
   it('accepte le plan de référence', () => {
     expect(GeneratedPlanSchema.safeParse(makeValidGeneratedPlan()).success).toBe(true);
   });
@@ -100,11 +139,6 @@ describe('GeneratedPlanSchema', () => {
     const plan = makeValidGeneratedPlan();
     const extra = [0, 1, 2, 3].map((index) => ({ ...plan.recipes[0], slug: `extra-${index}` }));
     expectRejected(GeneratedPlanSchema, { ...plan, recipes: [...plan.recipes, ...extra] });
-  });
-
-  it('exige au moins 3 recettes', () => {
-    const plan = makeValidGeneratedPlan();
-    expectRejected(GeneratedPlanSchema, { ...plan, recipes: plan.recipes.slice(0, 2) });
   });
 
   it('refuse un dayIndex hors du lundi au vendredi', () => {
@@ -411,13 +445,13 @@ describe('RemoveBatchRecipeInputSchema et son résultat', () => {
 describe('GenerateWeeklyPlanInputSchema', () => {
   const base = { householdId: 'household-1', weekStart: '2026-09-12' };
 
-  it('exige un nombre de plats compris entre 3 et 6', () => {
-    for (const batchRecipeCount of [3, 4, 5, 6]) {
+  it('exige un nombre de plats compris entre 1 et 6', () => {
+    for (const batchRecipeCount of [1, 2, 3, 4, 5, 6]) {
       expect(GenerateWeeklyPlanInputSchema.safeParse({ ...base, batchRecipeCount }).success).toBe(
         true,
       );
     }
-    for (const batchRecipeCount of [2, 7, 4.5]) {
+    for (const batchRecipeCount of [0, 7, 4.5]) {
       expectRejected(GenerateWeeklyPlanInputSchema, { ...base, batchRecipeCount });
     }
   });

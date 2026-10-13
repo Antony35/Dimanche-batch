@@ -160,8 +160,9 @@ function NextStep({
   const theme = useTheme();
   const router = useRouter();
   const generate = useGeneratePlan();
-  const [batchRecipeCount, setBatchRecipeCount] = useState(4);
-  const [vegetarianChoice, setVegetarianChoice] = useState(0);
+  // Trois plats dont un végétarien : le dimanche que le foyer fait le plus souvent.
+  const [batchRecipeCount, setBatchRecipeCount] = useState(3);
+  const [vegetarianChoice, setVegetarianChoice] = useState(1);
   // Ramené au nombre de plats au rendu : baisser le nombre de plats ne doit
   // jamais laisser plus de végétariens que de plats.
   const vegetarianCount = Math.min(vegetarianChoice, batchRecipeCount);

@@ -9,10 +9,38 @@ import { AisleSchema, RecipeTagSchema, UnitSchema } from './common';
  * résout ensuite slug -> recipeId au moment de l'écriture. C'est ce découplage
  * qui permet de valider la cohérence du plan avant d'écrire quoi que ce soit.
  */
+/**
+ * Slug ramené à sa forme sans accents ni majuscules, avant d'être validé.
+ *
+ * `gemini-3.1-flash-lite` écrit « sauté-de-porc » une fois sur deux : refuser
+ * coûterait une reprise de contenu pour un défaut qu'une règle sûre corrige. La
+ * même normalisation s'applique à chaque champ qui cite un slug — la recette,
+ * les repas, l'ordre du batch —, sans quoi les références ne concorderaient
+ * plus. Ce n'est pas contourner le schéma : ce qui ne devient pas un slug
+ * valide reste refusé.
+ */
+function foldSlug(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/œ/g, 'oe')
+    .replace(/æ/g, 'ae');
+}
+
+const SlugSchema = z
+  .string()
+  .transform(foldSlug)
+  .pipe(z.string().regex(/^[a-z0-9-]{3,60}$/, 'slug en minuscules, tirets uniquement'));
+
+/** Référence à un slug : normalisée comme lui, pour concorder. */
+const SlugRefSchema = z.string().transform(foldSlug).pipe(z.string().min(1));
+
 export const GeneratedRecipeSchema = z.object({
-  slug: z.string().regex(/^[a-z0-9-]{3,60}$/, 'slug en minuscules, tirets uniquement'),
+  slug: SlugSchema,
   name: z.string().min(1).max(120),
-  servings: z.number().int().min(1).max(16),
+  servings: z.number().int().min(1).max(20),
   prepMinutes: z.number().int().min(1).max(240),
   cookMinutes: z.number().int().min(0).max(480),
   tags: z.array(RecipeTagSchema).min(1).max(11),
@@ -38,7 +66,7 @@ export const GeneratedRecipeSchema = z.object({
  * il ne peut pas le rater — d'où un `kind` réduit à sa seule valeur possible.
  */
 export const GeneratedMealSchema = z.object({
-  recipeSlug: z.string().min(1),
+  recipeSlug: SlugRefSchema,
   kind: z.literal('batch-leftover'),
   withStarter: z.boolean(),
   withDessert: z.boolean(),
@@ -56,7 +84,7 @@ export const GeneratedDaySchema = z.object({
 
 export const GeneratedPlanSchema = z.object({
   /** Les plats du batch, et eux seuls. */
-  recipes: z.array(GeneratedRecipeSchema).min(3).max(6),
+  recipes: z.array(GeneratedRecipeSchema).min(1).max(6),
   /**
    * Plats préparés le dimanche, dans l'ordre de préparation — c'est cet ordre
    * que suit l'écran de préparation, sans champ supplémentaire à demander.
@@ -64,7 +92,7 @@ export const GeneratedPlanSchema = z.object({
    * de schéma sans nommer le champ fautif, un niveau d'imbrication en moins est
    * un risque en moins (voir `functions/src/gemini/response-schema.ts`).
    */
-  batchRecipeSlugs: z.array(z.string()).min(3).max(6),
+  batchRecipeSlugs: z.array(SlugRefSchema).min(1).max(6),
   days: z.array(GeneratedDaySchema).length(5),
 });
 

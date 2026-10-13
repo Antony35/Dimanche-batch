@@ -73,7 +73,7 @@ export const GenerateWeeklyPlanInputSchema = z
     /** Régénère en écrasant un plan existant pour cette semaine. */
     force: z.boolean().optional(),
     /** Nombre de plats à préparer le dimanche, choisi avant la génération. */
-    batchRecipeCount: z.number().int().min(3).max(6),
+    batchRecipeCount: z.number().int().min(1).max(6),
     /**
      * Combien de ces plats sont végétariens. Zéro veut dire « aucune
      * contrainte », et c'est la valeur par défaut.

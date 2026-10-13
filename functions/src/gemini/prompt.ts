@@ -38,7 +38,7 @@ import {
  * déclaré doivent concorder, à la génération comme dans la session, qui rend
  * désormais son propre temps par plat.
  */
-export const PROMPT_VERSION = 10;
+export const PROMPT_VERSION = 11;
 
 /**
  * Exigences portant sur une recette, indépendamment du contexte qui la demande.
@@ -65,7 +65,7 @@ Des étapes courtes et concrètes, à l'infinitif. Cinq à huit étapes suffisen
 export const SYSTEM_INSTRUCTION = `Tu conçois le batch cooking du dimanche d'un foyer français de deux personnes : les plats préparés en une session le dimanche, et la façon dont ils nourrissent les dix repas de la semaine.
 
 RYTHME DE LA SEMAINE — c'est le principe de l'application, lis-le attentivement
-La semaine va du samedi au vendredi. Le dimanche, le foyer prépare le BATCH : plusieurs grands plats en une seule session de cuisine. Du lundi au vendredi, ON NE CUISINE PAS : les dix repas — cinq midis et cinq soirs — sont des portions du batch, réchauffées. Le samedi et le dimanche ne te concernent pas : le foyer les décide lui-même.
+La semaine va du samedi au vendredi. Le dimanche, le foyer prépare le BATCH : un ou plusieurs grands plats en une seule session de cuisine. Du lundi au vendredi, ON NE CUISINE PAS : les dix repas — cinq midis et cinq soirs — sont des portions du batch, réchauffées. Le samedi et le dimanche ne te concernent pas : le foyer les décide lui-même.
 Tu décris uniquement les jours du lundi au vendredi, avec les dayIndex 2 (lundi), 3 (mardi), 4 (mercredi), 5 (jeudi), 6 (vendredi).
 
 CE QUE TU PRODUIS
@@ -80,7 +80,7 @@ CONTRAINTES IMPÉRATIVES
 1. Le nombre de plats, et le nombre de repas servis par chacun, sont exactement ceux du message.
 2. Un plat servi le jeudi (5) ou le vendredi (6) porte l'étiquette "congelable" : cuisiné dimanche, il attendrait cinq jours au frigo.
 3. La somme des prepMinutes des plats ne dépasse pas ${MAX_BATCH_TOTAL_MINUTES} minutes. La cuisson sans surveillance (cookMinutes) ne compte pas.
-4. Le dimanche s'organise autour d'un plat qui cuit seul pendant qu'on prépare les autres : avec 3 ou 4 plats, au moins un plat "mijote" ou "four-lent" ; à partir de ${BOTH_SLOW_COOKS_FROM} plats, au moins un "mijote" ET un "four-lent".
+4. Le dimanche s'organise autour d'un plat qui cuit seul pendant qu'on prépare les autres : avec 1 ou 2 plats, aucune exigence ; avec 3 ou 4 plats, au moins un plat "mijote" ou "four-lent" ; à partir de ${BOTH_SLOW_COOKS_FROM} plats, au moins un "mijote" ET un "four-lent".
 5. Le nombre de plats "vegetarien" est exactement celui du message.
 6. Chaque plat se garde et se réchauffe bien : évite ce qui se détrempe, se dessèche ou ne se mange que sortant de la poêle.
 
@@ -140,7 +140,7 @@ function describeDistribution(dishCount: number): string {
 export function buildPlanPrompt(input: PlanPromptInput): string {
   const parts: string[] = [
     `Compose le batch de la semaine ${formatWeekRange(input.weekStart)}.`,
-    `Le foyer prépare exactement ${input.batchRecipeCount} plats le dimanche. Répartis les ${WEEKDAY_MEAL_COUNT} repas du lundi au vendredi ainsi : ${describeDistribution(input.batchRecipeCount)}.`,
+    `Le foyer prépare exactement ${input.batchRecipeCount} plat${input.batchRecipeCount > 1 ? 's' : ''} le dimanche. Répartis les ${WEEKDAY_MEAL_COUNT} repas du lundi au vendredi ainsi : ${describeDistribution(input.batchRecipeCount)}.`,
     input.vegetarianCount > 0
       ? `Exactement ${input.vegetarianCount} de ces plats sont végétariens et portent l'étiquette "vegetarien" ; les autres n'en sont pas.`
       : 'Le foyer n’impose aucun nombre de plats végétariens.',

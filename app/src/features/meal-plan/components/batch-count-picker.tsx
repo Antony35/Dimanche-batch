@@ -27,13 +27,17 @@ function describeChoice(count: number): string {
       : String(portions[0] ?? 0);
 
   const sunday =
-    count <= 3
-      ? 'Dimanche court'
-      : count <= 4
-        ? 'Dimanche raisonnable'
-        : count === 5
-          ? 'Dimanche chargé'
-          : 'Dimanche long, et deux plats ne servent qu’un repas';
+    count === 1
+      ? 'Dimanche express, mais le même plat toute la semaine'
+      : count === 2
+        ? 'Dimanche très court, deux plats en alternance'
+        : count <= 3
+          ? 'Dimanche court'
+          : count <= 4
+            ? 'Dimanche raisonnable'
+            : count === 5
+              ? 'Dimanche chargé'
+              : 'Dimanche long, et deux plats ne servent qu’un repas';
 
   return `${list} portions pour les dix repas du lundi au vendredi. ${sunday}.`;
 }
@@ -41,8 +45,8 @@ function describeChoice(count: number): string {
 /**
  * Nombre de plats à préparer le dimanche.
  *
- * Il décide de la longueur de l'après-midi : trois plats font un dimanche court
- * mais une semaine répétitive, six font l'inverse.
+ * Il décide de la longueur de l'après-midi : un plat fait un dimanche express
+ * mais une semaine monotone, six font l'inverse.
  */
 export function BatchCountPicker({ value, onChange }: BatchCountPickerProps) {
   const theme = useTheme();
