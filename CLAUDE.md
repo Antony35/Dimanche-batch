@@ -752,8 +752,10 @@ pas être retirés sans la relire.
   n'ont pas encore repris — `@grpc/grpc-js` (figé en 1.9 par Firestore
   Node), `uuid` sous `xcode` et `gaxios`, `basic-ftp` sous `get-uri`, et
   `glob` 13 sous `firebase-tools`, `exegesis`, `archiver-utils` et `rimraf`,
-  qui n'en appellent que `glob`, `sync` et `globSync`, inchangés. À retirer
-  quand le parent remonte de lui-même.
+  qui n'en appellent que `glob`, `sync` et `globSync`, inchangés ; et
+  `@google-cloud/pubsub` 6 sous `firebase-tools`, pour son `@opentelemetry/core`
+  corrigé — seul l'émulateur Pub/Sub s'en sert, que le projet n'utilise pas.
+  À retirer quand le parent remonte de lui-même.
 
 Ce qui reste signalé par `npm audit` n'a pas de correctif sûr : `braces` et
 `node-forge` n'ont aucune version corrigée, `decode-uri-component` n'en a
