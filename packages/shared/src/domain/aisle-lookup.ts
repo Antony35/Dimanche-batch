@@ -247,32 +247,46 @@ function buildIndex(): AisleIndex {
 const INDEX = buildIndex();
 
 /**
- * Rayon connu pour ce nom, ou `null`.
+ * Premier résultat de `find` sur les groupes de mots du nom, **du plus long au
+ * plus court**.
  *
- * Les groupes de mots sont essayés **du plus long au plus court**, et c'est ce
- * qui fait toute la justesse de la table : « sauce tomate » doit tomber en
- * épicerie et non en fruits et légumes, « épinard surgelé » aux surgelés et non
- * au frais. Un nom sans aucun groupe connu ne rend rien — on ne devine pas.
+ * C'est ce qui fait toute la justesse de la table : « sauce tomate » doit tomber
+ * en épicerie et non en fruits et légumes, « épinard surgelé » aux surgelés et
+ * non au frais. Chaque groupe est proposé tel quel puis au singulier. Partagé
+ * avec les catégories de remplacement (`substitution.ts`), qui ont besoin de la
+ * même règle.
  */
-export function lookupAisle(name: string, overrides?: ReadonlyMap<string, Aisle>): Aisle | null {
+export function matchLongestGram<T>(
+  name: string,
+  find: (gram: string, singular: string) => T | undefined,
+): T | null {
   const tokens = lookupKey(name).split(' ').filter(Boolean);
 
   for (let size = tokens.length; size > 0; size -= 1) {
     for (let start = 0; start + size <= tokens.length; start += 1) {
       const gram = tokens.slice(start, start + size).join(' ');
-      const singular = singularizeWords(gram);
-
-      // Le lexique du foyer passe devant la table livrée, à longueur égale : une
-      // correction de l'utilisateur n'a pas à être discutée.
-      const hit =
-        overrides?.get(gram) ??
-        overrides?.get(singular) ??
-        INDEX.byName.get(gram) ??
-        INDEX.byName.get(singular);
-      if (hit) return hit;
+      const hit = find(gram, singularizeWords(gram));
+      if (hit !== undefined) return hit;
     }
   }
   return null;
+}
+
+/**
+ * Rayon connu pour ce nom, ou `null`. Un nom sans aucun groupe connu ne rend
+ * rien — on ne devine pas.
+ */
+export function lookupAisle(name: string, overrides?: ReadonlyMap<string, Aisle>): Aisle | null {
+  // Le lexique du foyer passe devant la table livrée, à longueur égale : une
+  // correction de l'utilisateur n'a pas à être discutée.
+  return matchLongestGram(
+    name,
+    (gram, singular) =>
+      overrides?.get(gram) ??
+      overrides?.get(singular) ??
+      INDEX.byName.get(gram) ??
+      INDEX.byName.get(singular),
+  );
 }
 
 /**
@@ -290,6 +304,18 @@ export function guessAisle(name: string, overrides?: ReadonlyMap<string, Aisle>)
 export function aisleOverrideKey(name: string): string {
   return lookupKey(name);
 }
+
+/**
+ * Articles livrés pour ce rayon, tels qu'ils sont écrits dans la table : la
+ * réserve où puisent les remplaçants d'un ingrédient.
+ */
+export function catalogNames(aisle: Aisle): readonly string[] {
+  return CATALOG_NAMES.get(aisle) ?? [];
+}
+
+const CATALOG_NAMES: ReadonlyMap<Aisle, readonly string[]> = new Map(
+  AISLES.map((aisle) => [aisle, parseList(CATALOG[aisle])]),
+);
 
 /**
  * Nombre d'articles livrés — lu par le test qui garde la taille de la table.

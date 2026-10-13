@@ -12,6 +12,7 @@ import {
   removeBatchRecipeFromPlan,
   replaceBatchRecipeInPlan,
   replaceMealInPlan,
+  substituteIngredientInRecipe,
   swapMealsInPlan,
   undecidedMeal,
   type GeneratedMeal,
@@ -20,6 +21,7 @@ import {
   type GenerateWeeklyPlanResult,
   type GroceryItem,
   type GroceryList,
+  type Ingredient,
   type Meal,
   type MealSlotRef,
   type MealSlot,
@@ -215,6 +217,73 @@ export async function removeBatchRecipe(
   });
 
   return { weekId, mealCount, itemCount };
+}
+
+export interface SubstituteRecipeIngredientParams {
+  householdId: string;
+  recipeId: string;
+  ingredientName: string;
+  substitute: string;
+  /** Semaines dont la liste achète cette recette, verrouillées par l'appelant. */
+  weekIds: string[];
+}
+
+export class RecipeNotFoundError extends Error {
+  constructor(recipeId: string) {
+    super(`Recette ${recipeId} introuvable.`);
+    this.name = 'RecipeNotFoundError';
+  }
+}
+
+/**
+ * Remplace un ingrédient d'une recette, puis recalcule la liste de courses de
+ * chaque semaine qui l'achète.
+ *
+ * La recette est relue ici, sous les verrous : c'est sur elle que le
+ * remplacement s'applique, pas sur ce que l'app affichait. Elle part avec la
+ * première semaine, dans le même batch que sa liste ; une semaine suivante —
+ * cas rare d'une recette au menu deux semaines de suite — est écrite à part,
+ * chacune restant cohérente avec son plan.
+ *
+ * La session de cuisson d'une semaine dont le batch contient la recette est
+ * effacée : ses découpes et ses étapes citent l'ancien ingrédient, et sa
+ * comparaison au plan ne porte que sur les identifiants des plats.
+ */
+export async function substituteRecipeIngredient(
+  params: SubstituteRecipeIngredientParams,
+): Promise<{ recipe: Recipe; ingredient: Ingredient }> {
+  const { householdId, recipeId, ingredientName, substitute, weekIds } = params;
+
+  const current = (await readRecipesByIds(householdId, [recipeId])).get(recipeId);
+  if (!current) throw new RecipeNotFoundError(recipeId);
+  const next = substituteIngredientInRecipe(current, ingredientName, substitute);
+  // `substituteIngredientInRecipe` ne recrée que la ligne remplacée.
+  const ingredient = next.ingredients.find((entry, index) => entry !== current.ingredients[index]);
+  if (!ingredient) throw new RecipeNotFoundError(recipeId);
+
+  let recipeWritten = false;
+  for (const weekId of weekIds) {
+    const plan = await readPlanForEdit(householdId, weekId);
+    const known = await readPlanRecipes(householdId, plan);
+    known.set(next.id, next);
+
+    await commitPlan({
+      householdId,
+      plan,
+      recipesToWrite: recipeWritten ? [] : [next],
+      allRecipes: [...known.values()],
+    });
+    recipeWritten = true;
+
+    if (plan.batchRecipeIds.includes(recipeId)) {
+      await db.doc(paths.batchSession(householdId, weekId)).delete();
+    }
+  }
+
+  if (!recipeWritten) {
+    await db.doc(paths.recipe(householdId, recipeId)).update({ ingredients: next.ingredients });
+  }
+  return { recipe: next, ingredient };
 }
 
 export interface SwapPlanMealsParams {

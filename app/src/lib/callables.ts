@@ -9,6 +9,7 @@ import {
   RemoveBatchRecipeResultSchema,
   ReplaceBatchRecipeResultSchema,
   SetMealResultSchema,
+  SubstituteIngredientResultSchema,
   SwapMealsResultSchema,
   type ComposeCookingSessionInput,
   type GenerateCookingSessionResult,
@@ -24,6 +25,8 @@ import {
   type ReplaceBatchRecipeResult,
   type SetMealInput,
   type SetMealResult,
+  type SubstituteIngredientInput,
+  type SubstituteIngredientResult,
   type SwapMealsInput,
   type SwapMealsResult,
 } from '@dimanche-batch/shared';
@@ -110,4 +113,10 @@ export function composeCookingSession(
   input: ComposeCookingSessionInput,
 ): Promise<GenerateCookingSessionResult> {
   return call('composeCookingSession', ComposeCookingSessionResultSchema, input);
+}
+
+export function substituteIngredient(
+  input: SubstituteIngredientInput,
+): Promise<SubstituteIngredientResult> {
+  return call('substituteIngredient', SubstituteIngredientResultSchema, input);
 }

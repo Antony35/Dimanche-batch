@@ -28,5 +28,6 @@ export * from './domain/batch';
 export * from './domain/cooking-session';
 export * from './domain/mise-en-place';
 export * from './domain/invite';
+export * from './domain/substitution';
 
 export * from './firestore-paths';

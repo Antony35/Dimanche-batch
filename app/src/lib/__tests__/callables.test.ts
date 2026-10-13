@@ -10,7 +10,7 @@ vi.mock('firebase/functions', () => ({
 }));
 vi.mock('../firebase', () => ({ functions: {} }));
 
-const { removeBatchRecipe, setMeal } = await import('../callables');
+const { removeBatchRecipe, setMeal, substituteIngredient } = await import('../callables');
 
 /**
  * La réponse d'une callable est du `unknown` du point de vue du client. Ces
@@ -94,5 +94,25 @@ describe('traduction des erreurs', () => {
   it('rend une erreur lisible même quand ce qui est jeté n’en est pas une', async () => {
     callable.mockRejectedValueOnce('quelque chose');
     await expect(setMeal(input)).rejects.toThrow(/inattendue/);
+  });
+});
+
+describe('substituteIngredient', () => {
+  const substituteInput = {
+    householdId: 'foyer',
+    recipeId: 'curry',
+    ingredientName: 'poulet',
+    substitute: 'dinde',
+  };
+
+  it('appelle la callable du même nom et rend les semaines recalculées', async () => {
+    const result = { recipeId: 'curry', ingredientName: 'dinde', weekIds: ['2026-09-12'] };
+    callable.mockResolvedValueOnce({ data: result });
+    await expect(substituteIngredient(substituteInput)).resolves.toEqual(result);
+  });
+
+  it('refuse un résultat sans semaines', async () => {
+    callable.mockResolvedValueOnce({ data: { recipeId: 'curry', ingredientName: 'dinde' } });
+    await expect(substituteIngredient(substituteInput)).rejects.toThrow(/substituteIngredient/);
   });
 });

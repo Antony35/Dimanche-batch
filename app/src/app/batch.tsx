@@ -3,10 +3,8 @@ import { useLocalSearchParams } from 'expo-router';
 import { useKeepAwake } from 'expo-keep-awake';
 import { Pressable, View } from 'react-native';
 import {
-  AISLE_LABELS,
   formatDateLong,
   formatDuration,
-  formatQuantity,
   countBatchMealsServing,
   getBatchSession,
   getDayName,
@@ -14,9 +12,12 @@ import {
   isBatchDayPast,
   capitalize,
   scaleIngredients,
+  substituteCategory,
   toIsoDate,
   type BatchRecipe,
   type GenerationLock,
+  type Ingredient,
+  type Recipe,
 } from '@dimanche-batch/shared';
 import {
   Button,
@@ -45,6 +46,9 @@ import { confirmBatchRemoval } from '@/features/meal-plan/components/confirm-bat
 import { GenerationProgress } from '@/features/meal-plan/components/generation-progress';
 import { useGenerationProgress } from '@/features/meal-plan/api/use-generation-progress';
 import { useWeeklyPlan } from '@/features/meal-plan/api/use-weekly-plan';
+import { useSubstituteIngredient } from '@/features/recipes/api/use-substitute-ingredient';
+import { IngredientLine, SubstitutionNote } from '@/features/recipes/components/ingredient-line';
+import { SubstituteIngredientSheet } from '@/features/recipes/components/substitute-ingredient-sheet';
 import { useTheme } from '@/theme';
 
 /**
@@ -87,6 +91,11 @@ export default function BatchScreen() {
   const generation = useGenerationProgress(householdId, weekId);
   const cookingSession = useCookingSession(householdId, weekId);
   const composeSession = useComposeCookingSession();
+  const substitute = useSubstituteIngredient();
+  // L'ingrédient en cours de remplacement, aux quantités de la liste de courses.
+  const [replacing, setReplacing] = useState<{ recipe: Recipe; ingredient: Ingredient } | null>(
+    null,
+  );
   // La vue par recette reste la vue par défaut : selon les plats et le temps
   // disponible, enchaîner tranquillement reste un choix valable.
   const [view, setView] = useState<BatchView>('recipes');
@@ -147,6 +156,18 @@ export default function BatchScreen() {
       </View>
 
       {replace.error ? <ErrorState message={replace.error.message} /> : null}
+      {substitute.data && !replacing ? (
+        <Card>
+          <Text variant="bodyStrong">
+            {capitalize(substitute.data.ingredientName)} est dans la recette.
+          </Text>
+          <Text variant="caption" tone="soft">
+            {substitute.data.weekIds.includes(weekId)
+              ? 'La liste de courses est à jour, les cases déjà cochées sont gardées.'
+              : 'La liste de cette semaine n’a pas changé : elle a déjà servi.'}
+          </Text>
+        </Card>
+      ) : null}
       {remove.error ? <ErrorState message={remove.error.message} /> : null}
 
       {view === 'session' ? (
@@ -180,6 +201,14 @@ export default function BatchScreen() {
               }
             }}
             canRemove={canRemove}
+            onSubstitute={
+              canRemove
+                ? (ingredient) => {
+                    substitute.reset();
+                    setReplacing({ recipe: entry.recipe, ingredient });
+                  }
+                : undefined
+            }
             isRemoving={remove.isPending && remove.variables?.recipeId === entry.recipe.id}
             onRemove={() => {
               const mealCount = countBatchMealsServing(plan, entry.recipe.id);
@@ -191,6 +220,27 @@ export default function BatchScreen() {
             }}
           />
         ))}
+
+      {replacing && householdId ? (
+        <SubstituteIngredientSheet
+          recipe={replacing.recipe}
+          ingredient={replacing.ingredient}
+          isPending={substitute.isPending}
+          error={substitute.error?.message ?? null}
+          onClose={() => setReplacing(null)}
+          onSubstitute={(name) =>
+            substitute.mutate(
+              {
+                householdId,
+                recipeId: replacing.recipe.id,
+                ingredientName: replacing.ingredient.name,
+                substitute: name,
+              },
+              { onSuccess: () => setReplacing(null) },
+            )
+          }
+        />
+      ) : null}
     </Screen>
   );
 }
@@ -204,6 +254,7 @@ function BatchRecipeCard({
   generation,
   onReplace,
   canRemove,
+  onSubstitute,
   isRemoving,
   onRemove,
 }: {
@@ -216,6 +267,8 @@ function BatchRecipeCard({
   generation: GenerationLock | null;
   onReplace: () => void;
   canRemove: boolean;
+  /** Absent une fois le batch cuisiné : on ne remplace plus ce qui est au frigo. */
+  onSubstitute: ((ingredient: Ingredient) => void) | undefined;
   isRemoving: boolean;
   onRemove: () => void;
 }) {
@@ -273,23 +326,29 @@ function BatchRecipeCard({
           INGRÉDIENTS
         </Text>
         {scaleIngredients(recipe, entry.portions).map((ingredient, index) => (
-          <View
+          <IngredientLine
             key={`${ingredient.name}-${index}`}
-            style={{ flexDirection: 'row', alignItems: 'baseline', gap: theme.spacing.sm }}
-          >
-            <Text style={{ flex: 1 }}>{capitalize(ingredient.name)}</Text>
-            <Text variant="caption" tone="faint">
-              {AISLE_LABELS[ingredient.aisle]}
-            </Text>
-            <Text variant="bodyStrong">{formatQuantity(ingredient.qty, ingredient.unit)}</Text>
-          </View>
+            ingredient={ingredient}
+            onPress={
+              onSubstitute && substituteCategory(ingredient.name, ingredient.aisle)
+                ? () => onSubstitute(ingredient)
+                : undefined
+            }
+          />
         ))}
+        {onSubstitute ? (
+          <Text variant="caption" tone="faint">
+            Touche un ingrédient pour le remplacer par un autre de même nature : la liste de courses
+            suit. Gratuit, aucune génération consommée.
+          </Text>
+        ) : null}
       </View>
 
       <View style={{ gap: theme.spacing.xs }}>
         <Text variant="overline" tone="faint">
           ÉTAPES {done > 0 ? `· ${done}/${stepCount}` : ''}
         </Text>
+        <SubstitutionNote ingredients={recipe.ingredients} />
         {/*
           La clé porte l'index et non le texte : deux étapes identiques dans une
           même recette (« Réserver. ») entreraient sinon en collision, ce qui se

@@ -1,13 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useLocalSearchParams } from 'expo-router';
 import { Pressable, View } from 'react-native';
-import {
-  AISLE_LABELS,
-  capitalize,
-  formatQuantity,
-  formatWeekRange,
-  type Ingredient,
-} from '@dimanche-batch/shared';
+import { formatWeekRange } from '@dimanche-batch/shared';
 import { Card, EmptyState, ErrorState, LoadingState, Screen, Tag, Text } from '@/components/ui';
 import { useHousehold } from '@/features/household/api/use-household';
 import { useRecipes } from '@/features/meal-plan/api/use-recipes';
@@ -16,6 +10,7 @@ import {
   useToggleDislike,
   useToggleFavorite,
 } from '@/features/recipes/api/use-recipe-verdict';
+import { IngredientLine, SubstitutionNote } from '@/features/recipes/components/ingredient-line';
 import { useTheme } from '@/theme';
 
 /** Fiche complète d'une recette : ce qu'il faut acheter, et quoi en faire. */
@@ -141,6 +136,7 @@ export default function RecipeScreen() {
         <Text variant="overline" tone="faint">
           PRÉPARATION
         </Text>
+        <SubstitutionNote ingredients={recipe.ingredients} />
         {recipe.steps.map((step, index) => (
           <View
             key={step}
@@ -154,26 +150,5 @@ export default function RecipeScreen() {
         ))}
       </Card>
     </Screen>
-  );
-}
-
-function IngredientLine({ ingredient }: { ingredient: Ingredient }) {
-  const theme = useTheme();
-
-  return (
-    <View
-      style={{
-        flexDirection: 'row',
-        alignItems: 'baseline',
-        gap: theme.spacing.sm,
-        marginTop: theme.spacing.xs,
-      }}
-    >
-      <Text style={{ flex: 1 }}>{capitalize(ingredient.name)}</Text>
-      <Text variant="caption" tone="faint">
-        {AISLE_LABELS[ingredient.aisle]}
-      </Text>
-      <Text variant="bodyStrong">{formatQuantity(ingredient.qty, ingredient.unit)}</Text>
-    </View>
   );
 }

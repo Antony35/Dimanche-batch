@@ -9,7 +9,12 @@ import {
 import { GenerationLockSchema } from '../generation';
 import { GroceryItemSchema, GroceryListSchema, ManualItemSchema } from '../grocery-list';
 import { HouseholdSchema, InviteCodeSchema } from '../household';
-import { RecipeSchema } from '../recipe';
+import {
+  RecipeSchema,
+  SubstituteIngredientInputSchema,
+  SubstituteIngredientResultSchema,
+  type Ingredient,
+} from '../recipe';
 import {
   GenerateWeeklyPlanInputSchema,
   RegenerateMealInputSchema,
@@ -439,6 +444,36 @@ describe('RemoveBatchRecipeInputSchema et son résultat', () => {
     expect(RemoveBatchRecipeResultSchema.safeParse(base).success).toBe(true);
     expectRejected(RemoveBatchRecipeResultSchema, { ...base, mealCount: -1 });
     expectRejected(RemoveBatchRecipeResultSchema, { ...base, itemCount: 1.5 });
+  });
+});
+
+describe('substituteIngredient : payload, résultat et ingrédient remplacé', () => {
+  const base = {
+    householdId: 'household-1',
+    recipeId: 'curry',
+    ingredientName: 'poulet',
+    substitute: 'dinde',
+  };
+
+  it('exige un ingrédient et son remplaçant, bornés', () => {
+    expect(SubstituteIngredientInputSchema.safeParse(base).success).toBe(true);
+    expectRejected(SubstituteIngredientInputSchema, { ...base, substitute: '' });
+    expectRejected(SubstituteIngredientInputSchema, { ...base, ingredientName: 'a'.repeat(81) });
+    expectRejected(SubstituteIngredientInputSchema, { ...base, recipeId: undefined });
+  });
+
+  it('rend des semaines au format ISO', () => {
+    const result = { recipeId: 'curry', ingredientName: 'dinde', weekIds: ['2026-09-12'] };
+    expect(SubstituteIngredientResultSchema.safeParse(result).success).toBe(true);
+    expectRejected(SubstituteIngredientResultSchema, { ...result, weekIds: ['12/09/2026'] });
+  });
+
+  it('accepte une recette dont un ingrédient garde son nom d’origine, jamais vide', () => {
+    const ingredient: Ingredient = { name: 'dinde', qty: 500, unit: 'g', aisle: 'boucherie' };
+    const recipe = (originalName: string) =>
+      makeRecipe({ id: 'curry', ingredients: [{ ...ingredient, originalName }] });
+    expect(RecipeSchema.safeParse(recipe('poulet')).success).toBe(true);
+    expectRejected(RecipeSchema, recipe(''));
   });
 });
 

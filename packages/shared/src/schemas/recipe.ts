@@ -7,6 +7,12 @@ export const IngredientSchema = z.object({
   qty: z.number().positive().max(10_000),
   unit: UnitSchema,
   aisle: AisleSchema,
+  /**
+   * Ingrédient que la recette demandait avant un remplacement par le foyer
+   * (`substituteIngredient`). Absent tant qu'on n'a rien remplacé : les étapes,
+   * qui ne sont pas réécrites, le citent encore, et la fiche le rappelle.
+   */
+  originalName: z.string().min(1).max(80).optional(),
 });
 
 /**
@@ -43,5 +49,27 @@ export const RecipeSchema = z.object({
   createdAt: z.number().int(),
 });
 
+/**
+ * Payload de la callable `substituteIngredient` : remplacer un ingrédient d'une
+ * recette par un autre de même catégorie. L'ingrédient est désigné par son nom,
+ * pas par sa position — l'autre téléphone a pu modifier la recette entre-temps.
+ */
+export const SubstituteIngredientInputSchema = z.object({
+  householdId: z.string().min(1),
+  recipeId: z.string().min(1),
+  ingredientName: z.string().min(1).max(80),
+  substitute: z.string().min(1).max(80),
+});
+
+export const SubstituteIngredientResultSchema = z.object({
+  recipeId: z.string().min(1),
+  /** Nom écrit dans la recette, tel que le domaine l'a normalisé. */
+  ingredientName: z.string().min(1),
+  /** Semaines dont la liste de courses a été recalculée. */
+  weekIds: z.array(IsoDateSchema),
+});
+
 export type Ingredient = z.infer<typeof IngredientSchema>;
+export type SubstituteIngredientInput = z.infer<typeof SubstituteIngredientInputSchema>;
+export type SubstituteIngredientResult = z.infer<typeof SubstituteIngredientResultSchema>;
 export type Recipe = z.infer<typeof RecipeSchema>;

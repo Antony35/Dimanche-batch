@@ -2,7 +2,7 @@
 
 Application mobile de batch cooking pour un foyer de deux personnes. **On cuisine
 le dimanche, on ne cuisine pas de la semaine.** Le foyer choisit combien de plats
-préparer (trois à six) et combien sont végétariens ; l'API Gemini compose ce
+préparer (un à six) et combien sont végétariens ; l'API Gemini compose ce
 batch, qui nourrit les dix repas du lundi au vendredi. Le samedi et le dimanche
 ne sont pas générés : le foyer les décide ensuite — un reste, un repas dehors, un
 plat cuisiné. Le plan devient la liste de courses du foyer, groupée par rayon,
@@ -17,7 +17,7 @@ dernier jour aurait attendu huit jours au frigo.
 **Statut : v1 en cours — J1 à J6 livrés, modèle du batch refondu.** Le monorepo, le domaine partagé, les
 Security Rules, l'authentification, le foyer partagé, la génération Gemini, le
 planning des 7 jours, la régénération d'un repas isolé, la liste de courses, la
-fiche recette, l'historique et le fonctionnement hors ligne ; 518 tests couvrent
+fiche recette, l'historique et le fonctionnement hors ligne ; 566 tests couvrent
 le domaine, les schémas, les callables et les règles. Reste le build (J7). Ce
 document fait autorité sur l'architecture ; il est mis à jour en même temps que
 le code, jamais après.
@@ -98,7 +98,8 @@ dimanche-batch/
 │     ├─ domain/              # logique pure : semaine, unités, agrégation des
 │     │                       #   courses, rayons, saisons, contraintes de plan,
 │     │                       #   édition d'un repas, batch, session,
-│     │                       #   mise en place, goûts, texte
+│     │                       #   mise en place, goûts, remplacement
+│     │                       #   d'ingrédient, texte
 │     └─ firestore-paths.ts   # chemins Firestore, définis une seule fois
 │
 ├─ packages/rules-tests/       # Security Rules testées contre l'émulateur
@@ -174,6 +175,11 @@ Règles non négociables :
   projet non facturé, l'usage reste sur le palier gratuit et le coût est nul par
   construction plutôt que par surveillance. Un abonnement Google AI Pro ne couvre
   que l'application Gemini, jamais l'API.
+  **À vérifier après toute rotation de clé** : le 2026-10-12, la prod a renvoyé
+  des 500 parce que le projet de la clé était passé en crédit prépayé, épuisé
+  (`402 RESOURCE_EXHAUSTED`). Une clé recréée doit l'être sur un projet sans
+  facturation, puis reposée par `firebase functions:secrets:set` et suivie d'un
+  redéploiement : une function lit la version du secret fixée à son déploiement.
 
 ---
 
@@ -198,6 +204,8 @@ households/{hid}/weeklyPlans/{weekId}      # weekId = date ISO du SAMEDI, ex. 20
 
 households/{hid}/recipes/{recipeId}
   name, servings, prepMinutes, tags[], ingredients[], steps[]
+  # ingredients[].originalName : ce que la recette demandait avant un
+  # remplacement par le foyer (substituteIngredient), absent sinon
   lastUsedAt: string | null
   isFavorite: boolean
   isDisliked: boolean          # plat rejeté, jamais reproposé par le modèle
@@ -300,6 +308,7 @@ Une responsabilité par function, nommage `verbeNom`.
 | `replaceBatchRecipe`    | Remplace un plat du batch, et avec lui **tous les repas qu'il servait**. Callable à part et non un paramètre de `regenerateMeal` : un plat du batch n'occupe pas un créneau mais plusieurs, et le remplacer repas par repas coûterait autant de générations qu'il sert de repas, en laissant la semaine incohérente entre deux appels. Avec `removeBatchRecipe` et `setMeal`, seuls écrivains à muter `batchRecipeIds` sur un plan existant |
 | `removeBatchRecipe`     | Retire un plat du batch **sans le remplacer** — le frigo est déjà plein. Ses repas passent à décider, ses ingrédients quittent la liste. Ni Gemini ni quota, verrou pris. Refusée une fois le dimanche du batch passé (`isBatchDayPast`) : le plat est au frigo                                                                                                                                                                             |
 | `composeCookingSession` | Compose la session de cuisson du dimanche — la découpe de chaque ingrédient et les étapes de cuisson de chaque plat —, **à la demande puis conservée** : une génération par batch, jamais une par consultation. Si une session à jour existe, elle est rendue sans rien décompter — vérification faite sous le verrou, sans quoi deux téléphones ouvrant l'onglet ensemble paieraient deux fois                                             |
+| `substituteIngredient`  | Remplace un ingrédient d'une recette par un autre **de même catégorie** — viande pour viande, légume pour légume (`domain/substitution.ts`). Ni Gemini ni quota. Réécrit la recette et recalcule la liste des semaines en cours et suivante qui l'achètent encore, sous leur verrou ; efface la session de cuisson d'un batch qui la contient                                                                                               |
 | `joinHousehold`         | Consomme un code d'invitation et ajoute l'uid aux `members`. Côté serveur pour que le code reste à usage unique.                                                                                                                                                                                                                                                                                                                            |
 
 Contrat Gemini :
@@ -313,10 +322,32 @@ Contrat Gemini :
 
 **Deux reprises de nature différente, à ne pas confondre :**
 
-| Reprise   | Quand                                                     | Combien                                    |
-| --------- | --------------------------------------------------------- | ------------------------------------------ |
-| Contenu   | Le modèle a répondu, mais hors schéma ou hors contraintes | **1 seule**, en réinjectant les violations |
-| Transport | 429/500/502/503/504 — le modèle n'a rien produit          | 3 essais, attente 1 s puis 3 s             |
+| Reprise   | Quand                                                     | Combien                                        |
+| --------- | --------------------------------------------------------- | ---------------------------------------------- |
+| Contenu   | Le modèle a répondu, mais hors schéma ou hors contraintes | **1 seule**, en réinjectant les violations     |
+| Transport | 404/429/5xx, ou appel annulé faute de temps               | un appel par modèle de la chaîne, sans attente |
+| Crédit    | 402 — crédit prépayé épuisé                               | **aucune**, génération rendue                  |
+
+**Une chaîne de modèles** (`GEMINI_MODELS` : `gemini-3.6-flash`, puis
+`gemini-3.5-flash-lite`, puis `gemini-3.1-flash-lite`) remplace les trois essais
+sur un même modèle. Le 2026-10-13, le 3.6 refusait neuf appels sur dix, et son
+palier gratuit plafonne à 20 requêtes par jour : réessayer le même modèle
+usait ce quota pour rien. Saturations et quotas étant comptés par modèle, le
+suivant a sa chance aussitôt. `classifyCallFailure` décide : modèle suivant
+(saturé, quota, délai, modèle fermé), arrêt (crédit épuisé, commun à la clé),
+ou erreur (faute de notre côté). Le message final ne parle de quota du jour que
+si **chaque** modèle a répondu par un quota du jour.
+
+**Un budget de temps borne le tout** (`GEMINI_BUDGET_MS`, 100 s sur les 120
+de la function) : partagé par les deux tentatives de contenu, il annule l'appel
+en cours à son terme (`abortSignal`), en gardant 20 s pour chaque modèle qui
+reste à essayer (`callTimeoutMs`), et aucun appel n'est lancé s'il n'a plus
+20 s devant lui (`hasTimeForAttempt`). Le 2026-10-13, un appel est
+resté bloqué 2 min 37 avant de répondre 503 : la function a été coupée sans
+rendre la génération. Un appel annulé se traite comme une saturation. Côté
+app, `callables.ts` attend 10 s de plus que `CALLABLE_TIMEOUT_SECONDS`, valeur
+partagée avec la function : le SDK abandonnait à 70 s une génération qui
+réussissait en 75.
 
 La seconde n'est pas la boucle que le projet s'interdit : rien n'a été généré,
 donc rien n'a été consommé côté modèle. Elle est portée par `gemini/client.ts`,
@@ -331,9 +362,12 @@ lignes : une politique de reprise écrite quatre fois finit par en être quatre.
 Même chose pour ce que les callables partagent — lire le plan ou dire qu'il
 manque, rendre la génération sur saturation — dans `lib/callable-support.ts`.
 
-Quand les trois essais échouent, la callable **rend au foyer la génération
+Quand aucun modèle n'a répondu, la callable **rend au foyer la génération
 décomptée** (`refundGenerationQuota`) : le quota protège la clé Gemini, pas le
 budget de l'utilisateur, et une saturation chez Google ne doit rien lui coûter.
+Même chose sur un **crédit épuisé** (402, `isBillingStatus`) : rien n'a été
+généré, mais on ne réessaie pas — seul un rechargement y change quelque chose —,
+et le message dit à l'app de recharger le crédit dans AI Studio.
 Un plan refusé aux contraintes, lui, n'est pas remboursé — les appels ont bien
 eu lieu.
 
@@ -350,7 +384,8 @@ repas que le foyer prendra peut-être dehors. `validateGeneratedPlan` exige
 
 - exactement le nombre de plats demandé, et rien d'autre dans `recipes` ;
 - **la répartition annoncée** : `distributeMeals` répartit les dix repas au plus
-  égal — 4/3/3 pour trois plats, donc 8/6/6 portions — et chaque plat déclare
+  égal — 4/3/3 pour trois plats, donc 8/6/6 portions ; un plat seul sert les
+  dix repas, d'où les 20 portions que les schémas acceptent — et chaque plat déclare
   **exactement** deux portions par repas servi. Le modèle ne calcule plus rien :
   diviser 20 portions par 3 donnait des plats à 7 portions, donc des
   demi-assiettes ;
@@ -358,7 +393,8 @@ repas que le foyer prendra peut-être dehors. `validateGeneratedPlan` exige
 - 240 minutes de **présence** au plus, la cuisson sans surveillance exclue ;
 - un plat `mijote` ou `four-lent` pour 3 ou 4 plats, un de chaque dès 5, avec au
   moins 60 minutes de cuisson — le plat qui cuit seul pendant qu'on prépare les
-  autres ;
+  autres. Rien pour 1 ou 2 plats (`SLOW_COOK_FROM`) : il n'y a rien d'autre à
+  préparer pendant la cuisson ;
 - exactement le nombre de plats `vegetarien` choisi, et aucun d'eux avec un
   ingrédient des rayons boucherie ou poissonnerie ;
 - aucun plat banni.
@@ -407,8 +443,8 @@ du dimanche lit la même fonction : l'égalité est vraie par construction. Les
 quantités de la recette sont mises à l'échelle depuis `servings`, additionnées
 en flottant, puis arrondies **une seule fois, vers le haut** (`roundUpQuantity`) :
 arrondir par recette empilerait les erreurs, et arrondir vers le bas ferait
-manquer en cuisinant. Le document recette n'est jamais réécrit — il est partagé
-entre les semaines. Un repas dehors, un reste d'une semaine précédente
+manquer en cuisinant. Le document recette n'est jamais réécrit pour une mise à
+l'échelle — il est partagé entre les semaines. Un repas dehors, un reste d'une semaine précédente
 (`freezer-backup`) et un créneau à décider n'achètent rien. Les repas cuisinés
 le samedi et le dimanche s'ajoutent pour deux portions par repas, en origine
 `fresh`.
@@ -487,6 +523,24 @@ fige `sourceRecipeIds`, et `isCookingSessionCurrent` le compare au plan au momen
 l'afficher. La mise en place, calculée, est toujours à jour ; seules les
 découpes et les étapes demandent d'être recomposées. « Recette par recette »
 reste la vue par défaut.
+
+**Remplacer un ingrédient, à l'intérieur de sa catégorie.** Il manque la
+courgette, on prend une aubergine. Le geste vit sur l'écran du batch, tant que
+le dimanche n'est pas passé, avec les quantités de la liste de courses ; la
+fiche recette, ouverte depuis le planning ou l'historique, montre le
+remplacement sans le proposer. Les catégories (`domain/substitution.ts`)
+découpent les rayons de la liste de courses plus finement — les fruits et
+légumes rangent la fraise à côté de la courgette — et puisent leurs remplaçants
+dans la même table (`catalogNames`) : aucune seconde liste d'aliments. Un membre
+n'est reconnu que dans ses rayons, et le groupe de mots le plus long gagne,
+comme pour les rayons : « pomme de terre » est un féculent, « pomme » un fruit.
+La règle est celle qui rend le geste sûr sans Gemini : un plat végétarien ne
+gagne pas de viande. Un nom que la table ignore est accepté et garde le rayon
+de l'ingrédient remplacé — il ne change donc jamais de catégorie de rayon. La
+quantité est conservée, les étapes ne sont pas réécrites : `originalName`
+garde le tout premier ingrédient, et la fiche dit lequel les étapes citent
+encore. `substitutionProblem` donne à l'app la même réponse que la callable,
+avant l'appel.
 
 **Une règle, un seul endroit.** `requiresFreezing(dayIndex)` dit qu'un plat servi
 jeudi ou vendredi doit se congeler — cuisiné le dimanche, il aurait attendu cinq
@@ -859,6 +913,8 @@ Ce qui est **délibérément** simple en v1, et où brancher la suite :
 | La règle du plat qui mijote n'est rejouée au remplacement d'un plat que si le batch la tenait | Les plans composés avant elle n'ont aucun plat marqué : l'exiger rendrait ces semaines impossibles à modifier                                                                                                                                           | Retirer la condition quand plus aucun plan antérieur à la version 8 du prompt n'est modifiable                                                                                                                                                               |
 | Le compte végétarien n'est pas mémorisé avec le plan                                          | Remplacer un plat du batch est un choix du foyer : lui imposer un compte qu'il a choisi une semaine plus tôt le surprendrait                                                                                                                            | Stocker `vegetarianCount` sur le plan et le passer au remplacement                                                                                                                                                                                           |
 | Le rayon d'un article manuel se devine par une table livrée (~740 articles)                   | Zéro coût, hors ligne, testable ; les manques sont corrigés par le foyer et listés dans les réglages                                                                                                                                                    | Reverser le lexique du foyer dans la table à chaque version                                                                                                                                                                                                  |
+| Remplacer un ingrédient ne réécrit pas les étapes                                             | Réécrire « la courgette » en « l'aubergine » demande de la grammaire, donc Gemini et une génération décomptée, pour un geste qui doit répondre à l'instant                                                                                              | Faire réécrire les étapes par Gemini à la demande, comme la session de cuisson                                                                                                                                                                               |
+| Le remplacement ne recalcule que la semaine en cours et la suivante                           | Ce sont les seules dont la liste sert encore ; une semaine passée a fait ses courses                                                                                                                                                                    | Aucune tant que la composition reste limitée à la semaine prochaine                                                                                                                                                                                          |
 | Android uniquement                                                                            | Les deux téléphones sont Android                                                                                                                                                                                                                        | Expo est cross-platform : ne jamais écrire de code Android-spécifique sans garde `Platform`                                                                                                                                                                  |
 
 ---
@@ -908,6 +964,9 @@ Ce qui est **délibérément** simple en v1, et où brancher la suite :
 | Profil        | **fait** | L'onglet Historique devient Profil : foyer, code d'invitation, historique, rayons, goûts, apparence et compte au même endroit. Affichage robuste à la police système, à la navigation à trois boutons et au clavier                                                                                                                                                                                                       |
 | Retrait       | **fait** | Retirer un plat du batch quand le frigo est plein : callable `removeBatchRecipe`, sans Gemini ni quota, ses repas passent à décider. Vider le dernier repas d'un plat par un reste ou un repas dehors le retire aussi. Portion du batch possible sur un créneau libre en semaine ; l'accueil compte les repas à décider sur toute la semaine                                                                              |
 | Courses 2     | **fait** | Un article ajouté à la main reste sur les listes des semaines suivantes jusqu'à être rayé ou supprimé : collection `manualItems` du foyer, règle et tests, deux écritures client de plus                                                                                                                                                                                                                                  |
+| Remplacement  | **fait** | Toucher un ingrédient sur l'écran du batch pour le remplacer par un autre de même catégorie : catégories tirées de la table des rayons, callable `substituteIngredient` sans Gemini, liste de courses recalculée. Crédit Gemini épuisé (402) rendu au foyer avec un message lisible. Logo de l'app en icône adaptative                                                                                                    |
+| Batch court   | **fait** | Un ou deux plats possibles, pour un dimanche express : aucun plat mijoté exigé en deçà de trois, jusqu'à 20 portions par recette (prompt v11). Trois plats dont un végétarien par défaut sur l'accueil                                                                                                                                                                                                                    |
+| Modèle        | **fait** | Chaîne de modèles `gemini-3.6-flash` → `gemini-3.5-flash-lite` → `gemini-3.1-flash-lite`, le 3.6 étant saturé neuf fois sur dix ; quota du jour reconnu et annoncé. Budget de 100 s par génération avec annulation de l'appel en cours, app alignée sur le délai de la function. Slugs ramenés sans accents à la frontière ; schéma Gemini ouvert aux batchs d'un ou deux plats. La sonde affiche la valeur refusée       |
 | J7            | à faire  | Build EAS, installation, premier vrai dimanche                                                                                                                                                                                                                                                                                                                                                                            |
 
 Ce qui reste à faire hors code, dans l'ordre :
